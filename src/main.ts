@@ -11,6 +11,9 @@ import {
   MeshStandardMaterial,
   BufferGeometry,
   Float32BufferAttribute,
+  FrontSide,
+  BackSide,
+  DoubleSide,
   PerspectiveCamera,
   Scene,
   Vector2,
@@ -25,7 +28,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 
-const VERSION = "1.0.0.21";
+const VERSION = "1.0.1.6";
 const FORMAT_VERSION = "1.0";
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -52,11 +55,14 @@ app.innerHTML = `
     </div>
     <div class="toolbar">
       <button class="btn active" id="light-toggle">主光源：开</button>
-      <button class="btn" id="edges-toggle">可见边：关</button>
+      <button class="btn" id="edges-toggle">线框：关</button>
+      <button class="btn" id="seams-toggle">接缝：关</button>
+      <button class="btn active" id="faces-toggle">面渲染：开</button>
       <button class="btn" id="export-btn" disabled>导出 .3dppc</button>
     </div>
     <div class="viewer" id="viewer">
       <div class="placeholder" id="placeholder">选择模型以预览</div>
+      <div class="tri-counter" id="tri-counter">三角面：0</div>
     </div>
     <div class="status" id="status">尚未加载模型</div>
   </main>
@@ -69,7 +75,10 @@ const statusEl = document.querySelector<HTMLDivElement>("#status");
 const fileInput = document.querySelector<HTMLInputElement>("#file-input");
 const lightToggle = document.querySelector<HTMLButtonElement>("#light-toggle");
 const edgesToggle = document.querySelector<HTMLButtonElement>("#edges-toggle");
+const seamsToggle = document.querySelector<HTMLButtonElement>("#seams-toggle");
+const facesToggle = document.querySelector<HTMLButtonElement>("#faces-toggle");
 const exportBtn = document.querySelector<HTMLButtonElement>("#export-btn");
+const triCounter = document.querySelector<HTMLDivElement>("#tri-counter");
 
 if (
   !viewer ||
@@ -78,7 +87,10 @@ if (
   !fileInput ||
   !lightToggle ||
   !edgesToggle ||
-  !exportBtn
+  !seamsToggle ||
+  !facesToggle ||
+  !exportBtn ||
+  !triCounter
 ) {
   throw new Error("初始化界面失败，缺少必要的元素");
 }
@@ -92,6 +104,7 @@ const camera = new PerspectiveCamera(
   0.1,
   5000,
 );
+camera.up.set(0, 0, 1); // 将世界上方向设为 Z 轴，使水平拖动绕 Z 轴旋转
 camera.position.set(4, 3, 6);
 
 const renderer = new WebGLRenderer({ antialias: true, alpha: true });
@@ -117,13 +130,19 @@ const stlLoader = new STLLoader();
 
 const allowedExtensions = ["obj", "fbx", "stl", "3dppc"];
 let edgesVisible = true;
+let seamsVisible = false;
+let facesVisible = true;
 let currentModel: Object3D | null = null;
-let edgeLines: LineSegments2[] = [];
+let seamLines: LineSegments2[] = [];
 let lastFileName = "model";
 let lastTriangleCount = 0;
 
 edgesToggle.classList.toggle("active", edgesVisible);
-edgesToggle.textContent = `可见边：${edgesVisible ? "开" : "关"}`;
+edgesToggle.textContent = `线框：${edgesVisible ? "开" : "关"}`;
+seamsToggle.classList.toggle("active", seamsVisible);
+seamsToggle.textContent = `接缝：${seamsVisible ? "开" : "关"}`;
+facesToggle.classList.toggle("active", facesVisible);
+facesToggle.textContent = `面渲染：${facesVisible ? "开" : "关"}`;
 
 function setStatus(message: string, tone: "info" | "error" | "success" = "info") {
   statusEl.textContent = message;
@@ -132,7 +151,7 @@ function setStatus(message: string, tone: "info" | "error" | "success" = "info")
 
 function clearModel() {
   modelGroup.clear();
-  disposeEdges();
+  disposeSeams();
   currentModel = null;
   exportBtn.disabled = true;
   lastTriangleCount = 0;
@@ -169,6 +188,7 @@ function collectGeometry(object: Object3D): PPCGeometry {
   object.traverse((child) => {
     if (!(child as Mesh).isMesh) return;
     const mesh = child as Mesh;
+    if (mesh.userData.functional) return;
     const geometry = mesh.geometry;
     const position = geometry.getAttribute("position");
     if (!position) return;
@@ -199,7 +219,6 @@ function collectGeometry(object: Object3D): PPCGeometry {
       triangles.push([vaIdx, vbIdx, vcIdx]);
     }
   });
-
   return { vertices, triangles };
 }
 
@@ -216,12 +235,16 @@ function filterLargestComponent(geom: PPCGeometry): PPCGeometry {
   const { vertices, triangles } = geom;
   if (triangles.length === 0) return geom;
 
-  const triVerticesMap = new Map<number, number[]>();
+  // collectGeometry 为硬边模式，每个三角的三个顶点都是独立的。
+  // 建连通性时按坐标匹配顶点来判断三角是否相邻。
+  const posKeys = vertices.map((v) => `${v[0]},${v[1]},${v[2]}`);
+  const keyToTris = new Map<string, number[]>();
   triangles.forEach((tri, idx) => {
-    tri.forEach((v) => {
-      const list = triVerticesMap.get(v) ?? [];
+    tri.forEach((vIdx) => {
+      const key = posKeys[vIdx];
+      const list = keyToTris.get(key) ?? [];
       list.push(idx);
-      triVerticesMap.set(v, list);
+      keyToTris.set(key, list);
     });
   });
 
@@ -241,8 +264,9 @@ function filterLargestComponent(geom: PPCGeometry): PPCGeometry {
       const [a, b, c] = triangles[tIdx];
       area += triangleArea(vertices[a], vertices[b], vertices[c]);
 
-      [a, b, c].forEach((v) => {
-        (triVerticesMap.get(v) ?? []).forEach((n) => {
+      [a, b, c].forEach((vIdx) => {
+        const key = posKeys[vIdx];
+        (keyToTris.get(key) ?? []).forEach((n) => {
           if (!visited[n]) {
             visited[n] = true;
             queue.push(n);
@@ -276,10 +300,89 @@ function filterLargestComponent(geom: PPCGeometry): PPCGeometry {
   return { vertices: newVertices, triangles: newTriangles };
 }
 
+function createFrontMaterial(baseColor?: Color) {
+  return new MeshStandardMaterial({
+    color: baseColor ?? new Color(0x9ad6ff),
+    metalness: 0.05,
+    roughness: 0.7,
+    flatShading: true,
+    side: FrontSide,
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1,
+  });
+}
+
+function createBackMaterial() {
+  return new MeshStandardMaterial({
+    color: new Color(0xa77f7d),
+    metalness: 0.05,
+    roughness: 0.7,
+    flatShading: true,
+    side: BackSide,
+    polygonOffset: true,
+    polygonOffsetFactor: 1,
+    polygonOffsetUnits: 1,
+  });
+}
+
+function generateFunctionalMaterials(root: Object3D) {
+  const replacements: { parent: Object3D; mesh: Mesh }[] = [];
+  root.traverse((child) => {
+    if ((child as Mesh).isMesh) {
+      const mesh = child as Mesh;
+      if (mesh.userData.functional) return;
+      replacements.push({ parent: mesh.parent ? mesh.parent : root, mesh });
+    }
+  });
+  replacements.forEach(({ parent, mesh }) => {
+    const geomBack = mesh.geometry.clone();
+    const meshBack = new Mesh(geomBack, createBackMaterial());
+    meshBack.userData.functional = "back";
+    meshBack.castShadow = mesh.castShadow;
+    meshBack.receiveShadow = mesh.receiveShadow;
+    meshBack.name = mesh.name ? `${mesh.name}-back` : "back-only";
+    meshBack.position.copy(mesh.position);
+    meshBack.rotation.copy(mesh.rotation);
+    meshBack.scale.copy(mesh.scale);
+    parent.add(meshBack);
+
+    const geomWireframe = mesh.geometry.clone();
+    const meshWireframe = new Mesh(geomWireframe, new MeshStandardMaterial({
+      color: new Color(0x000000),
+      flatShading: true,
+      side: DoubleSide,
+      wireframe: true,
+    }));
+    meshWireframe.userData.functional = "edge";
+    meshWireframe.castShadow = false;
+    meshWireframe.receiveShadow = false;
+    meshWireframe.name = mesh.name ? `${mesh.name}-wireframe` : "wireframe-only";
+    meshWireframe.position.copy(mesh.position);
+    meshWireframe.rotation.copy(mesh.rotation);
+    meshWireframe.scale.copy(mesh.scale);
+    parent.add(meshWireframe);
+  });
+}
+
+function applyFaceVisibility() {
+  if (!currentModel) return;
+  currentModel.traverse((child) => {
+    if (!(child as Mesh).isMesh) return;
+    const mesh = child as Mesh;
+    if (mesh.userData.functional && mesh.userData.functional !== "back") return;
+    if ((mesh.material as MeshStandardMaterial).visible !== undefined) {
+      (mesh.material as MeshStandardMaterial).visible = facesVisible;
+    }
+  });
+}
+
 function countTrianglesInObject(object: Object3D): number {
   let count = 0;
   object.traverse((child) => {
     if (!(child as Mesh).isMesh) return;
+    const mesh = child as Mesh;
+    if (mesh.userData.functional) return;
     const geometry = (child as Mesh).geometry;
     if (geometry.index) {
       count += geometry.index.count / 3;
@@ -383,13 +486,7 @@ async function load3dppc(url: string): Promise<Object3D> {
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
 
-  const material = new MeshStandardMaterial({
-    color: 0x9ad6ff,
-    metalness: 0.05,
-    roughness: 0.7,
-    flatShading: true,
-  });
-  const mesh = new Mesh(geometry, material);
+  const mesh = new Mesh(geometry, createFrontMaterial());
   group.add(mesh);
   return group;
 }
@@ -420,13 +517,13 @@ function resizeRenderer() {
   renderer.setSize(clientWidth, clientHeight);
   camera.aspect = clientWidth / clientHeight;
   camera.updateProjectionMatrix();
-  updateEdgeResolution();
+  updateSeamResolution();
 }
 
 window.addEventListener("resize", resizeRenderer);
 
-function disposeEdges() {
-  edgeLines.forEach((line) => {
+function disposeSeams() {
+  seamLines.forEach((line) => {
     line.removeFromParent();
     (line.geometry as LineSegmentsGeometry).dispose();
     (line.material as LineMaterial).dispose();
@@ -434,29 +531,32 @@ function disposeEdges() {
       (line.userData.edgesGeometry as EdgesGeometry).dispose();
     }
   });
-  edgeLines = [];
+  seamLines = [];
 }
 
-function rebuildEdges() {
-  disposeEdges();
-  if (!edgesVisible || !currentModel) {
-    console.log("[edges] skipped", { edgesVisible, hasModel: !!currentModel });
+function rebuildSeams() {
+  disposeSeams();
+  if (!seamsVisible || !currentModel) {
+    console.log("[seams] skipped", { seamsVisible, hasModel: !!currentModel });
     return;
   }
 
-  console.log("[edges] rebuild start");
+  console.log("[seams] rebuild start");
   const meshes: Mesh[] = [];
   currentModel.traverse((child) => {
     if ((child as Mesh).isMesh) {
-      meshes.push(child as Mesh);
+      const mesh = child as Mesh;
+      if (mesh.userData.functional) return;
+      meshes.push(mesh);
+      console.log("[seams] found mesh")
     }
   });
 
   let linesCount = 0;
   meshes.forEach((mesh) => {
-    const edges = new EdgesGeometry(mesh.geometry);
+    const seams = new EdgesGeometry(mesh.geometry);
     const lineGeometry = new LineSegmentsGeometry();
-    lineGeometry.fromEdgesGeometry(edges);
+    lineGeometry.fromEdgesGeometry(seams);
     const lineMaterial = new LineMaterial({
       color: 0x000000,
       linewidth: 5, // 相对于场景尺度的线宽，LineSegments2 支持粗线
@@ -464,19 +564,38 @@ function rebuildEdges() {
     });
     const line = new LineSegments2(lineGeometry, lineMaterial);
     line.computeLineDistances();
-    line.userData.edgesGeometry = edges;
+    line.userData.edgesGeometry = seams;
+    line.userData.functional = "seam";
     line.renderOrder = 1;
     mesh.add(line);
-    edgeLines.push(line);
+    seamLines.push(line);
     linesCount += 1;
   });
-  updateEdgeResolution();
-  console.log("[edges] rebuild done", { meshCount: meshes.length, linesCount, edgesVisible });
+  updateSeamResolution();
+  console.log("[seams] rebuild done", { meshCount: meshes.length, linesCount, edgesVisible });
 }
 
-function updateEdgeResolution() {
+function applyEdgeVisibility() {
+  if (!currentModel) return;
+  currentModel.traverse((child) => {
+    if (!(child as Mesh).isMesh) return;
+    const mesh = child as Mesh;
+    if (mesh.userData.functional === "edge") {
+      mesh.visible = edgesVisible;
+    }
+  });
+}
+
+function applySeamsVisibility() {
+  if (!currentModel) return;
+  seamLines.forEach((line) => {
+    line.visible = seamsVisible;
+  });
+}
+
+function updateSeamResolution() {
   const { clientWidth, clientHeight } = viewer;
-  edgeLines.forEach((line) => {
+  seamLines.forEach((line) => {
     const material = line.material as LineMaterial;
     material.resolution.set(clientWidth, clientHeight);
   });
@@ -490,16 +609,27 @@ async function loadModel(file: File, ext: string) {
   try {
     let object: Object3D;
     if (ext === "obj") {
-      object = await objLoader.loadAsync(url);
+      const loaded = await objLoader.loadAsync(url);
+      // 将所有 mesh 材质替换为 frontMaterial
+      const mat = createFrontMaterial();
+      loaded.traverse((child) => {
+        if ((child as Mesh).isMesh) {
+          (child as Mesh).material = mat.clone();
+        }
+      });
+      object = loaded;
     } else if (ext === "fbx") {
-      object = await fbxLoader.loadAsync(url);
+      const loaded = await fbxLoader.loadAsync(url);
+      const mat = createFrontMaterial();
+      loaded.traverse((child) => {
+        if ((child as Mesh).isMesh) {
+          (child as Mesh).material = mat.clone();
+        }
+      });
+      object = loaded;
     } else if (ext === "stl") {
       const geometry = await stlLoader.loadAsync(url);
-      const material = new MeshStandardMaterial({
-        color: 0x7dd3fc,
-        metalness: 0.1,
-        roughness: 0.65,
-      });
+      const material = createFrontMaterial();
       object = new Mesh(geometry, material);
     } else {
       object = await load3dppc(url);
@@ -508,9 +638,11 @@ async function loadModel(file: File, ext: string) {
     clearModel();
     currentModel = object;
     lastFileName = file.name;
+    generateFunctionalMaterials(currentModel);
+    applyFaceVisibility();
     modelGroup.add(currentModel);
     lastTriangleCount = countTrianglesInObject(currentModel);
-    rebuildEdges();
+    rebuildSeams();
     fitCameraToObject(currentModel);
     setStatus(`已加载：${file.name} · 三角面 ${lastTriangleCount}`, "success");
     exportBtn.disabled = false;
@@ -554,8 +686,22 @@ lightToggle.addEventListener("click", () => {
 edgesToggle.addEventListener("click", () => {
   edgesVisible = !edgesVisible;
   edgesToggle.classList.toggle("active", edgesVisible);
-  edgesToggle.textContent = `可见边：${edgesVisible ? "开" : "关"}`;
-  rebuildEdges();
+  edgesToggle.textContent = `线框：${edgesVisible ? "开" : "关"}`;
+  applyEdgeVisibility();
+});
+seamsToggle.addEventListener("click", () => {
+  seamsVisible = !seamsVisible;
+  seamsToggle.classList.toggle("active", seamsVisible);
+  seamsToggle.textContent = `接缝：${seamsVisible ? "开" : "关"}`;
+  if (seamsVisible && !seamLines.length) rebuildSeams();
+  applySeamsVisibility();
+})
+
+facesToggle.addEventListener("click", () => {
+  facesVisible = !facesVisible;
+  facesToggle.classList.toggle("active", facesVisible);
+  facesToggle.textContent = `面渲染：${facesVisible ? "开" : "关"}`;
+  applyFaceVisibility();
 });
 
 exportBtn.addEventListener("click", async () => {
@@ -578,6 +724,7 @@ function animate() {
   requestAnimationFrame(animate);
   controls.update();
   renderer.render(scene, camera);
+  triCounter.textContent = `三角面：${renderer.info.render.triangles}`;
 }
 
 resizeRenderer();
