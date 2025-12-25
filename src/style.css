@@ -14,43 +14,52 @@
   box-sizing: border-box;
 }
 
+html {
+  height: 100%;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
-  display: grid;
-  place-items: center;
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
   background:
     radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.14), transparent 28%),
     radial-gradient(circle at 80% 10%, rgba(14, 165, 233, 0.22), transparent 30%),
     var(--bg);
   font-family: "Inter", "SF Pro Display", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--text);
-  padding: 28px;
+  padding: 12px;
 }
 
 #app {
-  width: min(100%, 1080px);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
 }
 
 .card {
-  background: linear-gradient(150deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 18px;
-  padding: 28px;
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(6px);
+  position: relative;
+  height: 100%;
+  flex: 1;
+  min-height: 0;
+  background: transparent;
+  border: none;
+  padding: 8px 8px 0;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
 }
 
 header h1 {
-  margin: 0 0 10px;
-  font-size: 28px;
-  letter-spacing: 0.4px;
-}
-
-header p {
-  margin: 0 0 18px;
-  color: var(--muted);
-  line-height: 1.6;
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: 0.2px;
+  position: absolute;
+  top: 10px;
+  left: 12px;
 }
 
 .controls {
@@ -58,14 +67,14 @@ header p {
   flex-wrap: wrap;
   gap: 14px;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 0;
 }
 
 .toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
 .btn {
@@ -73,9 +82,10 @@ header p {
   background: rgba(255, 255, 255, 0.05);
   color: var(--text);
   border-radius: 10px;
-  padding: 10px 14px;
+  padding: 4px 8px;
   cursor: pointer;
   transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease, background 140ms ease;
+  font-size: 13px;
 }
 
 .btn:hover {
@@ -104,7 +114,7 @@ header p {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 18px;
+  padding: 6px 10px;
   background: rgba(56, 189, 248, 0.12);
   border: 1px solid rgba(56, 189, 248, 0.7);
   color: var(--text);
@@ -137,7 +147,8 @@ header p {
 
 .viewer {
   position: relative;
-  height: 480px;
+  flex: 1;
+  min-height: 0;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: #a8b4c0;
@@ -206,6 +217,114 @@ header p {
   color: #34d399;
 }
 
+.layout {
+  display: none;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.layout.active {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 24px;
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.panel {
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 10px;
+  box-shadow: var(--shadow);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+}
+
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  letter-spacing: 0.2px;
+}
+
+.right-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 12px;
+}
+
+.placeholder-card {
+  flex: 1;
+  border: 1px dashed rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 14px;
+  letter-spacing: 0.3px;
+  min-height: 0;
+  height: 100%;
+}
+
+.empty-state {
+  display: grid;
+  gap: 18px;
+  text-align: center;
+  place-items: center;
+  padding: 48px 12px;
+}
+
+.empty-lead {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.empty-upload {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px 28px;
+  font-size: 18px;
+  gap: 12px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.7);
+  color: var(--text);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.empty-upload:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(56, 189, 248, 0.25);
+  border-color: rgba(56, 189, 248, 0.9);
+}
+
+.empty-upload input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
 @media (max-width: 720px) {
   body {
     padding: 16px;
@@ -221,5 +340,9 @@ header p {
 
   .viewer {
     height: 360px;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
   }
 }

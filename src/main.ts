@@ -18,6 +18,7 @@ import {
   Scene,
   Vector2,
   WebGLRenderer,
+  Raycaster,
   type Object3D,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -28,7 +29,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 
-const VERSION = "1.0.1.6";
+const VERSION = "1.0.1.27";
 const FORMAT_VERSION = "1.0";
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -40,31 +41,44 @@ app.innerHTML = `
   <main class="card">
     <header>
       <h1>3D Printed Paper Craft</h1>
-      <p>
-        将低多边形 3D 模型展开为可打印纸艺平面的工具。
-        当前支持上传 OBJ / FBX / STL，并提供基础预览能力。
-      </p>
     </header>
-    <div class="controls">
-      <label class="upload">
-        <span>上传模型</span>
-        <span class="formats">支持 OBJ / FBX / STL / 3dppc</span>
-        <input id="file-input" type="file" accept=".obj,.fbx,.stl,.3dppc,application/json" />
-      </label>
-      <div class="formats">选择文件后将在下方 3D 视图中预览</div>
-    </div>
-    <div class="toolbar">
-      <button class="btn active" id="light-toggle">主光源：开</button>
-      <button class="btn" id="edges-toggle">线框：关</button>
-      <button class="btn" id="seams-toggle">接缝：关</button>
-      <button class="btn active" id="faces-toggle">面渲染：开</button>
-      <button class="btn" id="export-btn" disabled>导出 .3dppc</button>
-    </div>
-    <div class="viewer" id="viewer">
-      <div class="placeholder" id="placeholder">选择模型以预览</div>
-      <div class="tri-counter" id="tri-counter">三角面：0</div>
-    </div>
-    <div class="status" id="status">尚未加载模型</div>
+    <input id="file-input" type="file" accept=".obj,.fbx,.stl,.3dppc,application/json" style="display:none" />
+
+    <section id="layout-empty" class="layout active">
+      <div class="empty-state">
+        <h2>上传模型开始编辑</h2>
+        <p class="empty-lead">支持 OBJ / FBX / STL / 3dppc</p>
+        <label class="empty-upload" for="file-input">
+          <span>选择模型文件</span>
+        </label>
+      </div>
+    </section>
+
+    <section id="layout-workspace" class="layout">
+      <div class="workspace">
+        <div class="panel">
+          <div class="toolbar">
+            <label class="upload" for="file-input">
+              <span>打开模型</span>
+            </label>
+            <button class="btn active" id="light-toggle">主光源：开</button>
+            <button class="btn" id="edges-toggle">线框：关</button>
+            <button class="btn" id="seams-toggle">接缝：关</button>
+            <button class="btn active" id="faces-toggle">面渲染：开</button>
+            <button class="btn" id="export-btn" disabled>导出 .3dppc</button>
+          </div>
+          <div class="viewer" id="viewer">
+            <div class="placeholder" id="placeholder">选择模型以预览</div>
+            <div class="tri-counter" id="tri-counter">渲染三角形：0</div>
+          </div>
+          <div class="status" id="status">尚未加载模型</div>
+        </div>
+        <div class="panel right-panel">
+          <h2>展开组预览</h2>
+          <div class="placeholder-card">展开面片组预览区域（待开发）</div>
+        </div>
+      </div>
+    </section>
   </main>
   <div class="version-tag">v${VERSION}</div>
 `;
@@ -79,6 +93,10 @@ const seamsToggle = document.querySelector<HTMLButtonElement>("#seams-toggle");
 const facesToggle = document.querySelector<HTMLButtonElement>("#faces-toggle");
 const exportBtn = document.querySelector<HTMLButtonElement>("#export-btn");
 const triCounter = document.querySelector<HTMLDivElement>("#tri-counter");
+const layoutEmpty = document.querySelector<HTMLElement>("#layout-empty");
+const layoutWorkspace = document.querySelector<HTMLElement>("#layout-workspace");
+
+let lastStatus = { message: "", tone: "info" as "info" | "error" | "success", count: 0 };
 
 if (
   !viewer ||
@@ -90,7 +108,9 @@ if (
   !seamsToggle ||
   !facesToggle ||
   !exportBtn ||
-  !triCounter
+  !triCounter ||
+  !layoutEmpty ||
+  !layoutWorkspace
 ) {
   throw new Error("初始化界面失败，缺少必要的元素");
 }
@@ -129,6 +149,11 @@ const fbxLoader = new FBXLoader();
 const stlLoader = new STLLoader();
 
 const allowedExtensions = ["obj", "fbx", "stl", "3dppc"];
+const FACE_DEFAULT_COLOR = new Color(0x9ad6ff);
+const HIGHLIGHT_SCALE = 1.2;
+const GROUP_COLORS: Record<number, Color> = {
+  1: new Color(0x22c55e),
+};
 let edgesVisible = true;
 let seamsVisible = false;
 let facesVisible = true;
@@ -136,6 +161,21 @@ let currentModel: Object3D | null = null;
 let seamLines: LineSegments2[] = [];
 let lastFileName = "model";
 let lastTriangleCount = 0;
+let faceColorMap = new Map<number, string>();
+let faceAdjacency = new Map<number, Set<number>>();
+let faceIndexMap = new Map<number, { mesh: Mesh; localFace: number }>();
+let meshFaceIdMap = new Map<string, Map<number, number>>();
+let faceGroupMap = new Map<number, number | null>();
+let groupFaces = new Map<number, Set<number>>();
+let editGroupId: number | null = null;
+const raycaster = new Raycaster();
+const pointer = new Vector2();
+let hovered: {
+  mesh: Mesh | null;
+  indices: number[];
+  original: number[];
+  faceId: number | null;
+} = { mesh: null, indices: [], original: [], faceId: null };
 
 edgesToggle.classList.toggle("active", edgesVisible);
 edgesToggle.textContent = `线框：${edgesVisible ? "开" : "关"}`;
@@ -143,10 +183,37 @@ seamsToggle.classList.toggle("active", seamsVisible);
 seamsToggle.textContent = `接缝：${seamsVisible ? "开" : "关"}`;
 facesToggle.classList.toggle("active", facesVisible);
 facesToggle.textContent = `面渲染：${facesVisible ? "开" : "关"}`;
+showWorkspace(false);
 
 function setStatus(message: string, tone: "info" | "error" | "success" = "info") {
-  statusEl.textContent = message;
+  if (message === lastStatus.message && tone === lastStatus.tone) {
+    lastStatus.count += 1;
+  } else {
+    lastStatus = { message, tone, count: 0 };
+  }
+  const suffix = lastStatus.count > 0 ? ` +${lastStatus.count}` : "";
+  statusEl.textContent = `${message}${suffix}`;
   statusEl.className = `status ${tone === "info" ? "" : tone}`;
+}
+
+function clearHover() {
+  if (!hovered.mesh || !hovered.original.length) return;
+  const geometry = hovered.mesh.geometry;
+  const colorsAttr = geometry.getAttribute("color") as Float32BufferAttribute;
+  if (colorsAttr) {
+    hovered.indices.forEach((idx, i) => {
+      colorsAttr.array[idx * 3] = hovered.original[i * 3];
+      colorsAttr.array[idx * 3 + 1] = hovered.original[i * 3 + 1];
+      colorsAttr.array[idx * 3 + 2] = hovered.original[i * 3 + 2];
+    });
+    colorsAttr.needsUpdate = true;
+  }
+  hovered = { mesh: null, indices: [], original: [], faceId: null };
+}
+
+function showWorkspace(loaded: boolean) {
+  layoutEmpty.classList.toggle("active", !loaded);
+  layoutWorkspace.classList.toggle("active", loaded);
 }
 
 function clearModel() {
@@ -156,6 +223,15 @@ function clearModel() {
   exportBtn.disabled = true;
   lastTriangleCount = 0;
   setStatus("尚未加载模型");
+  showWorkspace(false);
+  faceColorMap.clear();
+  faceAdjacency.clear();
+  faceIndexMap.clear();
+  meshFaceIdMap.clear();
+  faceGroupMap.clear();
+  groupFaces.clear();
+  clearHover();
+  editGroupId = null;
 }
 
 type PPCGeometry = {
@@ -302,7 +378,7 @@ function filterLargestComponent(geom: PPCGeometry): PPCGeometry {
 
 function createFrontMaterial(baseColor?: Color) {
   return new MeshStandardMaterial({
-    color: baseColor ?? new Color(0x9ad6ff),
+    color: baseColor ?? FACE_DEFAULT_COLOR.clone(),
     metalness: 0.05,
     roughness: 0.7,
     flatShading: true,
@@ -310,6 +386,7 @@ function createFrontMaterial(baseColor?: Color) {
     polygonOffset: true,
     polygonOffsetFactor: 1,
     polygonOffsetUnits: 1,
+    vertexColors: true,
   });
 }
 
@@ -326,12 +403,297 @@ function createBackMaterial() {
   });
 }
 
+function applyDefaultFaceColors(mesh: Mesh) {
+  const geometry = mesh.geometry;
+  const position = geometry.getAttribute("position");
+  if (!position) return;
+  const vertexCount = position.count;
+  const colors = new Float32Array(vertexCount * 3);
+  for (let i = 0; i < vertexCount; i++) {
+    FACE_DEFAULT_COLOR.toArray(colors, i * 3);
+  }
+  geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
+  geometry.attributes.color.needsUpdate = true;
+}
+
+function getFaceVertexIndices(geometry: BufferGeometry, faceIndex: number): number[] {
+  const indexAttr = geometry.index;
+  if (indexAttr) {
+    return [
+      indexAttr.getX(faceIndex * 3),
+      indexAttr.getX(faceIndex * 3 + 1),
+      indexAttr.getX(faceIndex * 3 + 2),
+    ];
+  }
+  return [faceIndex * 3, faceIndex * 3 + 1, faceIndex * 3 + 2];
+}
+
+function setFaceColor(mesh: Mesh, faceIndex: number, color: Color) {
+  const geometry = mesh.geometry;
+  const colorsAttr = geometry.getAttribute("color") as Float32BufferAttribute;
+  if (!colorsAttr) return;
+  const indices = getFaceVertexIndices(geometry, faceIndex);
+  indices.forEach((idx) => {
+    color.toArray(colorsAttr.array as Float32Array, idx * 3);
+  });
+  colorsAttr.needsUpdate = true;
+}
+
+function getFaceIdFromIntersection(mesh: Mesh, localFace: number | undefined): number | null {
+  if (localFace === undefined || localFace === null) return null;
+  const map = meshFaceIdMap.get(mesh.uuid);
+  if (!map) return null;
+  return map.get(localFace) ?? null;
+}
+
+function updateFaceColorById(faceId: number) {
+  const mapping = faceIndexMap.get(faceId);
+  if (!mapping) return;
+  const groupId = faceGroupMap.get(faceId) ?? null;
+  const baseColor = groupId && GROUP_COLORS[groupId] ? GROUP_COLORS[groupId] : FACE_DEFAULT_COLOR;
+  setFaceColor(mapping.mesh, mapping.localFace, baseColor);
+
+  const colorsAttr = mapping.mesh.geometry.getAttribute("color") as Float32BufferAttribute | null;
+  if (hovered.faceId === faceId && hovered.mesh === mapping.mesh && colorsAttr) {
+    const indices = getFaceVertexIndices(mapping.mesh.geometry, mapping.localFace);
+    hovered.indices = indices;
+    hovered.original = [];
+    indices.forEach((idx) => {
+      hovered.original.push(
+        colorsAttr.array[idx * 3],
+        colorsAttr.array[idx * 3 + 1],
+        colorsAttr.array[idx * 3 + 2],
+      );
+    });
+    // 重新应用悬停高亮
+    const base = new Color().fromArray(colorsAttr.array as Float32Array, indices[0] * 3);
+    const highlight = base.clone();
+    highlight.r = Math.min(1, highlight.r * HIGHLIGHT_SCALE);
+    highlight.g = Math.min(1, highlight.g * HIGHLIGHT_SCALE);
+    highlight.b = Math.min(1, highlight.b * HIGHLIGHT_SCALE);
+    setFaceColor(mapping.mesh, mapping.localFace, highlight);
+  }
+}
+
+function setFaceGroup(faceId: number, groupId: number | null) {
+  const prev = faceGroupMap.get(faceId) ?? null;
+  if (prev === groupId) return;
+
+  if (prev !== null) {
+    groupFaces.get(prev)?.delete(faceId);
+  }
+
+  faceGroupMap.set(faceId, groupId);
+
+  if (groupId !== null) {
+    if (!groupFaces.has(groupId)) groupFaces.set(groupId, new Set<number>());
+    groupFaces.get(groupId)!.add(faceId);
+  }
+
+  updateFaceColorById(faceId);
+}
+
+function shareEdgeWithGroup(faceId: number, groupId: number): boolean {
+  const neighbors = faceAdjacency.get(faceId);
+  if (!neighbors) return false;
+  const groupSet = groupFaces.get(groupId);
+  if (!groupSet || groupSet.size === 0) return false;
+  for (const n of neighbors) {
+    if (groupSet.has(n)) return true;
+  }
+  return false;
+}
+
+function canRemoveFace(groupId: number, faceId: number): boolean {
+  const faces = groupFaces.get(groupId);
+  if (!faces || faces.size <= 1) return true;
+  if (!faces.has(faceId)) return true;
+
+  const remaining = new Set(faces);
+  remaining.delete(faceId);
+  if (remaining.size === 0) return true;
+
+  const start = remaining.values().next().value as number;
+  const visited = new Set<number>();
+  const queue = [start];
+  visited.add(start);
+
+  while (queue.length) {
+    const cur = queue.pop()!;
+    const neighbors = faceAdjacency.get(cur);
+    if (!neighbors) continue;
+    neighbors.forEach((n) => {
+      if (!remaining.has(n)) return;
+      if (visited.has(n)) return;
+      visited.add(n);
+      queue.push(n);
+    });
+  }
+
+  return visited.size === remaining.size;
+}
+
+function pickFace(event: PointerEvent): number | null {
+  if (!currentModel || !facesVisible) return null;
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const intersects = raycaster.intersectObject(currentModel, true).filter((i) => {
+    const mesh = i.object as Mesh;
+    return (mesh as Mesh).isMesh && !(mesh as Mesh).userData.functional;
+  });
+  if (!intersects.length) return null;
+  const hit = intersects[0];
+  const faceIndex = hit.faceIndex ?? -1;
+  if (faceIndex < 0) return null;
+  return getFaceIdFromIntersection(hit.object as Mesh, faceIndex);
+}
+
+function handleRemoveFace(faceId: number) {
+  if (editGroupId === null) return;
+  const currentGroup = faceGroupMap.get(faceId);
+  if (currentGroup !== editGroupId) return;
+  const groupSet = groupFaces.get(editGroupId) ?? new Set<number>();
+  const size = groupSet.size;
+  console.log("[group] remove attempt", { faceId, groupId: editGroupId, size });
+  if (size <= 2 || canRemoveFace(editGroupId, faceId)) {
+    setFaceGroup(faceId, null);
+    const newSize = groupFaces.get(editGroupId)?.size ?? 0;
+    console.log("[group] remove success", { faceId, groupId: editGroupId, size: newSize });
+    setStatus(`已从组 ${editGroupId} 移除`, "success");
+  } else {
+    console.log("[group] remove blocked: disconnect", { faceId, groupId: editGroupId });
+    setStatus("移除会导致展开组不连通，已取消", "error");
+  }
+}
+
+function handleAddFace(faceId: number) {
+  if (editGroupId === null) return;
+  const targetGroup = editGroupId;
+  const currentGroup = faceGroupMap.get(faceId) ?? null;
+  if (currentGroup === targetGroup) return;
+
+  const targetSet = groupFaces.get(targetGroup) ?? new Set<number>();
+  console.log("[group] add attempt", { faceId, targetGroup, currentGroup, targetSize: targetSet.size });
+
+  // 若面已在其他组，先检查能否移出
+  if (currentGroup !== null) {
+    if (!canRemoveFace(currentGroup, faceId)) {
+      console.log("[group] add blocked: source group disconnect", { faceId, from: currentGroup, to: targetGroup });
+      setStatus("该面所在的组移出后会断开，未加入当前组", "error");
+      return;
+    }
+  }
+
+  // 连通性要求：当前组已有面时需共边
+  if (targetSet.size > 0) {
+    if (!shareEdgeWithGroup(faceId, targetGroup)) {
+      console.log("[group] add blocked: no shared edge", { faceId, targetGroup });
+      setStatus("该面与当前组无共边，未加入", "error");
+      return;
+    }
+  }
+
+  if (currentGroup !== null) {
+    setFaceGroup(faceId, null);
+  }
+  setFaceGroup(faceId, targetGroup);
+  const newSize = groupFaces.get(targetGroup)?.size ?? 0;
+  console.log("[group] add success", { faceId, targetGroup, size: newSize });
+  setStatus(`已加入组 ${targetGroup}`, "success");
+}
+
+function setEditGroup(groupId: number | null) {
+  editGroupId = groupId;
+  if (groupId === null) {
+    console.log("[group] exit edit mode");
+    setStatus("已退出展开组编辑模式");
+    return;
+  }
+  if (!groupFaces.has(groupId)) {
+    groupFaces.set(groupId, new Set<number>());
+  }
+  console.log("[group] enter edit mode", { groupId });
+  setStatus(`展开组 ${groupId} 编辑模式：左键加入，右键移出`, "info");
+}
+
+function buildFaceColorMap(object: Object3D) {
+  faceColorMap = new Map<number, string>();
+  faceAdjacency = new Map<number, Set<number>>();
+  faceIndexMap = new Map<number, { mesh: Mesh; localFace: number }>();
+  meshFaceIdMap = new Map<string, Map<number, number>>();
+  faceGroupMap = new Map<number, number | null>();
+  groupFaces = new Map<number, Set<number>>();
+  groupFaces.set(1, new Set<number>());
+  editGroupId = null;
+  const edgeMap = new Map<string, number[]>();
+  let faceId = 0;
+
+  const vertexKey = (pos: any, idx: number) =>
+    `${pos.getX(idx)},${pos.getY(idx)},${pos.getZ(idx)}`;
+
+  object.traverse((child) => {
+    if (!(child as Mesh).isMesh) return;
+    const mesh = child as Mesh;
+    if (mesh.userData.functional) return;
+    const geometry = mesh.geometry;
+    const indexAttr = geometry.index;
+    const position = geometry.getAttribute("position");
+    if (!position) return;
+    const faceCount = indexAttr ? indexAttr.count / 3 : position.count / 3;
+
+    if (!meshFaceIdMap.has(mesh.uuid)) {
+      meshFaceIdMap.set(mesh.uuid, new Map<number, number>());
+    }
+    const localMap = meshFaceIdMap.get(mesh.uuid)!;
+
+    for (let f = 0; f < faceCount; f++) {
+      faceColorMap.set(faceId, FACE_DEFAULT_COLOR.getHexString());
+      faceGroupMap.set(faceId, null);
+      faceIndexMap.set(faceId, { mesh, localFace: f });
+      localMap.set(f, faceId);
+      const [a, b, c] = getFaceVertexIndices(geometry, f);
+      const va = vertexKey(position, a);
+      const vb = vertexKey(position, b);
+      const vc = vertexKey(position, c);
+      const edges = [
+        [va, vb],
+        [vb, vc],
+        [vc, va],
+      ];
+      edges.forEach(([p1, p2]) => {
+        const key = [p1, p2].sort().join("|");
+        const faces = edgeMap.get(key) ?? [];
+        faces.push(faceId);
+        edgeMap.set(key, faces);
+      });
+      faceId++;
+    }
+  });
+
+  edgeMap.forEach((faces) => {
+    if (faces.length < 2) return;
+    for (let i = 0; i < faces.length; i++) {
+      for (let j = i + 1; j < faces.length; j++) {
+        const a = faces[i];
+        const b = faces[j];
+        if (!faceAdjacency.has(a)) faceAdjacency.set(a, new Set<number>());
+        if (!faceAdjacency.has(b)) faceAdjacency.set(b, new Set<number>());
+        faceAdjacency.get(a)!.add(b);
+        faceAdjacency.get(b)!.add(a);
+      }
+    }
+  });
+}
+
 function generateFunctionalMaterials(root: Object3D) {
   const replacements: { parent: Object3D; mesh: Mesh }[] = [];
   root.traverse((child) => {
     if ((child as Mesh).isMesh) {
       const mesh = child as Mesh;
       if (mesh.userData.functional) return;
+      applyDefaultFaceColors(mesh);
       replacements.push({ parent: mesh.parent ? mesh.parent : root, mesh });
     }
   });
@@ -639,11 +1001,14 @@ async function loadModel(file: File, ext: string) {
     currentModel = object;
     lastFileName = file.name;
     generateFunctionalMaterials(currentModel);
+    buildFaceColorMap(currentModel);
     applyFaceVisibility();
     modelGroup.add(currentModel);
     lastTriangleCount = countTrianglesInObject(currentModel);
     rebuildSeams();
     fitCameraToObject(currentModel);
+    showWorkspace(true);
+     resizeRenderer(); // 确保从隐藏切换到可见后尺寸正确
     setStatus(`已加载：${file.name} · 三角面 ${lastTriangleCount}`, "success");
     exportBtn.disabled = false;
   } catch (error) {
@@ -724,8 +1089,80 @@ function animate() {
   requestAnimationFrame(animate);
   controls.update();
   renderer.render(scene, camera);
-  triCounter.textContent = `三角面：${renderer.info.render.triangles}`;
+  triCounter.textContent = `渲染三角形：${renderer.info.render.triangles}`;
 }
 
 resizeRenderer();
 animate();
+
+// Hover highlight
+renderer.domElement.addEventListener("pointermove", (event) => {
+  if (!currentModel || !facesVisible) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+
+  const intersects = raycaster.intersectObject(currentModel, true).filter((i) => {
+    const mesh = i.object as Mesh;
+    return (mesh as Mesh).isMesh && !(mesh as Mesh).userData.functional;
+  });
+
+  clearHover();
+
+  if (!intersects.length) return;
+  const hit = intersects[0];
+  const mesh = hit.object as Mesh;
+  const faceIndex = hit.faceIndex ?? -1;
+  const faceId = getFaceIdFromIntersection(mesh, faceIndex);
+  if (faceId === null) return;
+  const geometry = mesh.geometry;
+  const colorsAttr = geometry.getAttribute("color") as Float32BufferAttribute;
+  if (faceIndex < 0 || !colorsAttr) return;
+
+  const indices = getFaceVertexIndices(geometry, faceIndex);
+  const original: number[] = [];
+  indices.forEach((idx) => {
+    original.push(colorsAttr.array[idx * 3], colorsAttr.array[idx * 3 + 1], colorsAttr.array[idx * 3 + 2]);
+  });
+
+  const baseColor = new Color().fromArray(colorsAttr.array as Float32Array, indices[0] * 3);
+  const highlight = baseColor.clone();
+  highlight.r = Math.min(1, highlight.r * HIGHLIGHT_SCALE);
+  highlight.g = Math.min(1, highlight.g * HIGHLIGHT_SCALE);
+  highlight.b = Math.min(1, highlight.b * HIGHLIGHT_SCALE);
+  setFaceColor(mesh, faceIndex, highlight);
+  hovered = { mesh, indices, original, faceId };
+});
+
+renderer.domElement.addEventListener("pointerleave", () => {
+  clearHover();
+});
+
+renderer.domElement.addEventListener("pointerdown", (event) => {
+  if (!currentModel || editGroupId === null) return;
+  const faceId = pickFace(event);
+  if (faceId === null) return;
+  if (event.button === 0) {
+    handleAddFace(faceId);
+  } else if (event.button === 2) {
+    handleRemoveFace(faceId);
+  }
+});
+
+renderer.domElement.addEventListener("contextmenu", (event) => {
+  event.preventDefault();
+});
+
+window.addEventListener("keydown", (event) => {
+  if (!currentModel) return;
+  if (event.key === "Escape") {
+    setEditGroup(null);
+    return;
+  }
+  const num = Number(event.key);
+  if (!Number.isInteger(num) || num <= 0) return;
+  if (groupFaces.has(num)) {
+    setEditGroup(num);
+  }
+});
