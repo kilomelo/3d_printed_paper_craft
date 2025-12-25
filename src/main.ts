@@ -29,7 +29,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 
-const VERSION = "1.0.1.27";
+const VERSION = "1.0.1.37";
 const FORMAT_VERSION = "1.0";
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -54,7 +54,7 @@ app.innerHTML = `
       </div>
     </section>
 
-    <section id="layout-workspace" class="layout">
+  <section id="layout-workspace" class="layout">
       <div class="workspace">
         <div class="panel">
           <div class="toolbar">
@@ -74,8 +74,20 @@ app.innerHTML = `
           <div class="status" id="status">尚未加载模型</div>
         </div>
         <div class="panel right-panel">
-          <h2>展开组预览</h2>
-          <div class="placeholder-card">展开面片组预览区域（待开发）</div>
+            <div class="group-header">
+            <h2>展开组预览</h2>
+            <div class="group-tabs" id="group-tabs"></div>
+            <button class="btn tab-add" id="group-add">+</button>
+          </div>
+          <div class="placeholder-card" id="group-preview">
+            <div class="group-preview-actions">
+              <button class="color-swatch" id="group-color-btn"></button>
+              <input type="color" id="group-color-input" class="color-input" />
+              <span class="group-count" id="group-count">面数量 0</span>
+              <button class="btn tab-add delete" id="group-delete" title="删除展开组">×</button>
+            </div>
+            <div class="group-preview-label" id="group-preview-label">展开组1</div>
+          </div>
         </div>
       </div>
     </section>
@@ -93,6 +105,14 @@ const seamsToggle = document.querySelector<HTMLButtonElement>("#seams-toggle");
 const facesToggle = document.querySelector<HTMLButtonElement>("#faces-toggle");
 const exportBtn = document.querySelector<HTMLButtonElement>("#export-btn");
 const triCounter = document.querySelector<HTMLDivElement>("#tri-counter");
+const groupTabsEl = document.querySelector<HTMLDivElement>("#group-tabs");
+const groupAddBtn = document.querySelector<HTMLButtonElement>("#group-add");
+const groupPreview = document.querySelector<HTMLDivElement>("#group-preview");
+const groupPreviewLabel = document.querySelector<HTMLDivElement>("#group-preview-label");
+const groupCountLabel = document.querySelector<HTMLSpanElement>("#group-count");
+const groupColorBtn = document.querySelector<HTMLButtonElement>("#group-color-btn");
+const groupColorInput = document.querySelector<HTMLInputElement>("#group-color-input");
+const groupDeleteBtn = document.querySelector<HTMLButtonElement>("#group-delete");
 const layoutEmpty = document.querySelector<HTMLElement>("#layout-empty");
 const layoutWorkspace = document.querySelector<HTMLElement>("#layout-workspace");
 
@@ -109,6 +129,14 @@ if (
   !facesToggle ||
   !exportBtn ||
   !triCounter ||
+  !groupTabsEl ||
+  !groupAddBtn ||
+  !groupPreview ||
+  !groupPreviewLabel ||
+  !groupCountLabel ||
+  !groupColorBtn ||
+  !groupColorInput ||
+  !groupDeleteBtn ||
   !layoutEmpty ||
   !layoutWorkspace
 ) {
@@ -151,9 +179,6 @@ const stlLoader = new STLLoader();
 const allowedExtensions = ["obj", "fbx", "stl", "3dppc"];
 const FACE_DEFAULT_COLOR = new Color(0x9ad6ff);
 const HIGHLIGHT_SCALE = 1.2;
-const GROUP_COLORS: Record<number, Color> = {
-  1: new Color(0x22c55e),
-};
 let edgesVisible = true;
 let seamsVisible = false;
 let facesVisible = true;
@@ -168,6 +193,13 @@ let meshFaceIdMap = new Map<string, Map<number, number>>();
 let faceGroupMap = new Map<number, number | null>();
 let groupFaces = new Map<number, Set<number>>();
 let editGroupId: number | null = null;
+let previewGroupId = 1;
+let groupColors = new Map<number, Color>([
+  [1, new Color(0x22c55e)],
+  [2, new Color(0xfacc15)],
+  [3, new Color(0xa855f7)],
+]);
+groupFaces.set(1, new Set<number>());
 const raycaster = new Raycaster();
 const pointer = new Vector2();
 let hovered: {
@@ -176,6 +208,10 @@ let hovered: {
   original: number[];
   faceId: number | null;
 } = { mesh: null, indices: [], original: [], faceId: null };
+let brushMode = false;
+let brushButton: number | null = null;
+let lastBrushedFace: number | null = null;
+let controlsEnabledBeforeBrush = true;
 
 edgesToggle.classList.toggle("active", edgesVisible);
 edgesToggle.textContent = `线框：${edgesVisible ? "开" : "关"}`;
@@ -184,6 +220,8 @@ seamsToggle.textContent = `接缝：${seamsVisible ? "开" : "关"}`;
 facesToggle.classList.toggle("active", facesVisible);
 facesToggle.textContent = `面渲染：${facesVisible ? "开" : "关"}`;
 showWorkspace(false);
+renderGroupTabs();
+updateGroupPreview();
 
 function setStatus(message: string, tone: "info" | "error" | "success" = "info") {
   if (message === lastStatus.message && tone === lastStatus.tone) {
@@ -217,6 +255,7 @@ function showWorkspace(loaded: boolean) {
 }
 
 function clearModel() {
+  endBrush();
   modelGroup.clear();
   disposeSeams();
   currentModel = null;
@@ -230,6 +269,10 @@ function clearModel() {
   meshFaceIdMap.clear();
   faceGroupMap.clear();
   groupFaces.clear();
+  groupFaces.set(1, new Set<number>());
+  previewGroupId = 1;
+  updateGroupPreview();
+  renderGroupTabs();
   clearHover();
   editGroupId = null;
 }
@@ -446,11 +489,37 @@ function getFaceIdFromIntersection(mesh: Mesh, localFace: number | undefined): n
   return map.get(localFace) ?? null;
 }
 
+function defaultColorForGroup(id: number): Color {
+  const palette = [0x22c55e, 0xfacc15, 0xa855f7];
+  const base = palette[(id - 1) % palette.length];
+  const c = new Color(base);
+  // 稍微偏移色相，避免过多重复
+  c.offsetHSL(((id - 1) * 0.07) % 1, 0, 0);
+  return c;
+}
+
+function getGroupColor(id: number): Color {
+  if (!groupColors.has(id)) {
+    groupColors.set(id, defaultColorForGroup(id));
+  }
+  return groupColors.get(id)!.clone();
+}
+
+function setGroupColor(groupId: number, color: Color) {
+  groupColors.set(groupId, color);
+  const faces = groupFaces.get(groupId);
+  if (faces) {
+    faces.forEach((faceId) => updateFaceColorById(faceId));
+  }
+  updateGroupPreview();
+  renderGroupTabs();
+}
+
 function updateFaceColorById(faceId: number) {
   const mapping = faceIndexMap.get(faceId);
   if (!mapping) return;
   const groupId = faceGroupMap.get(faceId) ?? null;
-  const baseColor = groupId && GROUP_COLORS[groupId] ? GROUP_COLORS[groupId] : FACE_DEFAULT_COLOR;
+  const baseColor = groupId !== null ? getGroupColor(groupId) : FACE_DEFAULT_COLOR;
   setFaceColor(mapping.mesh, mapping.localFace, baseColor);
 
   const colorsAttr = mapping.mesh.geometry.getAttribute("color") as Float32BufferAttribute | null;
@@ -476,8 +545,13 @@ function updateFaceColorById(faceId: number) {
 }
 
 function setFaceGroup(faceId: number, groupId: number | null) {
+  const hasPrev = faceGroupMap.has(faceId);
   const prev = faceGroupMap.get(faceId) ?? null;
-  if (prev === groupId) return;
+  if (hasPrev && prev === groupId) return;
+
+  const affected = new Set<number>();
+  if (prev !== null) affected.add(prev);
+  if (groupId !== null) affected.add(groupId);
 
   if (prev !== null) {
     groupFaces.get(prev)?.delete(faceId);
@@ -491,6 +565,9 @@ function setFaceGroup(faceId: number, groupId: number | null) {
   }
 
   updateFaceColorById(faceId);
+  if (affected.has(previewGroupId)) {
+    updateGroupPreview();
+  }
 }
 
 function shareEdgeWithGroup(faceId: number, groupId: number): boolean {
@@ -561,7 +638,7 @@ function handleRemoveFace(faceId: number) {
     setFaceGroup(faceId, null);
     const newSize = groupFaces.get(editGroupId)?.size ?? 0;
     console.log("[group] remove success", { faceId, groupId: editGroupId, size: newSize });
-    setStatus(`已从组 ${editGroupId} 移除`, "success");
+    setStatus(`已从组${editGroupId}移除（面数量 ${newSize}）`, "success");
   } else {
     console.log("[group] remove blocked: disconnect", { faceId, groupId: editGroupId });
     setStatus("移除会导致展开组不连通，已取消", "error");
@@ -601,10 +678,35 @@ function handleAddFace(faceId: number) {
   setFaceGroup(faceId, targetGroup);
   const newSize = groupFaces.get(targetGroup)?.size ?? 0;
   console.log("[group] add success", { faceId, targetGroup, size: newSize });
-  setStatus(`已加入组 ${targetGroup}`, "success");
+  setStatus(`已加入组${targetGroup}（面数量 ${newSize}）`, "success");
+}
+
+function startBrush(button: number, initialFace: number | null) {
+  if (editGroupId === null) return;
+  if (initialFace === null) return;
+  brushMode = true;
+  brushButton = button;
+  lastBrushedFace = null;
+  controlsEnabledBeforeBrush = controls.enabled;
+  controls.enabled = false;
+  if (button === 0) {
+    handleAddFace(initialFace);
+  } else if (button === 2) {
+    handleRemoveFace(initialFace);
+  }
+  lastBrushedFace = initialFace;
+}
+
+function endBrush() {
+  if (!brushMode) return;
+  brushMode = false;
+  brushButton = null;
+  lastBrushedFace = null;
+  controls.enabled = controlsEnabledBeforeBrush;
 }
 
 function setEditGroup(groupId: number | null) {
+  if (brushMode) endBrush();
   editGroupId = groupId;
   if (groupId === null) {
     console.log("[group] exit edit mode");
@@ -614,8 +716,110 @@ function setEditGroup(groupId: number | null) {
   if (!groupFaces.has(groupId)) {
     groupFaces.set(groupId, new Set<number>());
   }
+  previewGroupId = groupId;
+  updateGroupPreview();
+  renderGroupTabs();
   console.log("[group] enter edit mode", { groupId });
   setStatus(`展开组 ${groupId} 编辑模式：左键加入，右键移出`, "info");
+}
+
+function updateGroupPreview() {
+  if (!groupPreview || !groupPreviewLabel || !groupColorBtn || !groupColorInput || !groupDeleteBtn || !groupCountLabel)
+    return;
+  groupPreviewLabel.textContent = `展开组${previewGroupId}`;
+  const color = getGroupColor(previewGroupId);
+  const hex = `#${color.getHexString()}`;
+  groupColorBtn.style.background = hex;
+  groupColorInput.value = hex;
+  const count = groupFaces.get(previewGroupId)?.size ?? 0;
+  groupCountLabel.textContent = `面数量 ${count}`;
+  const deletable = groupFaces.size > 1;
+  groupDeleteBtn.style.display = deletable ? "inline-flex" : "none";
+}
+
+function renderGroupTabs() {
+  if (!groupTabsEl) return;
+  groupTabsEl.innerHTML = "";
+  const ids = Array.from(groupFaces.keys()).sort((a, b) => a - b);
+  ids.forEach((id) => {
+    const btn = document.createElement("button");
+    btn.className = `tab-btn ${id === previewGroupId ? "active" : ""} ${editGroupId === id ? "editing" : ""}`;
+    btn.textContent = `${id}`;
+    btn.addEventListener("click", () => {
+      if (editGroupId === null) {
+        previewGroupId = id;
+        updateGroupPreview();
+        renderGroupTabs();
+        setStatus(`预览展开组 ${id}`, "info");
+      } else {
+        setEditGroup(id);
+      }
+    });
+    groupTabsEl.appendChild(btn);
+  });
+}
+
+function getNextGroupId(): number {
+  let id = 1;
+  while (groupFaces.has(id)) id += 1;
+  return id;
+}
+
+function deleteGroup(groupId: number) {
+  if (groupFaces.size <= 1) return;
+  const ids = Array.from(groupFaces.keys());
+  if (!ids.includes(groupId)) return;
+
+  const newColors = new Map<number, Color>();
+  groupColors.forEach((c, id) => {
+    if (id === groupId) return;
+    const newId = id > groupId ? id - 1 : id;
+    newColors.set(newId, c);
+  });
+
+  const assignments: Array<{ faceId: number; groupId: number | null }> = [];
+  faceGroupMap.forEach((gid, faceId) => {
+    if (gid === null) {
+      assignments.push({ faceId, groupId: null });
+    } else if (gid === groupId) {
+      assignments.push({ faceId, groupId: null });
+    } else {
+      assignments.push({ faceId, groupId: gid > groupId ? gid - 1 : gid });
+    }
+  });
+
+  faceGroupMap.clear();
+  groupColors = newColors;
+  if (groupColors.size === 0) {
+    groupColors.set(1, defaultColorForGroup(1));
+  }
+  groupFaces = new Map<number, Set<number>>();
+  groupColors.forEach((_, id) => {
+    groupFaces.set(id, new Set<number>());
+  });
+
+  assignments.forEach(({ faceId, groupId }) => {
+    setFaceGroup(faceId, groupId);
+  });
+
+  let candidates = Array.from(groupFaces.keys()).sort((a, b) => a - b);
+  if (!candidates.length) {
+    groupFaces.set(1, new Set<number>());
+    groupColors.set(1, defaultColorForGroup(1));
+    candidates = [1];
+  }
+  const maxId = candidates[candidates.length - 1];
+  let target = groupId - 1;
+  if (target < 1) target = 1;
+  if (target > maxId) target = maxId;
+  previewGroupId = target;
+  if (editGroupId !== null) {
+    setEditGroup(previewGroupId);
+  } else {
+    updateGroupPreview();
+    renderGroupTabs();
+  }
+  setStatus(`已删除展开组 ${groupId}`, "success");
 }
 
 function buildFaceColorMap(object: Object3D) {
@@ -627,6 +831,9 @@ function buildFaceColorMap(object: Object3D) {
   groupFaces = new Map<number, Set<number>>();
   groupFaces.set(1, new Set<number>());
   editGroupId = null;
+  previewGroupId = 1;
+  renderGroupTabs();
+  updateGroupPreview();
   const edgeMap = new Map<string, number[]>();
   let faceId = 0;
 
@@ -1110,11 +1317,21 @@ renderer.domElement.addEventListener("pointermove", (event) => {
 
   clearHover();
 
-  if (!intersects.length) return;
+  if (!intersects.length) {
+    if (brushMode) lastBrushedFace = null;
+    return;
+  }
   const hit = intersects[0];
   const mesh = hit.object as Mesh;
   const faceIndex = hit.faceIndex ?? -1;
   const faceId = getFaceIdFromIntersection(mesh, faceIndex);
+  if (brushMode && faceId !== lastBrushedFace) {
+    if (faceId !== null) {
+      if (brushButton === 0) handleAddFace(faceId);
+      else if (brushButton === 2) handleRemoveFace(faceId);
+    }
+    lastBrushedFace = faceId;
+  }
   if (faceId === null) return;
   const geometry = mesh.geometry;
   const colorsAttr = geometry.getAttribute("color") as Float32BufferAttribute;
@@ -1143,21 +1360,54 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   if (!currentModel || editGroupId === null) return;
   const faceId = pickFace(event);
   if (faceId === null) return;
-  if (event.button === 0) {
-    handleAddFace(faceId);
-  } else if (event.button === 2) {
-    handleRemoveFace(faceId);
-  }
+  startBrush(event.button, faceId);
 });
 
 renderer.domElement.addEventListener("contextmenu", (event) => {
   event.preventDefault();
 });
 
+window.addEventListener("pointerup", () => {
+  if (brushMode) endBrush();
+});
+
+groupAddBtn.addEventListener("click", () => {
+  const newId = getNextGroupId();
+  groupFaces.set(newId, new Set<number>());
+  setGroupColor(newId, getGroupColor(newId));
+  previewGroupId = newId;
+  updateGroupPreview();
+  renderGroupTabs();
+  setStatus(`已创建展开组 ${newId}`, "success");
+  if (editGroupId !== null) {
+    setEditGroup(newId);
+  }
+});
+
+groupColorBtn.addEventListener("click", () => {
+  groupColorInput.click();
+});
+
+groupColorInput.addEventListener("input", (event) => {
+  const value = (event.target as HTMLInputElement).value;
+  if (!value) return;
+  const color = new Color(value);
+  setGroupColor(previewGroupId, color);
+});
+
+groupDeleteBtn.addEventListener("click", () => {
+  if (groupFaces.size <= 1) return;
+  const ok = confirm(`确定删除展开组 ${previewGroupId} 吗？该组的面将被移出。`);
+  if (!ok) return;
+  deleteGroup(previewGroupId);
+});
+
 window.addEventListener("keydown", (event) => {
   if (!currentModel) return;
   if (event.key === "Escape") {
-    setEditGroup(null);
+    if (editGroupId !== null) {
+      setEditGroup(null);
+    }
     return;
   }
   const num = Number(event.key);
