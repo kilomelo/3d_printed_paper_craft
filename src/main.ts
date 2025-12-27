@@ -13,11 +13,12 @@ import {
   Float32BufferAttribute,
   FrontSide,
   BackSide,
-  DoubleSide,
   PerspectiveCamera,
   Scene,
   Vector2,
   WebGLRenderer,
+  NoToneMapping,
+  SRGBColorSpace,
   Raycaster,
   type Object3D,
 } from "three";
@@ -29,7 +30,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 
-const VERSION = "1.0.1.37";
+const VERSION = "1.0.2.0";
 const FORMAT_VERSION = "1.0";
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -61,9 +62,9 @@ app.innerHTML = `
             <label class="upload" for="file-input">
               <span>打开模型</span>
             </label>
-            <button class="btn active" id="light-toggle">主光源：开</button>
+            <button class="btn active" id="light-toggle">光源：开</button>
             <button class="btn" id="edges-toggle">线框：关</button>
-            <button class="btn" id="seams-toggle">接缝：关</button>
+            <button class="btn" id="seams-toggle">拼接边：关</button>
             <button class="btn active" id="faces-toggle">面渲染：开</button>
             <button class="btn" id="export-btn" disabled>导出 .3dppc</button>
           </div>
@@ -159,6 +160,9 @@ const renderer = new WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(viewer.clientWidth, viewer.clientHeight);
 renderer.setClearColor("#a8b4c0", 1);
+renderer.toneMapping = NoToneMapping;
+// @ts-expect-error three typings may differ by version
+renderer.outputColorSpace = SRGBColorSpace;
 viewer.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -166,7 +170,7 @@ controls.target.set(0, 0, 0);
 
 const ambient = new AmbientLight(0xffffff, 0.6);
 const dir = new DirectionalLight(0xffffff, 0.8);
-dir.position.set(4, 6, 8);
+dir.position.set(4, -6, 8);
 scene.add(ambient, dir);
 
 const modelGroup = new Group();
@@ -177,13 +181,17 @@ const fbxLoader = new FBXLoader();
 const stlLoader = new STLLoader();
 
 const allowedExtensions = ["obj", "fbx", "stl", "3dppc"];
-const FACE_DEFAULT_COLOR = new Color(0x9ad6ff);
-const HIGHLIGHT_SCALE = 1.2;
+const FACE_DEFAULT_COLOR = new Color(0xffffff);
+const GROUP_COLOR_PALETTE = [0x759fff, 0xff5757, 0xffff00, 0x00ee00, 0x00ffff, 0xff70ff];
+const BREATH_PERIOD = 300; // ms
+const BREATH_CYCLES = 3; // 呼吸循环次数
+const BREATH_DURATION = BREATH_PERIOD * BREATH_CYCLES;
+const BREATH_SCALE = 0.4; // 呼吸幅度
 let edgesVisible = true;
-let seamsVisible = false;
+let seamsVisible = true;
 let facesVisible = true;
 let currentModel: Object3D | null = null;
-let seamLines: LineSegments2[] = [];
+let seamLines = new Map<number, LineSegments2>();
 let lastFileName = "model";
 let lastTriangleCount = 0;
 let faceColorMap = new Map<number, string>();
@@ -192,31 +200,32 @@ let faceIndexMap = new Map<number, { mesh: Mesh; localFace: number }>();
 let meshFaceIdMap = new Map<string, Map<number, number>>();
 let faceGroupMap = new Map<number, number | null>();
 let groupFaces = new Map<number, Set<number>>();
+let faceToEdges = new Map<number, [number, number, number]>();
+let edges: { id: number; key: string; faces: Set<number>; vertices: [string, string] }[] = [];
+let edgeKeyToId = new Map<string, number>();
+let groupTreeParent = new Map<number, Map<number, number | null>>();
+let vertexKeyToPos = new Map<string, Vector3>();
 let editGroupId: number | null = null;
 let previewGroupId = 1;
-let groupColors = new Map<number, Color>([
-  [1, new Color(0x22c55e)],
-  [2, new Color(0xfacc15)],
-  [3, new Color(0xa855f7)],
-]);
-groupFaces.set(1, new Set<number>());
+let groupColors = new Map<number, Color>();
+let groupColorCursor = 0;
 const raycaster = new Raycaster();
 const pointer = new Vector2();
-let hovered: {
-  mesh: Mesh | null;
-  indices: number[];
-  original: number[];
-  faceId: number | null;
-} = { mesh: null, indices: [], original: [], faceId: null };
 let brushMode = false;
 let brushButton: number | null = null;
 let lastBrushedFace: number | null = null;
 let controlsEnabledBeforeBrush = true;
+const hoverLines: LineSegments2[] = [];
+let hoveredFaceId: number | null = null;
+let breathGroupId: number | null = null;
+let breathStart = 0;
+let breathEnd = 0;
+let breathRaf: number | null = null;
 
 edgesToggle.classList.toggle("active", edgesVisible);
 edgesToggle.textContent = `线框：${edgesVisible ? "开" : "关"}`;
 seamsToggle.classList.toggle("active", seamsVisible);
-seamsToggle.textContent = `接缝：${seamsVisible ? "开" : "关"}`;
+seamsToggle.textContent = `拼接边：${seamsVisible ? "开" : "关"}`;
 facesToggle.classList.toggle("active", facesVisible);
 facesToggle.textContent = `面渲染：${facesVisible ? "开" : "关"}`;
 showWorkspace(false);
@@ -234,30 +243,17 @@ function setStatus(message: string, tone: "info" | "error" | "success" = "info")
   statusEl.className = `status ${tone === "info" ? "" : tone}`;
 }
 
-function clearHover() {
-  if (!hovered.mesh || !hovered.original.length) return;
-  const geometry = hovered.mesh.geometry;
-  const colorsAttr = geometry.getAttribute("color") as Float32BufferAttribute;
-  if (colorsAttr) {
-    hovered.indices.forEach((idx, i) => {
-      colorsAttr.array[idx * 3] = hovered.original[i * 3];
-      colorsAttr.array[idx * 3 + 1] = hovered.original[i * 3 + 1];
-      colorsAttr.array[idx * 3 + 2] = hovered.original[i * 3 + 2];
-    });
-    colorsAttr.needsUpdate = true;
-  }
-  hovered = { mesh: null, indices: [], original: [], faceId: null };
-}
-
 function showWorkspace(loaded: boolean) {
   layoutEmpty.classList.toggle("active", !loaded);
   layoutWorkspace.classList.toggle("active", loaded);
 }
 
 function clearModel() {
+  stopGroupBreath();
   endBrush();
   modelGroup.clear();
   disposeSeams();
+  disposeHoverLines();
   currentModel = null;
   exportBtn.disabled = true;
   lastTriangleCount = 0;
@@ -268,12 +264,21 @@ function clearModel() {
   faceIndexMap.clear();
   meshFaceIdMap.clear();
   faceGroupMap.clear();
-  groupFaces.clear();
+  groupFaces = new Map<number, Set<number>>();
+  faceToEdges = new Map<number, [number, number, number]>();
+  edges = [];
+  edgeKeyToId = new Map<string, number>();
+  groupTreeParent = new Map<number, Map<number, number | null>>();
+  vertexKeyToPos = new Map<string, Vector3>();
+  groupColors = new Map<number, Color>();
+  groupColorCursor = 0;
   groupFaces.set(1, new Set<number>());
+  getGroupColor(1);
   previewGroupId = 1;
   updateGroupPreview();
   renderGroupTabs();
-  clearHover();
+  seamLines.clear();
+  hideHoverLines();
   editGroupId = null;
 }
 
@@ -297,6 +302,12 @@ type PPCFile = {
   };
   vertices: number[][];
   triangles: number[][];
+  groups?: {
+    id: number;
+    color: string;
+    faces: number[];
+  }[];
+  groupColorCursor?: number;
   annotations?: Record<string, unknown>;
 };
 
@@ -350,9 +361,9 @@ function triangleArea(a: number[], b: number[], c: number[]): number {
   return ab.cross(ac).length() * 0.5;
 }
 
-function filterLargestComponent(geom: PPCGeometry): PPCGeometry {
+function filterLargestComponent(geom: PPCGeometry): { vertices: number[][]; triangles: number[][]; mapping: number[] } {
   const { vertices, triangles } = geom;
-  if (triangles.length === 0) return geom;
+  if (triangles.length === 0) return { ...geom, mapping: [] };
 
   // collectGeometry 为硬边模式，每个三角的三个顶点都是独立的。
   // 建连通性时按坐标匹配顶点来判断三角是否相邻。
@@ -416,7 +427,12 @@ function filterLargestComponent(geom: PPCGeometry): PPCGeometry {
     return [oldToNew.get(a)!, oldToNew.get(b)!, oldToNew.get(c)!];
   });
 
-  return { vertices: newVertices, triangles: newTriangles };
+  const mapping = new Array(triangles.length).fill(-1);
+  best.triIdx.forEach((oldIdx, newIdx) => {
+    mapping[oldIdx] = newIdx;
+  });
+
+  return { vertices: newVertices, triangles: newTriangles, mapping };
 }
 
 function createFrontMaterial(baseColor?: Color) {
@@ -489,18 +505,15 @@ function getFaceIdFromIntersection(mesh: Mesh, localFace: number | undefined): n
   return map.get(localFace) ?? null;
 }
 
-function defaultColorForGroup(id: number): Color {
-  const palette = [0x22c55e, 0xfacc15, 0xa855f7];
-  const base = palette[(id - 1) % palette.length];
-  const c = new Color(base);
-  // 稍微偏移色相，避免过多重复
-  c.offsetHSL(((id - 1) * 0.07) % 1, 0, 0);
-  return c;
+function nextPaletteColor(): Color {
+  const color = new Color(GROUP_COLOR_PALETTE[groupColorCursor % GROUP_COLOR_PALETTE.length]);
+  groupColorCursor = (groupColorCursor + 1) % GROUP_COLOR_PALETTE.length;
+  return color;
 }
 
 function getGroupColor(id: number): Color {
   if (!groupColors.has(id)) {
-    groupColors.set(id, defaultColorForGroup(id));
+    groupColors.set(id, nextPaletteColor());
   }
   return groupColors.get(id)!.clone();
 }
@@ -521,27 +534,6 @@ function updateFaceColorById(faceId: number) {
   const groupId = faceGroupMap.get(faceId) ?? null;
   const baseColor = groupId !== null ? getGroupColor(groupId) : FACE_DEFAULT_COLOR;
   setFaceColor(mapping.mesh, mapping.localFace, baseColor);
-
-  const colorsAttr = mapping.mesh.geometry.getAttribute("color") as Float32BufferAttribute | null;
-  if (hovered.faceId === faceId && hovered.mesh === mapping.mesh && colorsAttr) {
-    const indices = getFaceVertexIndices(mapping.mesh.geometry, mapping.localFace);
-    hovered.indices = indices;
-    hovered.original = [];
-    indices.forEach((idx) => {
-      hovered.original.push(
-        colorsAttr.array[idx * 3],
-        colorsAttr.array[idx * 3 + 1],
-        colorsAttr.array[idx * 3 + 2],
-      );
-    });
-    // 重新应用悬停高亮
-    const base = new Color().fromArray(colorsAttr.array as Float32Array, indices[0] * 3);
-    const highlight = base.clone();
-    highlight.r = Math.min(1, highlight.r * HIGHLIGHT_SCALE);
-    highlight.g = Math.min(1, highlight.g * HIGHLIGHT_SCALE);
-    highlight.b = Math.min(1, highlight.b * HIGHLIGHT_SCALE);
-    setFaceColor(mapping.mesh, mapping.localFace, highlight);
-  }
 }
 
 function setFaceGroup(faceId: number, groupId: number | null) {
@@ -567,6 +559,10 @@ function setFaceGroup(faceId: number, groupId: number | null) {
   updateFaceColorById(faceId);
   if (affected.has(previewGroupId)) {
     updateGroupPreview();
+  }
+  affected.forEach((gid) => rebuildGroupTree(gid));
+  if (groupId !== null && !affected.has(groupId)) {
+    rebuildGroupTree(groupId);
   }
 }
 
@@ -610,6 +606,91 @@ function canRemoveFace(groupId: number, faceId: number): boolean {
   return visited.size === remaining.size;
 }
 
+function areFacesAdjacent(a: number, b: number): boolean {
+  const set = faceAdjacency.get(a);
+  return set ? set.has(b) : false;
+}
+
+function logGroupTree(groupId: number, parentMap: Map<number, number | null>) {
+  if (!parentMap.size) {
+    console.log("[tree] group empty", { groupId });
+    return;
+  }
+  const children = new Map<number, number[]>();
+  parentMap.forEach((parent, face) => {
+    if (parent === null) return;
+    const list = children.get(parent) ?? [];
+    list.push(face);
+    children.set(parent, list);
+  });
+
+  const roots = Array.from(parentMap.entries())
+    .filter(([, parent]) => parent === null)
+    .map(([face]) => face);
+
+  const pairs: string[] = [];
+  const queue = [...roots];
+  while (queue.length) {
+    const node = queue.shift()!;
+    (children.get(node) ?? []).forEach((child) => {
+      pairs.push(`${node}-${child}`);
+      queue.push(child);
+    });
+  }
+  console.log("[tree] group", { groupId, pairs: pairs.join(" / ") });
+}
+
+function rebuildGroupTree(groupId: number) {
+  const faces = groupFaces.get(groupId);
+  const parentMap = new Map<number, number | null>();
+  if (!faces || faces.size === 0) {
+    groupTreeParent.set(groupId, parentMap);
+    logGroupTree(groupId, parentMap);
+    return;
+  }
+  const order = Array.from(faces); // 按加入顺序
+  const assigned = new Set<number>();
+  const assignedOrder: number[] = [];
+
+  const assign = (face: number, parent: number | null) => {
+    parentMap.set(face, parent);
+    assigned.add(face);
+    assignedOrder.push(face);
+  };
+
+  assign(order[0], null);
+
+  while (assigned.size < order.length) {
+    let progressed = false;
+    for (let i = 1; i < order.length; i++) {
+      const face = order[i];
+      if (assigned.has(face)) continue;
+      // 在已分配的面中寻找最近的相邻面作为父节点（按已分配顺序从后往前找）
+      let parent: number | null = null;
+      for (let j = assignedOrder.length - 1; j >= 0; j--) {
+        const candidate = assignedOrder[j];
+        if (areFacesAdjacent(face, candidate)) {
+          parent = candidate;
+          break;
+        }
+      }
+      if (parent !== null) {
+        assign(face, parent);
+        progressed = true;
+      }
+    }
+    if (!progressed) {
+      // 理论上不会发生（因连通性保证），若发生记录错误并挂到根
+      const remaining = order.find((f) => !assigned.has(f))!;
+      console.error("[tree] rebuild invariant violated: no parent found", { groupId, remaining, order });
+      assign(remaining, assignedOrder[0]);
+    }
+  }
+
+  groupTreeParent.set(groupId, parentMap);
+  logGroupTree(groupId, parentMap);
+}
+
 function pickFace(event: PointerEvent): number | null {
   if (!currentModel || !facesVisible) return null;
   const rect = renderer.domElement.getBoundingClientRect();
@@ -639,6 +720,9 @@ function handleRemoveFace(faceId: number) {
     const newSize = groupFaces.get(editGroupId)?.size ?? 0;
     console.log("[group] remove success", { faceId, groupId: editGroupId, size: newSize });
     setStatus(`已从组${editGroupId}移除（面数量 ${newSize}）`, "success");
+    const facesToUpdate = new Set<number>([faceId]);
+    (groupFaces.get(editGroupId) ?? new Set<number>()).forEach((f) => facesToUpdate.add(f));
+    rebuildSeamsForFaces(facesToUpdate);
   } else {
     console.log("[group] remove blocked: disconnect", { faceId, groupId: editGroupId });
     setStatus("移除会导致展开组不连通，已取消", "error");
@@ -679,6 +763,10 @@ function handleAddFace(faceId: number) {
   const newSize = groupFaces.get(targetGroup)?.size ?? 0;
   console.log("[group] add success", { faceId, targetGroup, size: newSize });
   setStatus(`已加入组${targetGroup}（面数量 ${newSize}）`, "success");
+  const groups = new Set<number>();
+  groups.add(targetGroup);
+  if (currentGroup !== null) groups.add(currentGroup);
+  rebuildSeamsForGroups(groups);
 }
 
 function startBrush(button: number, initialFace: number | null) {
@@ -707,10 +795,12 @@ function endBrush() {
 
 function setEditGroup(groupId: number | null) {
   if (brushMode) endBrush();
+  if (editGroupId !== null && groupId === editGroupId) return;
   editGroupId = groupId;
   if (groupId === null) {
     console.log("[group] exit edit mode");
     setStatus("已退出展开组编辑模式");
+    stopGroupBreath();
     return;
   }
   if (!groupFaces.has(groupId)) {
@@ -721,6 +811,7 @@ function setEditGroup(groupId: number | null) {
   renderGroupTabs();
   console.log("[group] enter edit mode", { groupId });
   setStatus(`展开组 ${groupId} 编辑模式：左键加入，右键移出`, "info");
+  startGroupBreath(groupId);
 }
 
 function updateGroupPreview() {
@@ -751,7 +842,9 @@ function renderGroupTabs() {
         updateGroupPreview();
         renderGroupTabs();
         setStatus(`预览展开组 ${id}`, "info");
+        startGroupBreath(id);
       } else {
+        if (editGroupId === id) return;
         setEditGroup(id);
       }
     });
@@ -770,6 +863,9 @@ function deleteGroup(groupId: number) {
   const ids = Array.from(groupFaces.keys());
   if (!ids.includes(groupId)) return;
 
+  if (breathGroupId === groupId) {
+    stopGroupBreath();
+  }
   const newColors = new Map<number, Color>();
   groupColors.forEach((c, id) => {
     if (id === groupId) return;
@@ -790,22 +886,27 @@ function deleteGroup(groupId: number) {
 
   faceGroupMap.clear();
   groupColors = newColors;
-  if (groupColors.size === 0) {
-    groupColors.set(1, defaultColorForGroup(1));
-  }
   groupFaces = new Map<number, Set<number>>();
   groupColors.forEach((_, id) => {
     groupFaces.set(id, new Set<number>());
   });
+  groupTreeParent = new Map<number, Map<number, number | null>>();
+  if (groupFaces.size === 0) {
+    const color = getGroupColor(1);
+    groupFaces.set(1, new Set<number>());
+  }
 
   assignments.forEach(({ faceId, groupId }) => {
     setFaceGroup(faceId, groupId);
   });
+  groupFaces.forEach((_, gid) => rebuildGroupTree(gid));
 
   let candidates = Array.from(groupFaces.keys()).sort((a, b) => a - b);
   if (!candidates.length) {
+    const color = getGroupColor(1);
     groupFaces.set(1, new Set<number>());
-    groupColors.set(1, defaultColorForGroup(1));
+    groupColors.set(1, color);
+    groupTreeParent.set(1, new Map<number, number | null>());
     candidates = [1];
   }
   const maxId = candidates[candidates.length - 1];
@@ -822,6 +923,34 @@ function deleteGroup(groupId: number) {
   setStatus(`已删除展开组 ${groupId}`, "success");
 }
 
+function applyImportedGroups(groups: PPCFile["groups"]) {
+  if (!groups || !groups.length) return;
+  // 重置
+  groupFaces = new Map<number, Set<number>>();
+  groupColors = new Map<number, Color>();
+  // groupColorCursor 已在导入流程按文件设置（若包含）
+  groups
+    .sort((a, b) => a.id - b.id)
+    .forEach((g) => {
+      const id = g.id;
+      groupFaces.set(id, new Set<number>());
+      const color = new Color(g.color);
+      groupColors.set(id, color);
+      g.faces.forEach((faceId) => {
+        setFaceGroup(faceId, id);
+      });
+      rebuildGroupTree(id);
+    });
+  const ids = Array.from(groupFaces.keys());
+  if (!ids.includes(1)) {
+    groupFaces.set(1, new Set<number>());
+    groupColors.set(1, getGroupColor(1));
+  }
+  previewGroupId = Math.min(...Array.from(groupFaces.keys()));
+  updateGroupPreview();
+  renderGroupTabs();
+}
+
 function buildFaceColorMap(object: Object3D) {
   faceColorMap = new Map<number, string>();
   faceAdjacency = new Map<number, Set<number>>();
@@ -829,12 +958,21 @@ function buildFaceColorMap(object: Object3D) {
   meshFaceIdMap = new Map<string, Map<number, number>>();
   faceGroupMap = new Map<number, number | null>();
   groupFaces = new Map<number, Set<number>>();
+  groupColors = new Map<number, Color>();
+  groupColorCursor = 0;
+  faceToEdges = new Map<number, [number, number, number]>();
+  edges = [];
+  edgeKeyToId = new Map<string, number>();
+  groupTreeParent = new Map<number, Map<number, number | null>>();
+  vertexKeyToPos = new Map<string, Vector3>();
   groupFaces.set(1, new Set<number>());
+  getGroupColor(1);
   editGroupId = null;
   previewGroupId = 1;
   renderGroupTabs();
   updateGroupPreview();
-  const edgeMap = new Map<string, number[]>();
+  groupTreeParent.set(1, new Map<number, number | null>());
+  rebuildGroupTree(1);
   let faceId = 0;
 
   const vertexKey = (pos: any, idx: number) =>
@@ -864,22 +1002,33 @@ function buildFaceColorMap(object: Object3D) {
       const va = vertexKey(position, a);
       const vb = vertexKey(position, b);
       const vc = vertexKey(position, c);
-      const edges = [
+      if (!vertexKeyToPos.has(va)) vertexKeyToPos.set(va, new Vector3(position.getX(a), position.getY(a), position.getZ(a)));
+      if (!vertexKeyToPos.has(vb)) vertexKeyToPos.set(vb, new Vector3(position.getX(b), position.getY(b), position.getZ(b)));
+      if (!vertexKeyToPos.has(vc)) vertexKeyToPos.set(vc, new Vector3(position.getX(c), position.getY(c), position.getZ(c)));
+      const faceEdges: number[] = [];
+      const edgePairs: [string, string][] = [
         [va, vb],
         [vb, vc],
         [vc, va],
       ];
-      edges.forEach(([p1, p2]) => {
+      edgePairs.forEach(([p1, p2]) => {
         const key = [p1, p2].sort().join("|");
-        const faces = edgeMap.get(key) ?? [];
-        faces.push(faceId);
-        edgeMap.set(key, faces);
+        let edgeId = edgeKeyToId.get(key);
+        if (edgeId === undefined) {
+          edgeId = edges.length;
+          edgeKeyToId.set(key, edgeId);
+          edges.push({ id: edgeId, key, faces: new Set<number>(), vertices: [p1, p2] });
+        }
+        edges[edgeId].faces.add(faceId);
+        faceEdges.push(edgeId);
       });
+      faceToEdges.set(faceId, faceEdges as [number, number, number]);
       faceId++;
     }
   });
 
-  edgeMap.forEach((faces) => {
+  edges.forEach((edge) => {
+    const faces = Array.from(edge.faces);
     if (faces.length < 2) return;
     for (let i = 0; i < faces.length; i++) {
       for (let j = i + 1; j < faces.length; j++) {
@@ -892,6 +1041,8 @@ function buildFaceColorMap(object: Object3D) {
       }
     }
   });
+  // 初始化默认组树
+  rebuildGroupTree(1);
 }
 
 function generateFunctionalMaterials(root: Object3D) {
@@ -918,9 +1069,8 @@ function generateFunctionalMaterials(root: Object3D) {
 
     const geomWireframe = mesh.geometry.clone();
     const meshWireframe = new Mesh(geomWireframe, new MeshStandardMaterial({
-      color: new Color(0x000000),
+      color: new Color(0x996600),
       flatShading: true,
-      side: DoubleSide,
       wireframe: true,
     }));
     meshWireframe.userData.functional = "edge";
@@ -985,10 +1135,27 @@ async function build3dppcData(object: Object3D): Promise<PPCFile> {
   const filtered = filterLargestComponent(collected);
   const exportVertices = filtered.vertices;
   const exportTriangles = filtered.triangles;
+  const mapping = filtered.mapping;
 
   const checksum = await computeChecksum({
     vertices: exportVertices,
     triangles: exportTriangles,
+  });
+
+  const groupsData: NonNullable<PPCFile["groups"]> = [];
+  groupFaces.forEach((faces, groupId) => {
+    const facesSet = faces ?? new Set<number>();
+    const filteredFaces: number[] = [];
+    facesSet.forEach((faceId) => {
+      const mapped = mapping[faceId];
+      if (mapped !== undefined && mapped >= 0) filteredFaces.push(mapped);
+    });
+    const colorHex = `#${getGroupColor(groupId).getHexString()}`;
+    groupsData.push({
+      id: groupId,
+      color: colorHex,
+      faces: filteredFaces,
+    });
   });
 
   return {
@@ -1006,6 +1173,8 @@ async function build3dppcData(object: Object3D): Promise<PPCFile> {
     },
     vertices: exportVertices,
     triangles: exportTriangles,
+    groupColorCursor,
+    groups: groupsData,
     annotations: {},
   };
 }
@@ -1028,7 +1197,9 @@ async function download3dppc(data: PPCFile) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-async function load3dppc(url: string): Promise<Object3D> {
+async function load3dppc(
+  url: string,
+): Promise<{ object: Object3D; groups?: PPCFile["groups"]; colorCursor?: number }> {
   const res = await fetch(url);
   const json = (await res.json()) as PPCFile;
   if (!Array.isArray(json.vertices) || !Array.isArray(json.triangles)) {
@@ -1057,7 +1228,16 @@ async function load3dppc(url: string): Promise<Object3D> {
 
   const mesh = new Mesh(geometry, createFrontMaterial());
   group.add(mesh);
-  return group;
+  if (typeof json.groupColorCursor === "number") {
+    groupColorCursor = json.groupColorCursor % GROUP_COLOR_PALETTE.length;
+  }
+
+  const colorCursor =
+    typeof json.groupColorCursor === "number"
+      ? json.groupColorCursor % GROUP_COLOR_PALETTE.length
+      : undefined;
+
+  return { object: group, groups: json.groups, colorCursor };
 }
 
 function fitCameraToObject(object: Object3D) {
@@ -1072,7 +1252,7 @@ function fitCameraToObject(object: Object3D) {
   const distance = maxDim / (2 * Math.tan(fov / 2));
   const offset = 1.8;
 
-  camera.position.set(distance * offset, distance * 0.9, distance * offset);
+  camera.position.set(-distance * offset * 0.75, -distance * offset, distance * offset * 0.75);
   camera.near = Math.max(0.1, distance / 100);
   camera.far = distance * 100;
   camera.updateProjectionMatrix();
@@ -1087,6 +1267,7 @@ function resizeRenderer() {
   camera.aspect = clientWidth / clientHeight;
   camera.updateProjectionMatrix();
   updateSeamResolution();
+  updateHoverResolution();
 }
 
 window.addEventListener("resize", resizeRenderer);
@@ -1096,52 +1277,8 @@ function disposeSeams() {
     line.removeFromParent();
     (line.geometry as LineSegmentsGeometry).dispose();
     (line.material as LineMaterial).dispose();
-    if (line.userData.edgesGeometry) {
-      (line.userData.edgesGeometry as EdgesGeometry).dispose();
-    }
   });
-  seamLines = [];
-}
-
-function rebuildSeams() {
-  disposeSeams();
-  if (!seamsVisible || !currentModel) {
-    console.log("[seams] skipped", { seamsVisible, hasModel: !!currentModel });
-    return;
-  }
-
-  console.log("[seams] rebuild start");
-  const meshes: Mesh[] = [];
-  currentModel.traverse((child) => {
-    if ((child as Mesh).isMesh) {
-      const mesh = child as Mesh;
-      if (mesh.userData.functional) return;
-      meshes.push(mesh);
-      console.log("[seams] found mesh")
-    }
-  });
-
-  let linesCount = 0;
-  meshes.forEach((mesh) => {
-    const seams = new EdgesGeometry(mesh.geometry);
-    const lineGeometry = new LineSegmentsGeometry();
-    lineGeometry.fromEdgesGeometry(seams);
-    const lineMaterial = new LineMaterial({
-      color: 0x000000,
-      linewidth: 5, // 相对于场景尺度的线宽，LineSegments2 支持粗线
-      resolution: new Vector2(viewer.clientWidth, viewer.clientHeight),
-    });
-    const line = new LineSegments2(lineGeometry, lineMaterial);
-    line.computeLineDistances();
-    line.userData.edgesGeometry = seams;
-    line.userData.functional = "seam";
-    line.renderOrder = 1;
-    mesh.add(line);
-    seamLines.push(line);
-    linesCount += 1;
-  });
-  updateSeamResolution();
-  console.log("[seams] rebuild done", { meshCount: meshes.length, linesCount, edgesVisible });
+  seamLines.clear();
 }
 
 function applyEdgeVisibility() {
@@ -1158,7 +1295,7 @@ function applyEdgeVisibility() {
 function applySeamsVisibility() {
   if (!currentModel) return;
   seamLines.forEach((line) => {
-    line.visible = seamsVisible;
+    line.visible = seamsVisible && line.userData.isSeam;
   });
 }
 
@@ -1170,6 +1307,253 @@ function updateSeamResolution() {
   });
 }
 
+function refreshVertexWorldPositions() {
+  vertexKeyToPos.clear();
+  if (!currentModel) return;
+  const vertexKey = (pos: any, idx: number) =>
+    `${pos.getX(idx)},${pos.getY(idx)},${pos.getZ(idx)}`;
+  currentModel.traverse((child) => {
+    if (!(child as Mesh).isMesh) return;
+    const mesh = child as Mesh;
+    if (mesh.userData.functional) return;
+    const position = mesh.geometry.getAttribute("position");
+    if (!position) return;
+    const count = position.count;
+    for (let i = 0; i < count; i++) {
+      const key = vertexKey(position, i);
+      const world = new Vector3(position.getX(i), position.getY(i), position.getZ(i)).applyMatrix4(
+        mesh.matrixWorld,
+      );
+      vertexKeyToPos.set(key, world);
+    }
+  });
+}
+
+function isParentChildEdge(f1: number, f2: number): boolean {
+  const g1 = faceGroupMap.get(f1);
+  const g2 = faceGroupMap.get(f2);
+  if (g1 === null || g2 === null || g1 !== g2) return false;
+  const parentMap = groupTreeParent.get(g1);
+  if (!parentMap) return false;
+  return parentMap.get(f1) === f2 || parentMap.get(f2) === f1;
+}
+
+function edgeIsSeam(edgeId: number): boolean {
+  const edge = edges[edgeId];
+  if (!edge) return false;
+  const faces = Array.from(edge.faces);
+  if (faces.length === 1) return false;
+  if (faces.length !== 2) return true;
+  const [f1, f2] = faces;
+  const g1 = faceGroupMap.get(f1) ?? null;
+  const g2 = faceGroupMap.get(f2) ?? null;
+  if (g1 === null && g2 === null) return false;
+  if (g1 === null || g2 === null) return true;
+  if (g1 !== g2) return true;
+  const seam = !isParentChildEdge(f1, f2);
+  if (seam) {
+    console.log("[seam] edge is seam", { edgeId, faces, groups: [g1, g2] });
+  }
+  return seam;
+}
+
+function ensureSeamLine(edgeId: number): LineSegments2 {
+  const existing = seamLines.get(edgeId);
+  if (existing) return existing;
+  const geom = new LineSegmentsGeometry();
+  const mat = new LineMaterial({
+    color: 0x000000,
+    linewidth: 5,
+    resolution: new Vector2(viewer.clientWidth, viewer.clientHeight),
+  });
+  const line = new LineSegments2(geom, mat);
+  line.userData.functional = "seam";
+  line.renderOrder = 2;
+  seamLines.set(edgeId, line);
+  scene.add(line);
+  return line;
+}
+
+function updateSeamLine(edgeId: number, visible: boolean) {
+  const edge = edges[edgeId];
+  if (!edge) return;
+  const v1 = vertexKeyToPos.get(edge.vertices[0]);
+  const v2 = vertexKeyToPos.get(edge.vertices[1]);
+  if (!v1 || !v2) return;
+  const line = ensureSeamLine(edgeId);
+  const arr = new Float32Array([v1.x, v1.y, v1.z, v2.x, v2.y, v2.z]);
+  (line.geometry as LineSegmentsGeometry).setPositions(arr);
+  line.computeLineDistances();
+  line.visible = visible && seamsVisible;
+  line.userData.isSeam = visible;
+}
+
+function rebuildSeamsFull() {
+  if (!currentModel) return;
+  console.log("[seam] rebuild full");
+  refreshVertexWorldPositions();
+  edges.forEach((_, edgeId) => {
+    const isSeam = edgeIsSeam(edgeId);
+    updateSeamLine(edgeId, isSeam);
+  });
+  applySeamsVisibility();
+  updateSeamResolution();
+}
+
+function rebuildSeamsForGroups(groupIds: Set<number>) {
+  if (!currentModel || groupIds.size === 0) return;
+  console.log("[seam] rebuild partial", { groups: Array.from(groupIds) });
+  rebuildSeamsForFaces(new Set(Array.from(groupIds).flatMap((gid) => Array.from(groupFaces.get(gid) ?? []))));
+}
+
+function rebuildSeamsForFaces(faceIds: Set<number>) {
+  if (!currentModel || faceIds.size === 0) return;
+  console.log("[seam] rebuild faces", { faces: Array.from(faceIds) });
+  refreshVertexWorldPositions();
+  edges.forEach((edge, edgeId) => {
+    let related = false;
+    edge.faces.forEach((f) => {
+      if (faceIds.has(f)) related = true;
+    });
+    if (!related) return;
+    const isSeam = edgeIsSeam(edgeId);
+    updateSeamLine(edgeId, isSeam);
+  });
+  applySeamsVisibility();
+  updateSeamResolution();
+}
+
+function initHoverLines() {
+  if (hoverLines.length) return;
+  for (let i = 0; i < 3; i++) {
+    const geom = new LineSegmentsGeometry();
+    geom.setPositions(new Float32Array(6));
+    const mat = new LineMaterial({
+      color: 0xffa500,
+      linewidth: 5,
+      resolution: new Vector2(viewer.clientWidth, viewer.clientHeight),
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: 2,
+    });
+    const line = new LineSegments2(geom, mat);
+    line.computeLineDistances();
+    line.visible = false;
+    line.userData.functional = "hover";
+    hoverLines.push(line);
+    scene.add(line);
+  }
+}
+
+function disposeHoverLines() {
+  hoverLines.forEach((line) => {
+    line.removeFromParent();
+    (line.geometry as LineSegmentsGeometry).dispose();
+    (line.material as LineMaterial).dispose();
+  });
+  hoverLines.length = 0;
+  hoveredFaceId = null;
+}
+
+function updateHoverResolution() {
+  const { clientWidth, clientHeight } = viewer;
+  hoverLines.forEach((line) => {
+    const mat = line.material as LineMaterial;
+    mat.resolution.set(clientWidth, clientHeight);
+  });
+}
+
+function hideHoverLines() {
+  hoverLines.forEach((line) => {
+    line.visible = false;
+  });
+  hoveredFaceId = null;
+}
+
+function updateHoverLines(mesh: Mesh | null, faceIndex: number | null, faceId: number | null) {
+  if (!mesh || faceIndex === null || faceIndex < 0 || faceId === null) {
+    hideHoverLines();
+    return;
+  }
+  const geometry = mesh.geometry;
+  const position = geometry.getAttribute("position");
+  if (!position) {
+    hideHoverLines();
+    return;
+  }
+  const indices = getFaceVertexIndices(geometry, faceIndex);
+  const verts = indices.map((idx) =>
+    new Vector3(position.getX(idx), position.getY(idx), position.getZ(idx)).applyMatrix4(mesh.matrixWorld),
+  );
+  const edges = [
+    [0, 1],
+    [1, 2],
+    [2, 0],
+  ] as const;
+  edges.forEach(([a, b], i) => {
+    const line = hoverLines[i];
+    if (!line) return;
+    const arr = new Float32Array([
+      verts[a].x,
+      verts[a].y,
+      verts[a].z,
+      verts[b].x,
+      verts[b].y,
+      verts[b].z,
+    ]);
+    (line.geometry as LineSegmentsGeometry).setPositions(arr);
+    line.visible = true;
+  });
+  hoveredFaceId = faceId;
+}
+
+function stopGroupBreath() {
+  if (breathRaf !== null) {
+    cancelAnimationFrame(breathRaf);
+    breathRaf = null;
+  }
+  const gid = breathGroupId;
+  breathGroupId = null;
+  if (gid !== null) {
+    const faces = groupFaces.get(gid);
+    faces?.forEach((faceId) => updateFaceColorById(faceId));
+  }
+}
+
+function startGroupBreath(groupId: number) {
+  stopGroupBreath();
+  breathGroupId = groupId;
+  breathStart = performance.now();
+  breathEnd = breathStart + BREATH_DURATION;
+  const faces = groupFaces.get(groupId);
+  if (!faces || faces.size === 0) {
+    breathGroupId = null;
+    return;
+  }
+
+  const loop = () => {
+    if (breathGroupId !== groupId) return;
+    const now = performance.now();
+    const elapsed = now - breathStart;
+    const progress = Math.min(1, elapsed / BREATH_DURATION);
+    if (progress >= 1) {
+      faces.forEach((faceId) => updateFaceColorById(faceId));
+      stopGroupBreath();
+      return;
+    }
+    const factor = (1 + BREATH_SCALE) + BREATH_SCALE * Math.sin((progress + 0.25) * Math.PI * 2 * BREATH_CYCLES);
+    const baseColor = getGroupColor(groupId);
+    const scaled = baseColor.clone().multiplyScalar(factor);
+    faces.forEach((faceId) => {
+      const mapping = faceIndexMap.get(faceId);
+      if (!mapping) return;
+      setFaceColor(mapping.mesh, mapping.localFace, scaled);
+    });
+    breathRaf = requestAnimationFrame(loop);
+  };
+  breathRaf = requestAnimationFrame(loop);
+}
+
 async function loadModel(file: File, ext: string) {
   const url = URL.createObjectURL(file);
   placeholder.classList.add("hidden");
@@ -1177,6 +1561,8 @@ async function loadModel(file: File, ext: string) {
 
   try {
     let object: Object3D;
+    let importedGroups: PPCFile["groups"] | undefined;
+    let importedColorCursor: number | undefined;
     if (ext === "obj") {
       const loaded = await objLoader.loadAsync(url);
       // 将所有 mesh 材质替换为 frontMaterial
@@ -1201,7 +1587,10 @@ async function loadModel(file: File, ext: string) {
       const material = createFrontMaterial();
       object = new Mesh(geometry, material);
     } else {
-      object = await load3dppc(url);
+      const loaded = await load3dppc(url);
+      object = loaded.object;
+      importedGroups = loaded.groups;
+      importedColorCursor = loaded.colorCursor;
     }
 
     clearModel();
@@ -1209,13 +1598,22 @@ async function loadModel(file: File, ext: string) {
     lastFileName = file.name;
     generateFunctionalMaterials(currentModel);
     buildFaceColorMap(currentModel);
+    if (typeof importedColorCursor === "number") {
+      groupColorCursor = importedColorCursor % GROUP_COLOR_PALETTE.length;
+    }
+    if (importedGroups && importedGroups.length) {
+      applyImportedGroups(importedGroups);
+    }
     applyFaceVisibility();
+    applyEdgeVisibility();
     modelGroup.add(currentModel);
+    initHoverLines();
     lastTriangleCount = countTrianglesInObject(currentModel);
-    rebuildSeams();
     fitCameraToObject(currentModel);
+    refreshVertexWorldPositions();
+    rebuildSeamsFull();
     showWorkspace(true);
-     resizeRenderer(); // 确保从隐藏切换到可见后尺寸正确
+    resizeRenderer(); // 确保从隐藏切换到可见后尺寸正确
     setStatus(`已加载：${file.name} · 三角面 ${lastTriangleCount}`, "success");
     exportBtn.disabled = false;
   } catch (error) {
@@ -1251,8 +1649,9 @@ fileInput.addEventListener("change", async () => {
 lightToggle.addEventListener("click", () => {
   const enabled = !dir.visible;
   dir.visible = enabled;
+  ambient.intensity = enabled ? 0.6 : 3;
   lightToggle.classList.toggle("active", enabled);
-  lightToggle.textContent = `主光源：${enabled ? "开" : "关"}`;
+  lightToggle.textContent = `光源：${enabled ? "开" : "关"}`;
 });
 
 edgesToggle.addEventListener("click", () => {
@@ -1264,8 +1663,8 @@ edgesToggle.addEventListener("click", () => {
 seamsToggle.addEventListener("click", () => {
   seamsVisible = !seamsVisible;
   seamsToggle.classList.toggle("active", seamsVisible);
-  seamsToggle.textContent = `接缝：${seamsVisible ? "开" : "关"}`;
-  if (seamsVisible && !seamLines.length) rebuildSeams();
+  seamsToggle.textContent = `拼接边：${seamsVisible ? "开" : "关"}`;
+  if (seamsVisible && seamLines.size === 0) rebuildSeamsFull();
   applySeamsVisibility();
 })
 
@@ -1302,7 +1701,6 @@ function animate() {
 resizeRenderer();
 animate();
 
-// Hover highlight
 renderer.domElement.addEventListener("pointermove", (event) => {
   if (!currentModel || !facesVisible) return;
   const rect = renderer.domElement.getBoundingClientRect();
@@ -1315,7 +1713,7 @@ renderer.domElement.addEventListener("pointermove", (event) => {
     return (mesh as Mesh).isMesh && !(mesh as Mesh).userData.functional;
   });
 
-  clearHover();
+  hideHoverLines();
 
   if (!intersects.length) {
     if (brushMode) lastBrushedFace = null;
@@ -1333,30 +1731,20 @@ renderer.domElement.addEventListener("pointermove", (event) => {
     lastBrushedFace = faceId;
   }
   if (faceId === null) return;
-  const geometry = mesh.geometry;
-  const colorsAttr = geometry.getAttribute("color") as Float32BufferAttribute;
-  if (faceIndex < 0 || !colorsAttr) return;
-
-  const indices = getFaceVertexIndices(geometry, faceIndex);
-  const original: number[] = [];
-  indices.forEach((idx) => {
-    original.push(colorsAttr.array[idx * 3], colorsAttr.array[idx * 3 + 1], colorsAttr.array[idx * 3 + 2]);
-  });
-
-  const baseColor = new Color().fromArray(colorsAttr.array as Float32Array, indices[0] * 3);
-  const highlight = baseColor.clone();
-  highlight.r = Math.min(1, highlight.r * HIGHLIGHT_SCALE);
-  highlight.g = Math.min(1, highlight.g * HIGHLIGHT_SCALE);
-  highlight.b = Math.min(1, highlight.b * HIGHLIGHT_SCALE);
-  setFaceColor(mesh, faceIndex, highlight);
-  hovered = { mesh, indices, original, faceId };
+  updateHoverLines(mesh, faceIndex, faceId);
 });
 
 renderer.domElement.addEventListener("pointerleave", () => {
-  clearHover();
+  hideHoverLines();
 });
 
 renderer.domElement.addEventListener("pointerdown", (event) => {
+  // 捕获指针，确保离开画布也能收到 pointerup，避免摄像机拖拽状态悬挂
+  try {
+    renderer.domElement.setPointerCapture(event.pointerId);
+  } catch (e) {
+    // ignore capture failures
+  }
   if (!currentModel || editGroupId === null) return;
   const faceId = pickFace(event);
   if (faceId === null) return;
@@ -1365,6 +1753,15 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
 
 renderer.domElement.addEventListener("contextmenu", (event) => {
   event.preventDefault();
+});
+
+renderer.domElement.addEventListener("pointerup", (event) => {
+  try {
+    renderer.domElement.releasePointerCapture(event.pointerId);
+  } catch (e) {
+    // ignore release failures
+  }
+  if (brushMode) endBrush();
 });
 
 window.addEventListener("pointerup", () => {
