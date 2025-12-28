@@ -30,7 +30,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 
-const VERSION = "1.0.2.0";
+const VERSION = "1.0.2.1";
 const FORMAT_VERSION = "1.0";
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -39,67 +39,70 @@ if (!app) {
 }
 
 app.innerHTML = `
-  <main class="card">
-    <header>
-      <h1>3D Printed Paper Craft</h1>
-    </header>
+  <main class="shell">
     <input id="file-input" type="file" accept=".obj,.fbx,.stl,.3dppc,application/json" style="display:none" />
 
-    <section id="layout-empty" class="layout active">
-      <div class="empty-state">
-        <h2>上传模型开始编辑</h2>
-        <p class="empty-lead">支持 OBJ / FBX / STL / 3dppc</p>
-        <label class="empty-upload" for="file-input">
-          <span>选择模型文件</span>
-        </label>
+    <section id="layout-empty" class="page home active">
+      <div class="home-card">
+        <div class="home-title">3D Printed Paper Craft</div>
+        <div class="home-subtitle">选择一个模型文件开始编辑</div>
+        <button id="home-start" class="btn primary">打开模型</button>
+        <div class="home-meta">支持 OBJ / FBX / STL / 3dppc</div>
       </div>
     </section>
 
-  <section id="layout-workspace" class="layout">
-      <div class="workspace">
-        <div class="panel">
-          <div class="toolbar">
-            <label class="upload" for="file-input">
-              <span>打开模型</span>
-            </label>
-            <button class="btn active" id="light-toggle">光源：开</button>
-            <button class="btn" id="edges-toggle">线框：关</button>
-            <button class="btn" id="seams-toggle">拼接边：关</button>
-            <button class="btn active" id="faces-toggle">面渲染：开</button>
-            <button class="btn" id="export-btn" disabled>导出 .3dppc</button>
+    <section id="layout-workspace" class="page">
+      <header class="editor-header">
+        <div class="editor-title">3D Printed Paper Craft</div>
+        <div class="version-badge">v${VERSION}</div>
+      </header>
+      <nav class="editor-menu">
+        <button class="btn ghost" id="menu-open">打开模型</button>
+        <button class="btn ghost" id="export-btn" disabled>导出 .3dppc</button>
+        <button class="btn ghost" disabled>设置</button>
+      </nav>
+      <section class="editor-preview">
+        <div class="preview-panel">
+          <div class="preview-toolbar">
+            <button class="btn sm toggle active" id="light-toggle">光源：开</button>
+            <button class="btn sm toggle" id="edges-toggle">线框：关</button>
+            <button class="btn sm toggle" id="seams-toggle">拼接边：关</button>
+            <button class="btn sm toggle active" id="faces-toggle">面渲染：开</button>
+            <div class="toolbar-spacer"></div>
+            <span class="toolbar-stat" id="tri-counter">渲染三角形：0</span>
           </div>
-          <div class="viewer" id="viewer">
+          <div class="preview-area" id="viewer">
             <div class="placeholder" id="placeholder">选择模型以预览</div>
-            <div class="tri-counter" id="tri-counter">渲染三角形：0</div>
           </div>
-          <div class="status" id="status">尚未加载模型</div>
         </div>
-        <div class="panel right-panel">
-            <div class="group-header">
-            <h2>展开组预览</h2>
+        <div class="preview-panel">
+          <div class="preview-toolbar">
             <div class="group-tabs" id="group-tabs"></div>
-            <button class="btn tab-add" id="group-add">+</button>
+            <button class="btn sm tab-add" id="group-add">+</button>
+            <div class="toolbar-spacer"></div>
+            <span class="toolbar-stat group-count" id="group-count">面数量 0</span>
           </div>
-          <div class="placeholder-card" id="group-preview">
-            <div class="group-preview-actions">
-              <button class="color-swatch" id="group-color-btn"></button>
-              <input type="color" id="group-color-input" class="color-input" />
-              <span class="group-count" id="group-count">面数量 0</span>
-              <button class="btn tab-add delete" id="group-delete" title="删除展开组">×</button>
-            </div>
-            <div class="group-preview-label" id="group-preview-label">展开组1</div>
+          <div class="preview-area" id="group-preview">
+            <button class="overlay-btn color-swatch" id="group-color-btn" title="选择组颜色"></button>
+            <button class="overlay-btn tab-delete" id="group-delete" title="删除展开组">删除组</button>
+            <input type="color" id="group-color-input" class="color-input" />
+            <div class="preview-2d-placeholder" id="group-preview-label">展开组1</div>
           </div>
         </div>
-      </div>
+      </section>
+      <footer class="editor-status">
+        <div class="status-text" id="status">尚未加载模型</div>
+      </footer>
     </section>
   </main>
-  <div class="version-tag">v${VERSION}</div>
 `;
 
 const viewer = document.querySelector<HTMLDivElement>("#viewer");
 const placeholder = document.querySelector<HTMLDivElement>("#placeholder");
 const statusEl = document.querySelector<HTMLDivElement>("#status");
 const fileInput = document.querySelector<HTMLInputElement>("#file-input");
+const homeStartBtn = document.querySelector<HTMLButtonElement>("#home-start");
+const menuOpenBtn = document.querySelector<HTMLButtonElement>("#menu-open");
 const lightToggle = document.querySelector<HTMLButtonElement>("#light-toggle");
 const edgesToggle = document.querySelector<HTMLButtonElement>("#edges-toggle");
 const seamsToggle = document.querySelector<HTMLButtonElement>("#seams-toggle");
@@ -124,6 +127,8 @@ if (
   !placeholder ||
   !statusEl ||
   !fileInput ||
+  !homeStartBtn ||
+  !menuOpenBtn ||
   !lightToggle ||
   !edgesToggle ||
   !seamsToggle ||
@@ -240,13 +245,21 @@ function setStatus(message: string, tone: "info" | "error" | "success" = "info")
   }
   const suffix = lastStatus.count > 0 ? ` +${lastStatus.count}` : "";
   statusEl.textContent = `${message}${suffix}`;
-  statusEl.className = `status ${tone === "info" ? "" : tone}`;
+  statusEl.className = `status status-text ${tone === "info" ? "" : tone}`;
 }
 
 function showWorkspace(loaded: boolean) {
   layoutEmpty.classList.toggle("active", !loaded);
   layoutWorkspace.classList.toggle("active", loaded);
 }
+
+homeStartBtn.addEventListener("click", () => {
+  fileInput.click();
+});
+
+menuOpenBtn.addEventListener("click", () => {
+  fileInput.click();
+});
 
 function clearModel() {
   stopGroupBreath();
