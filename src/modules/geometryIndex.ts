@@ -1,3 +1,4 @@
+// 几何索引缓存：对加载的模型构建 face/edge/vertex 映射与邻接关系，并支持刷新的 getter。
 import { Mesh, Object3D, Vector3 } from "three";
 import { EdgeRecord, prepareGeometryData } from "./modelLoader";
 
@@ -98,4 +99,3 @@ export class GeometryIndex {
     return this.triangleCount;
   }
 }
-// 几何索引缓存：对加载的模型构建 face/edge/vertex 映射与邻接关系，并支持刷新的 getter。

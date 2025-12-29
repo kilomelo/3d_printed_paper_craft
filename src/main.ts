@@ -50,6 +50,7 @@ app.innerHTML = `
       <section class="editor-preview">
         <div class="preview-panel">
           <div class="preview-toolbar">
+            <button class="btn sm ghost" id="reset-view-btn">重置视角</button>
             <button class="btn sm toggle active" id="light-toggle">光源：开</button>
             <button class="btn sm toggle" id="edges-toggle">线框：关</button>
             <button class="btn sm toggle" id="seams-toggle">拼接边：关</button>
@@ -90,6 +91,7 @@ const statusEl = document.querySelector<HTMLDivElement>("#status");
 const fileInput = document.querySelector<HTMLInputElement>("#file-input");
 const homeStartBtn = document.querySelector<HTMLButtonElement>("#home-start");
 const menuOpenBtn = document.querySelector<HTMLButtonElement>("#menu-open");
+const resetViewBtn = document.querySelector<HTMLButtonElement>("#reset-view-btn");
 const lightToggle = document.querySelector<HTMLButtonElement>("#light-toggle");
 const edgesToggle = document.querySelector<HTMLButtonElement>("#edges-toggle");
 const seamsToggle = document.querySelector<HTMLButtonElement>("#seams-toggle");
@@ -115,6 +117,7 @@ if (
   !fileInput ||
   !homeStartBtn ||
   !menuOpenBtn ||
+  !resetViewBtn ||
   !lightToggle ||
   !edgesToggle ||
   !seamsToggle ||
@@ -144,6 +147,7 @@ const uiRefs: UIRefs = {
   fileInput,
   homeStartBtn,
   menuOpenBtn,
+  resetViewBtn,
   lightToggle,
   edgesToggle,
   seamsToggle,
