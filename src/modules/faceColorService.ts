@@ -1,3 +1,4 @@
+// 面色服务：负责根据组颜色/默认色更新 mesh face 的 vertex colors，提供批量重绘与单面更新。
 import { Color, Float32BufferAttribute, Mesh } from "three";
 import { FACE_DEFAULT_COLOR } from "./materials";
 import { getFaceVertexIndices } from "./modelLoader";
@@ -39,4 +40,3 @@ export function createFaceColorService(deps: FaceColorDeps) {
 
   return { setFaceColor, updateFaceColorById, repaintAllFaces };
 }
-// 面色服务：负责根据组颜色/默认色更新 mesh face 的 vertex colors，提供批量重绘与单面更新。

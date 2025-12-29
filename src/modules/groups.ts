@@ -1,3 +1,4 @@
+// 展开组数据层：维护组-面映射、组颜色、组树结构等核心数据，提供基础操作并通过事件总线通知变更。
 import { Color } from "three";
 import { appEventBus } from "./eventBus";
 
@@ -342,4 +343,3 @@ export type PPCFile = {
   groupColorCursor?: number;
   annotations?: Record<string, unknown>;
 };
-// 展开组数据层：维护组-面映射、组颜色、组树结构等核心数据，提供基础操作并通过事件总线通知变更。

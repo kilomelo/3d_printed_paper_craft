@@ -1,3 +1,4 @@
+// 拼缝线段创建与更新：封装 LineSegments2 的构建、材质配置与分辨率更新。
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
@@ -33,4 +34,3 @@ export function updateSeamResolution(viewer: HTMLDivElement, seamLines: Map<numb
     material.resolution.set(clientWidth, clientHeight);
   });
 }
-// 拼缝线段创建与更新：封装 LineSegments2 的构建、材质配置与分辨率更新。

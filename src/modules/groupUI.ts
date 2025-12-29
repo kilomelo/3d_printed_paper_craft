@@ -1,3 +1,4 @@
+// 展开组 UI 组件：渲染组标签、预览面板、颜色选择与删除按钮，并将用户操作回调给上层。
 import { Color } from "three";
 
 export type GroupUIState = {
@@ -82,4 +83,3 @@ export function initGroupUI(
     },
   };
 }
-// 展开组 UI 组件：渲染组标签、预览面板、颜色选择与删除按钮，并将用户操作回调给上层。

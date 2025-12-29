@@ -1,5 +1,5 @@
 // 3D 渲染与交互层：负责 Three.js 场景、相机/光源、模型加载展示、拾取/hover/刷子交互，消费外部注入的组/拼缝接口，不持有业务状态。
-import { Color, Vector3, Mesh, MeshStandardMaterial, type Object3D } from "three";
+import { Color, Vector3, Mesh, MeshStandardMaterial, Quaternion, MathUtils, Spherical, PerspectiveCamera, OrthographicCamera, type Object3D } from "three";
 import type { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
@@ -21,7 +21,7 @@ import {
 import { build3dppcData, download3dppc, load3dppc, type PPCFile } from "./ppc";
 import { createScene } from "./scene";
 import { FACE_DEFAULT_COLOR, createFrontMaterial } from "./materials";
-import { createHoverLines, disposeHoverLines, hideHoverLines, updateHoverLines, updateHoverResolution, createRaycaster } from "./interactions";
+import { createHoverLines, disposeHoverLines, hideHoverLines, updateHoverResolution, createRaycaster, type HoverState } from "./interactions";
 import { initInteractionController } from "./interactionController";
 import {
   EdgeRecord,
@@ -41,6 +41,7 @@ export type UIRefs = {
   fileInput: HTMLInputElement;
   homeStartBtn: HTMLButtonElement;
   menuOpenBtn: HTMLButtonElement;
+  resetViewBtn: HTMLButtonElement;
   lightToggle: HTMLButtonElement;
   edgesToggle: HTMLButtonElement;
   seamsToggle: HTMLButtonElement;
@@ -81,7 +82,6 @@ export type GroupApi = {
 export function initRenderer3D(
   ui: UIRefs,
   setStatus: (msg: string, tone?: "info" | "error" | "success") => void,
-  groupUiHooks: GroupUIHooks = {},
 ) {
   const {
     viewer,
@@ -89,6 +89,7 @@ export function initRenderer3D(
     fileInput,
     homeStartBtn,
     menuOpenBtn,
+    resetViewBtn,
     lightToggle,
     edgesToggle,
     seamsToggle,
@@ -120,10 +121,10 @@ export function initRenderer3D(
   let previewGroupId = 1;
   const { raycaster, pointer } = createRaycaster();
   const hoverLines: LineSegments2[] = [];
+  const hoverState: HoverState = { hoverLines, hoveredFaceId: null };
   let interactionController: ReturnType<typeof initInteractionController> | null = null;
   let breathGroupId: number | null = null;
   let breathStart = 0;
-  let breathEnd = 0;
   let breathRaf: number | null = null;
   let seamManager: SeamManagerApi | null = null;
   let groupApi: GroupApi | null = null;
@@ -165,6 +166,178 @@ export function initRenderer3D(
   });
 
   const { scene, camera, renderer, controls, ambient, dir, modelGroup } = createScene(viewer);
+  controls.panSpeed = 2;
+  controls.rotateSpeed = 0.4;
+  const el = renderer.domElement;
+
+  let pointerLocked = false;
+  let lockedButton: number | null = null;
+  const yAxisUp = new Vector3(0, 1, 0);
+  const offset = new Vector3();
+  const spherical = new Spherical();
+  // 每次调用时基于当前 camera.up 计算（更稳），也可以缓存但要注意 up 变化
+  const quat = new Quaternion();
+  const quatInv = new Quaternion();
+  const shouldLockPointer = (event: PointerEvent) => {
+    const isPrimaryButton = event.button === 0 || event.button === 2;
+    if (!isPrimaryButton) return false;
+    // 编辑展开组时，若当前 hover 到可刷的面，优先进入刷子逻辑，避免误触发相机控制
+    if (editGroupId !== null && hoverState.hoveredFaceId !== null) return false;
+    return true;
+  };
+  const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+  const orbitRotate = (dTheta: number, dPhi: number) => {
+    const cam = controls.object;
+
+    // 1) offset = position - target
+    offset.copy(cam.position).sub(controls.target);
+
+    // 2) 把 camera.up 对齐到世界 y-up（OrbitControls 的关键）
+    quat.setFromUnitVectors(cam.up, yAxisUp);
+    quatInv.copy(quat).invert();
+    offset.applyQuaternion(quat);
+
+    // 3) spherical
+    spherical.setFromVector3(offset);
+
+    // 4) 角度增量：注意 OrbitControls 的符号（通常是减号）
+    spherical.theta -= dTheta;
+    spherical.phi   -= dPhi;
+
+    // 5) 限制角度（如果你要完全一致，需使用 controls 的 min/max）
+    spherical.theta = clamp(spherical.theta, controls.minAzimuthAngle, controls.maxAzimuthAngle);
+    spherical.phi   = clamp(spherical.phi,   controls.minPolarAngle,   controls.maxPolarAngle);
+    spherical.makeSafe();
+
+    // 6) spherical -> offset，再旋回原坐标系
+    offset.setFromSpherical(spherical);
+    offset.applyQuaternion(quatInv);
+
+    // 7) target + offset
+    cam.position.copy(controls.target).add(offset);
+    cam.lookAt(controls.target);
+
+    // 如果你仍在使用 OrbitControls 实例，update() 会做它自己的收尾（阻尼/事件等）
+    controls.update();
+  };
+  const getPanPerPixelPerspective = (cam: PerspectiveCamera, el: HTMLElement, panSpeed = 1) => {
+    // 相机到 target 的距离决定“这一屏对应多少世界单位”
+    const distance = cam.position.distanceTo(controls.target);
+
+    // target 距离处的可视“世界高度”
+    const worldHeight = 2 * distance * Math.tan(MathUtils.degToRad(cam.fov * 0.5));
+
+    // 每像素的世界位移（OrbitControls 习惯用 el.clientHeight 来统一 X/Y 的手感）
+    const worldPerPixel = worldHeight / el.clientHeight;
+
+    return worldPerPixel * panSpeed;
+  }
+  const panOffset = new Vector3();
+  const panLeftV = new Vector3();
+  const panUpV = new Vector3();
+  const orbitPan = (deltaX: number, deltaY: number) => {
+    const cam = controls.object;
+    const el = renderer.domElement;
+
+    // 以“像素”为单位的移动：右拖应当让画面向右移动（即相机/target 向左平移）
+    // OrbitControls 里一般会用 -deltaX / -deltaY 的符号体系
+    const dx = -deltaX;
+    const dy = -deltaY;
+
+    // 相机局部坐标的 X/Y 轴方向（世界空间）
+    // X轴：相机右方向；Y轴：相机上方向
+    // 从相机矩阵取列向量比用 cross 更稳
+    const te = cam.matrix.elements;
+    // matrix 的第0列是相机的 X 轴方向
+    panLeftV.set(te[0], te[1], te[2]).multiplyScalar(-1); // “left”方向
+    // matrix 的第1列是相机的 Y 轴方向
+    panUpV.set(te[4], te[5], te[6]);
+
+    panOffset.set(0, 0, 0);
+
+    if ((cam as any).isPerspectiveCamera) {
+      const perspectiveCam = cam as PerspectiveCamera;
+
+      // target 到 camera 的距离决定屏幕上同样像素对应的世界单位
+      const distance = cam.position.distanceTo(controls.target);
+
+      // 视口高度对应的世界高度（在 target 距离处）
+      const worldHeight = 2 * distance * Math.tan((perspectiveCam.fov * Math.PI / 180) / 2);
+      const worldPerPixel = worldHeight / el.clientHeight;
+
+      panOffset
+        .addScaledVector(panLeftV, dx * worldPerPixel)
+        .addScaledVector(panUpV,   dy * worldPerPixel);
+
+    } else if ((cam as any).isOrthographicCamera) {
+      const orthoCam = cam as OrthographicCamera;
+
+      // 正交相机：视口范围直接决定单位换算
+      const worldPerPixelX = (orthoCam.right - orthoCam.left) / el.clientWidth;
+      const worldPerPixelY = (orthoCam.top - orthoCam.bottom) / el.clientHeight;
+
+      panOffset
+        .addScaledVector(panLeftV, dx * worldPerPixelX)
+        .addScaledVector(panUpV,   dy * worldPerPixelY);
+
+    } else {
+      // 其他相机类型：不处理
+      return;
+    }
+
+    // 平移 target 和 camera（保持相对偏移不变）
+    controls.target.add(panOffset);
+    cam.position.add(panOffset);
+
+    // 若使用 OrbitControls，本帧收尾
+    cam.lookAt(controls.target);
+    controls.update();
+  };
+  const onCanvasPointerDown = (event: PointerEvent) => {
+    console.debug("[pointer] down", { id: event.pointerId, button: event.button });
+    if (!shouldLockPointer(event)) return;
+    lockedButton = event.button;
+    if (document.pointerLockElement !== el) {
+      el.requestPointerLock();
+    }
+  };
+  const exitPointerLockIfNeeded = () => {
+    if (document.pointerLockElement === el) {
+      document.exitPointerLock();
+    }
+  };
+  const onWindowPointerUp = (event: PointerEvent) => {
+    exitPointerLockIfNeeded();
+    lockedButton = null;
+  };
+  const onPointerLockChange = () => {
+    pointerLocked = document.pointerLockElement === el;
+    console.debug("[pointer] lock change", pointerLocked);
+    if (pointerLocked) {
+      hideHoverLines(hoverState);
+    }
+    if (!pointerLocked) {
+      lockedButton = null;
+      interactionController?.forceHoverCheck();
+    }
+  };
+  const onGlobalPointerMove = (event: PointerEvent) => {
+    if (!pointerLocked) return;
+    const anglePerPixel = (2 * Math.PI / el.clientHeight) * controls.rotateSpeed;
+    if (lockedButton === 0) {
+      orbitRotate(event.movementX * anglePerPixel, event.movementY * anglePerPixel);
+    } else if (lockedButton === 2) {
+      const cam = controls.object as PerspectiveCamera;
+      const panPerPixel = getPanPerPixelPerspective(cam, el, controls.panSpeed ?? 1);
+      orbitPan(-event.movementX * panPerPixel, -event.movementY * panPerPixel);
+      controls.update();
+    }
+  };
+  el.addEventListener("pointerdown", onCanvasPointerDown);
+  window.addEventListener("pointerup", onWindowPointerUp);
+  window.addEventListener("pointercancel", onWindowPointerUp);
+  window.addEventListener("pointermove", onGlobalPointerMove);
+  document.addEventListener("pointerlockchange", onPointerLockChange);
 
   const objLoader = new OBJLoader();
   const fbxLoader = new FBXLoader();
@@ -176,6 +349,7 @@ export function initRenderer3D(
       fileInput,
       homeStartBtn,
       menuOpenBtn,
+      resetViewBtn,
       lightToggle,
       edgesToggle,
       seamsToggle,
@@ -197,6 +371,12 @@ export function initRenderer3D(
       },
       onHomeStart: () => fileInput.click(),
       onMenuOpen: () => fileInput.click(),
+      onResetView: () => {
+        const model = getModel();
+        if (!model) return;
+        fitCameraToObject(model, camera, controls);
+        refreshVertexWorldPositions();
+      },
       onLightToggle: () => {
         const enabled = !dir.visible;
         dir.visible = enabled;
@@ -313,7 +493,7 @@ export function initRenderer3D(
   function pickFace(event: PointerEvent): number | null {
     const model = getModel();
     if (!model || !facesVisible) return null;
-    const rect = renderer.domElement.getBoundingClientRect();
+    const rect = el.getBoundingClientRect();
     pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(pointer, camera);
@@ -366,22 +546,6 @@ export function initRenderer3D(
     groupApi?.applyGroupColor(previewGroupId, color);
   }
 
-  function addGroup(): number {
-    if (!groupApi) return previewGroupId;
-    const result = groupApi.createGroup(editGroupId);
-    refreshGroupRefs();
-    previewGroupId = result.previewGroupId;
-    editGroupId = result.editGroupId;
-    return result.groupId;
-  }
-
-  function deleteGroup(groupId: number) {
-    if (!groupApi) return;
-    const result = groupApi.deleteGroup(groupId, editGroupId);
-    editGroupId = result.editGroupId;
-    previewGroupId = result.previewGroupId;
-  }
-
   function applyImportedGroups(groups: PPCFile["groups"]) {
     if (!groups || !groups.length) return;
     if (!groupApi) return;
@@ -406,7 +570,6 @@ export function initRenderer3D(
       }
     });
   }
-
   function resizeRenderer() {
     const { clientWidth, clientHeight } = viewer;
     renderer.setSize(clientWidth, clientHeight);
@@ -459,7 +622,6 @@ export function initRenderer3D(
     hoverState.hoveredFaceId = null;
   }
 
-  const hoverState = { hoverLines, hoveredFaceId: null as number | null };
   appEventBus.on("groupDataChanged", () => syncGroupStateFromData());
 
   interactionController = initInteractionController({
@@ -472,6 +634,7 @@ export function initRenderer3D(
     getModel,
     facesVisible: () => facesVisible,
     canEdit: () => editGroupId !== null,
+    isPointerLocked: () => pointerLocked,
     pickFace,
     onAddFace: handleAddFace,
     onRemoveFace: handleRemoveFace,
@@ -495,7 +658,6 @@ export function initRenderer3D(
     stopGroupBreath();
     breathGroupId = groupId;
     breathStart = performance.now();
-    breathEnd = breathStart + BREATH_DURATION;
     const faces = groupFaces.get(groupId);
     if (!faces || faces.size === 0) {
       breathGroupId = null;
@@ -667,6 +829,11 @@ export function initRenderer3D(
     dispose: () => {
       interactionController?.dispose();
       uiController.dispose();
+      el.removeEventListener("pointerdown", onCanvasPointerDown);
+      window.removeEventListener("pointerup", onWindowPointerUp);
+      window.removeEventListener("pointercancel", onWindowPointerUp);
+      window.removeEventListener("pointermove", onGlobalPointerMove);
+      document.removeEventListener("pointerlockchange", onPointerLockChange);
     },
     setPreviewGroup,
     setEditGroup,

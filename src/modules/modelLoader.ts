@@ -1,4 +1,5 @@
-import { Box3, BufferGeometry, Mesh, Object3D, PerspectiveCamera, Vector3, Float32BufferAttribute } from "three";
+// 模型加载与几何预处理：生成功能性 mesh（背面/线框）、统计三角面、构建几何索引与默认颜色。
+import { Box3, Sphere, BufferGeometry, Mesh, Object3D, PerspectiveCamera, Vector3, MathUtils, Float32BufferAttribute } from "three";
 import { createBackMaterial, createEdgeMaterial } from "./materials";
 import {
   ensureGroup,
@@ -203,4 +204,3 @@ export function fitCameraToObject(object: Object3D, camera: PerspectiveCamera, c
   controls.target.set(0, 0, 0);
   controls.update();
 }
-// 模型加载与几何预处理：生成功能性 mesh（背面/线框）、统计三角面、构建几何索引与默认颜色。
