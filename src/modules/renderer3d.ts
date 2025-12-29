@@ -165,6 +165,58 @@ export function initRenderer3D(
   });
 
   const { scene, camera, renderer, controls, ambient, dir, modelGroup } = createScene(viewer);
+  let pointerLocked = false;
+  const shouldLockPointer = (event: PointerEvent) => controls.enabled && (event.button === 0 || event.button === 2);
+  const onCanvasPointerDown = (event: PointerEvent) => {
+    console.debug("[pointer] down", { id: event.pointerId, button: event.button });
+    if (!shouldLockPointer(event)) return;
+    if (document.pointerLockElement !== renderer.domElement) {
+      renderer.domElement.requestPointerLock();
+    }
+    if (typeof orbitAny.onPointerDown === "function") {
+      orbitAny.onPointerDown(event);
+    } else if (typeof orbitAny.handlePointerDown === "function") {
+      orbitAny.handlePointerDown(event);
+    }
+  };
+  const exitPointerLockIfNeeded = () => {
+    if (document.pointerLockElement === renderer.domElement) {
+      document.exitPointerLock();
+    }
+  };
+  const onWindowPointerUp = (event: PointerEvent) => {
+    exitPointerLockIfNeeded();
+    if (typeof orbitAny.onPointerUp === "function") {
+      orbitAny.onPointerUp(event);
+    } else if (typeof orbitAny.handlePointerUp === "function") {
+      orbitAny.handlePointerUp(event);
+    }
+  };
+  const onPointerLockChange = () => {
+    pointerLocked = document.pointerLockElement === renderer.domElement;
+    console.debug("[pointer] lock change", pointerLocked);
+  };
+  const orbitAny = controls as any;
+  const onGlobalPointerMove = (event: PointerEvent) => {
+    if (!pointerLocked) return;
+    console.debug("[pointer] move locked", { id: event.pointerId, movementX: event.movementX, movementY: event.movementY });
+    if (typeof orbitAny.onPointerMove === "function") {
+      orbitAny.onPointerMove(event);
+    } else if (typeof orbitAny.handlePointerMove === "function") {
+      orbitAny.handlePointerMove(event);
+    } else if (typeof orbitAny.update === "function" && typeof orbitAny.rotateLeft === "function") {
+      // fallback: manually rotate using movement
+      const rotSpeed = (orbitAny.rotateSpeed ?? 1.0) / 500;
+      orbitAny.rotateLeft(event.movementX * rotSpeed);
+      orbitAny.rotateUp(event.movementY * rotSpeed);
+      orbitAny.update();
+    }
+  };
+  renderer.domElement.addEventListener("pointerdown", onCanvasPointerDown);
+  window.addEventListener("pointerup", onWindowPointerUp);
+  window.addEventListener("pointercancel", onWindowPointerUp);
+  window.addEventListener("pointermove", onGlobalPointerMove);
+  document.addEventListener("pointerlockchange", onPointerLockChange);
 
   const objLoader = new OBJLoader();
   const fbxLoader = new FBXLoader();
@@ -667,6 +719,11 @@ export function initRenderer3D(
     dispose: () => {
       interactionController?.dispose();
       uiController.dispose();
+      renderer.domElement.removeEventListener("pointerdown", onCanvasPointerDown);
+      window.removeEventListener("pointerup", onWindowPointerUp);
+      window.removeEventListener("pointercancel", onWindowPointerUp);
+      window.removeEventListener("pointermove", onGlobalPointerMove);
+      document.removeEventListener("pointerlockchange", onPointerLockChange);
     },
     setPreviewGroup,
     setEditGroup,
