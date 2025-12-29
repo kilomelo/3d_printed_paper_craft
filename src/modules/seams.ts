@@ -33,3 +33,4 @@ export function updateSeamResolution(viewer: HTMLDivElement, seamLines: Map<numb
     material.resolution.set(clientWidth, clientHeight);
   });
 }
+// 拼缝线段创建与更新：封装 LineSegments2 的构建、材质配置与分辨率更新。

@@ -1,7 +1,20 @@
+// 应用入口与编排层：负责初始化页面结构、事件总线订阅、组/拼缝控制器与渲染器的装配，并绑定 UI 交互。
 import "./style.css";
 import packageJson from "../package.json";
+import { Color } from "three";
 import { createStatus } from "./modules/status";
-import { initRenderer3D, type UIRefs } from "./modules/renderer3d";
+import { initRenderer3D, type GroupUIHooks, type UIRefs } from "./modules/renderer3d";
+import { createGroupController } from "./modules/groupController";
+import { appEventBus } from "./modules/eventBus";
+import { initGroupUI } from "./modules/groupUI";
+import { createSeamManager } from "./modules/seamManager";
+import {
+  getGroupFaces,
+  getGroupColor,
+  getPreviewGroupId,
+  getEditGroupId,
+  setPreviewGroupId,
+} from "./modules/groups";
 
 const VERSION = packageJson.version ?? "0.0.0.0";
 
@@ -12,6 +25,7 @@ if (!app) {
 
 app.innerHTML = `
   <main class="shell">
+    <div class="version-badge version-badge-global">v${VERSION}</div>
     <input id="file-input" type="file" accept=".obj,.fbx,.stl,.3dppc,application/json" style="display:none" />
 
     <section id="layout-empty" class="page home active">
@@ -49,6 +63,7 @@ app.innerHTML = `
         </div>
         <div class="preview-panel">
           <div class="preview-toolbar">
+            <button class="btn sm toggle" id="group-edit-toggle">编辑展开组</button>
             <div class="group-tabs" id="group-tabs"></div>
             <button class="btn sm tab-add" id="group-add">+</button>
             <div class="toolbar-spacer"></div>
@@ -89,6 +104,7 @@ const groupCountLabel = document.querySelector<HTMLSpanElement>("#group-count");
 const groupColorBtn = document.querySelector<HTMLButtonElement>("#group-color-btn");
 const groupColorInput = document.querySelector<HTMLInputElement>("#group-color-input");
 const groupDeleteBtn = document.querySelector<HTMLButtonElement>("#group-delete");
+const groupEditToggle = document.querySelector<HTMLButtonElement>("#group-edit-toggle");
 const layoutEmpty = document.querySelector<HTMLElement>("#layout-empty");
 const layoutWorkspace = document.querySelector<HTMLElement>("#layout-workspace");
 
@@ -113,6 +129,7 @@ if (
   !groupColorBtn ||
   !groupColorInput ||
   !groupDeleteBtn ||
+  !groupEditToggle ||
   !layoutEmpty ||
   !layoutWorkspace
 ) {
@@ -133,16 +150,90 @@ const uiRefs: UIRefs = {
   facesToggle,
   exportBtn,
   triCounter,
-  groupTabsEl,
-  groupAddBtn,
-  groupPreview,
-  groupPreviewLabel,
-  groupCountLabel,
-  groupColorBtn,
-  groupColorInput,
-  groupDeleteBtn,
   layoutEmpty,
   layoutWorkspace,
 };
 
-initRenderer3D(uiRefs, setStatus);
+const groupUiHooks: GroupUIHooks = {};
+
+const renderer = initRenderer3D(uiRefs, setStatus, groupUiHooks);
+const seamManager = createSeamManager(renderer.getSeamManagerDeps());
+renderer.attachSeamManager(seamManager);
+const groupController = createGroupController(renderer.getGroupDeps());
+renderer.attachGroupApi(groupController);
+appEventBus.on("modelLoaded", () => seamManager.rebuildFull());
+appEventBus.on("seamsRebuildFull", () => seamManager.rebuildFull());
+appEventBus.on("seamsRebuildGroups", (groups) => seamManager.rebuildGroups(groups));
+appEventBus.on("seamsRebuildFaces", (faces) => seamManager.rebuildFaces(faces));
+
+const buildGroupUIState = () => {
+  const groupFaces = getGroupFaces();
+  const ids = Array.from(groupFaces.keys()).sort((a, b) => a - b);
+  const previewGroupId = getPreviewGroupId();
+  const editGroupId = getEditGroupId();
+  return {
+    groupIds: ids,
+    previewGroupId,
+    editGroupId,
+    getGroupColor,
+    getGroupCount: (id: number) => groupFaces.get(id)?.size ?? 0,
+    deletable: groupFaces.size > 1,
+  };
+};
+
+const groupUI = initGroupUI(
+  {
+    groupTabsEl,
+    groupPreview,
+    groupPreviewLabel,
+    groupCountLabel,
+    groupColorBtn,
+    groupColorInput,
+    groupDeleteBtn,
+  },
+  {
+    onPreviewSelect: (id) => {
+      if (getEditGroupId() !== null) return;
+      setPreviewGroupId(id);
+    },
+    onEditSelect: (id) => {
+      groupController.setEditGroup(id, getEditGroupId(), getPreviewGroupId());
+    },
+    onColorChange: (color: Color) => groupController.applyGroupColor(getPreviewGroupId(), color),
+    onDelete: () => {
+      const state = buildGroupUIState();
+      const ok = confirm(`确定删除展开组 ${state.previewGroupId} 吗？该组的面将被移出。`);
+      if (!ok) return;
+      groupController.deleteGroup(state.previewGroupId, getEditGroupId());
+    },
+  },
+);
+
+groupUiHooks.renderGroupUI = (state) => groupUI.render(state);
+appEventBus.on("groupDataChanged", () => groupUI.render(buildGroupUIState()));
+
+groupAddBtn.addEventListener("click", () => {
+  const result = groupController.createGroup(getEditGroupId());
+  setPreviewGroupId(result.previewGroupId);
+});
+
+const updateGroupEditToggle = () => {
+  const editId = getEditGroupId();
+  groupEditToggle.classList.toggle("active", editId !== null);
+  groupEditToggle.textContent = editId === null ? "编辑展开组" : "结束编辑";
+};
+
+groupEditToggle.addEventListener("click", () => {
+  const currentEdit = getEditGroupId();
+  if (currentEdit === null) {
+    groupController.setEditGroup(getPreviewGroupId(), null, getPreviewGroupId());
+  } else {
+    groupController.setEditGroup(null, currentEdit, getPreviewGroupId());
+  }
+  updateGroupEditToggle();
+});
+
+appEventBus.on("groupDataChanged", () => updateGroupEditToggle());
+
+groupUI.render(buildGroupUIState());
+updateGroupEditToggle();

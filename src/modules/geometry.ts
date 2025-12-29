@@ -129,3 +129,4 @@ export function filterLargestComponent(
 
   return { vertices: newVertices, triangles: newTriangles, mapping };
 }
+// 几何工具：计算面-边索引、顶点键、邻接关系等基础几何数据，供索引/业务层使用。

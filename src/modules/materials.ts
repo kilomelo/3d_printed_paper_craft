@@ -36,3 +36,4 @@ export function createEdgeMaterial() {
     wireframe: true,
   });
 }
+// 材质工厂：提供前/背面、线框、hover 等 Three.js 材质实例生成，集中管理颜色与透明度。

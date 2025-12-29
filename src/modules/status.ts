@@ -26,3 +26,4 @@ export function createStatus(el: HTMLElement): StatusController {
 
   return { setStatus };
 }
+// 状态栏管理：提供状态文本的显示、清除与重复提示的累加处理。

@@ -51,3 +51,4 @@ export function createScene(viewer: HTMLDivElement): SceneContext {
 
   return { scene, camera, renderer, controls, ambient, dir, modelGroup };
 }
+// 场景工厂：创建 Three.js 场景、相机、光照、渲染器及承载模型的容器。

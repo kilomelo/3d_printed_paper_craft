@@ -35,3 +35,4 @@ export function setLastTriangleCount(count: number) {
 export function getLastTriangleCount(): number {
   return state.lastTriangleCount;
 }
+// 模型状态：存储当前 Three.js 对象与最近文件名/三角面数量，作为全局数据源。

@@ -147,6 +147,13 @@ body {
   letter-spacing: 0.8px;
 }
 
+.version-badge-global {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+}
+
 .editor-menu {
   display: flex;
   gap: 8px;
@@ -187,6 +194,11 @@ body {
   align-items: center;
   gap: 8px;
   background: rgba(255, 255, 255, 0.02);
+}
+
+#group-edit-toggle {
+  min-width: 90px;
+  justify-content: center;
 }
 
 .toolbar-spacer {

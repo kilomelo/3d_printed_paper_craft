@@ -149,3 +149,4 @@ export async function load3dppc(url: string, frontMaterial: Mesh["material"]) {
 
   return { object: group, groups: json.groups, colorCursor };
 }
+// 3dppc 格式处理：负责序列化/反序列化自定义 3dppc 文件，提供加载与下载工具。

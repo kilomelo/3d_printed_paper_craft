@@ -106,3 +106,4 @@ function getFaceVertexIndices(geometry: THREE.BufferGeometry, faceIndex: number)
   }
   return [faceIndex * 3, faceIndex * 3 + 1, faceIndex * 3 + 2];
 }
+// 交互辅助：创建 raycaster/hover 线、更新分辨率等低层交互工具函数。

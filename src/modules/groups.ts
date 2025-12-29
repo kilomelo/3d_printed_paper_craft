@@ -1,4 +1,5 @@
 import { Color } from "three";
+import { appEventBus } from "./eventBus";
 
 export type GroupFacesMap = Map<number, Set<number>>;
 export type FaceGroupMap = Map<number, number | null>;
@@ -23,12 +24,24 @@ export function resetGroups() {
   previewGroupId = 1;
   editGroupId = null;
   ensureGroup(1);
+  appEventBus.emit("groupDataChanged", undefined);
 }
 
 export function ensureGroup(id: number) {
-  if (!groupFaces.has(id)) groupFaces.set(id, new Set<number>());
-  if (!groupColors.has(id)) groupColors.set(id, nextPaletteColor());
-  if (!groupTreeParent.has(id)) groupTreeParent.set(id, new Map<number, number | null>());
+  let changed = false;
+  if (!groupFaces.has(id)) {
+    groupFaces.set(id, new Set<number>());
+    changed = true;
+  }
+  if (!groupColors.has(id)) {
+    groupColors.set(id, nextPaletteColor());
+    changed = true;
+  }
+  if (!groupTreeParent.has(id)) {
+    groupTreeParent.set(id, new Map<number, number | null>());
+    changed = true;
+  }
+  if (changed) appEventBus.emit("groupDataChanged", undefined);
 }
 
 export function getFaceGroupMap() {
@@ -53,6 +66,7 @@ export function getPreviewGroupId() {
 
 export function setPreviewGroupId(id: number) {
   previewGroupId = id;
+  appEventBus.emit("groupDataChanged", undefined);
 }
 
 export function getEditGroupId() {
@@ -60,7 +74,9 @@ export function getEditGroupId() {
 }
 
 export function setEditGroupId(id: number | null) {
+  if (editGroupId === id) return;
   editGroupId = id;
+  appEventBus.emit("groupDataChanged", undefined);
 }
 
 export function getGroupColorCursor() {
@@ -86,6 +102,7 @@ export function getGroupColor(id: number): Color {
 
 export function setGroupColor(groupId: number, color: Color) {
   groupColors.set(groupId, color);
+  appEventBus.emit("groupDataChanged", undefined);
 }
 
 export function setFaceGroup(faceId: number, groupId: number | null) {
@@ -102,6 +119,9 @@ export function setFaceGroup(faceId: number, groupId: number | null) {
   if (groupId !== null) {
     ensureGroup(groupId);
     groupFaces.get(groupId)!.add(faceId);
+  }
+  if (!hasPrev || prev !== groupId) {
+    appEventBus.emit("groupDataChanged", undefined);
   }
 }
 
@@ -268,6 +288,7 @@ export function deleteGroup(
     setEditGroupId(previewGroupId);
   }
   if (rebuildCb) rebuildCb(previewGroupId);
+  appEventBus.emit("groupDataChanged", undefined);
 }
 
 export function applyImportedGroups(
@@ -295,6 +316,7 @@ export function applyImportedGroups(
     groupColors.set(1, getGroupColor(1));
   }
   previewGroupId = Math.min(...Array.from(groupFaces.keys()));
+  appEventBus.emit("groupDataChanged", undefined);
 }
 
 export type PPCFile = {
@@ -320,3 +342,4 @@ export type PPCFile = {
   groupColorCursor?: number;
   annotations?: Record<string, unknown>;
 };
+// 展开组数据层：维护组-面映射、组颜色、组树结构等核心数据，提供基础操作并通过事件总线通知变更。
