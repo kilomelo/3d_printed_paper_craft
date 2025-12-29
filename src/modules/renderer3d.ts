@@ -1,5 +1,5 @@
 // 3D 渲染与交互层：负责 Three.js 场景、相机/光源、模型加载展示、拾取/hover/刷子交互，消费外部注入的组/拼缝接口，不持有业务状态。
-import { Color, Vector3, Mesh, MeshStandardMaterial, type Object3D } from "three";
+import { Color, Vector3, Mesh, MeshStandardMaterial, Quaternion, type Object3D } from "three";
 import type { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
@@ -166,10 +166,34 @@ export function initRenderer3D(
 
   const { scene, camera, renderer, controls, ambient, dir, modelGroup } = createScene(viewer);
   let pointerLocked = false;
+  let lockedButton: number | null = null;
+  const rotateOffset = new Vector3();
+  const viewDir = new Vector3();
+  const worldUp = new Vector3(0, 0, 1);
+  const tempAxis = new Vector3();
+  const tempQuat = new Quaternion();
   const shouldLockPointer = (event: PointerEvent) => controls.enabled && (event.button === 0 || event.button === 2);
+  const orbitRotatePitch = (angle: number) => {
+    const cam = controls.object;
+    // axis = viewDir x worldUp (perpendicular to plane of viewDir and z)
+    viewDir.subVectors(controls.target, cam.position).normalize();
+    tempAxis.crossVectors(viewDir, worldUp);
+    if (tempAxis.lengthSq() < 1e-6) {
+      tempAxis.set(1, 0, 0); // fallback
+    } else {
+      tempAxis.normalize();
+    }
+    rotateOffset.subVectors(cam.position, controls.target);
+    tempQuat.setFromAxisAngle(tempAxis, angle);
+    rotateOffset.applyQuaternion(tempQuat);
+    cam.position.copy(controls.target).add(rotateOffset);
+    cam.up.applyQuaternion(tempQuat);
+    controls.update();
+  };
   const onCanvasPointerDown = (event: PointerEvent) => {
     console.debug("[pointer] down", { id: event.pointerId, button: event.button });
     if (!shouldLockPointer(event)) return;
+    lockedButton = event.button;
     if (document.pointerLockElement !== renderer.domElement) {
       renderer.domElement.requestPointerLock();
     }
@@ -179,19 +203,27 @@ export function initRenderer3D(
       document.exitPointerLock();
     }
   };
-  const onWindowPointerUp = () => exitPointerLockIfNeeded();
+  const onWindowPointerUp = (event: PointerEvent) => {
+    exitPointerLockIfNeeded();
+    lockedButton = null;
+  };
   const onPointerLockChange = () => {
     pointerLocked = document.pointerLockElement === renderer.domElement;
     console.debug("[pointer] lock change", pointerLocked);
+    if (!pointerLocked) lockedButton = null;
   };
-  const orbitAny = controls as any;
   const onGlobalPointerMove = (event: PointerEvent) => {
     if (!pointerLocked) return;
+    const rotSpeed = 0.003;
     console.debug("[pointer] move locked", { id: event.pointerId, movementX: event.movementX, movementY: event.movementY });
-    if (typeof orbitAny.onPointerMove === "function") {
-      orbitAny.onPointerMove(event);
-    } else if (typeof orbitAny.handlePointerMove === "function") {
-      orbitAny.handlePointerMove(event);
+    if (lockedButton === 0) {
+      orbitRotatePitch(-event.movementY * rotSpeed);
+    } else if (lockedButton === 2) {
+      controls.pan(
+        -event.movementX * (controls.panSpeed ?? 1) * 0.002,
+        event.movementY * (controls.panSpeed ?? 1) * 0.002,
+      );
+      controls.update();
     }
   };
   renderer.domElement.addEventListener("pointerdown", onCanvasPointerDown);
