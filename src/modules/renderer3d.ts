@@ -173,25 +173,13 @@ export function initRenderer3D(
     if (document.pointerLockElement !== renderer.domElement) {
       renderer.domElement.requestPointerLock();
     }
-    if (typeof orbitAny.onPointerDown === "function") {
-      orbitAny.onPointerDown(event);
-    } else if (typeof orbitAny.handlePointerDown === "function") {
-      orbitAny.handlePointerDown(event);
-    }
   };
   const exitPointerLockIfNeeded = () => {
     if (document.pointerLockElement === renderer.domElement) {
       document.exitPointerLock();
     }
   };
-  const onWindowPointerUp = (event: PointerEvent) => {
-    exitPointerLockIfNeeded();
-    if (typeof orbitAny.onPointerUp === "function") {
-      orbitAny.onPointerUp(event);
-    } else if (typeof orbitAny.handlePointerUp === "function") {
-      orbitAny.handlePointerUp(event);
-    }
-  };
+  const onWindowPointerUp = () => exitPointerLockIfNeeded();
   const onPointerLockChange = () => {
     pointerLocked = document.pointerLockElement === renderer.domElement;
     console.debug("[pointer] lock change", pointerLocked);
@@ -204,12 +192,6 @@ export function initRenderer3D(
       orbitAny.onPointerMove(event);
     } else if (typeof orbitAny.handlePointerMove === "function") {
       orbitAny.handlePointerMove(event);
-    } else if (typeof orbitAny.update === "function" && typeof orbitAny.rotateLeft === "function") {
-      // fallback: manually rotate using movement
-      const rotSpeed = (orbitAny.rotateSpeed ?? 1.0) / 500;
-      orbitAny.rotateLeft(event.movementX * rotSpeed);
-      orbitAny.rotateUp(event.movementY * rotSpeed);
-      orbitAny.update();
     }
   };
   renderer.domElement.addEventListener("pointerdown", onCanvasPointerDown);
