@@ -1,8 +1,8 @@
 // 展开组 2D 管理器：监听面增删事件，按需查询角度索引并维护组内面/边的缓存，后续可用于 2D 重建。
 import { BufferGeometry, Mesh, Vector3, Float32BufferAttribute, Matrix4, Quaternion } from "three";
+import type { GeometryIndex } from "./geometryIndex";
 import { getFaceVertexIndices } from "./modelLoader";
 import { AngleIndex } from "./angleIndex";
-import { GeometryIndex } from "./geometryIndex";
 import { appEventBus } from "./eventBus";
 import type { Renderer2DContext } from "./renderer2d";
 import { createUnfoldEdgeMaterial, createUnfoldFaceMaterial } from "./materials";
@@ -18,7 +18,6 @@ type TransformTree = Map<number, Matrix4>;
 type TransformStore = Map<number, TransformTree>;
 
 type ManagerDeps = {
-  geometryIndex: GeometryIndex;
   angleIndex: AngleIndex;
   renderer2d: Renderer2DContext;
   getGroupFaces: () => Map<number, Set<number>>;
@@ -35,7 +34,6 @@ type ManagerDeps = {
 
 export function createUnfold2dManager(opts: ManagerDeps) {
   const {
-    geometryIndex,
     angleIndex,
     renderer2d,
     getGroupFaces,
@@ -54,12 +52,15 @@ export function createUnfold2dManager(opts: ManagerDeps) {
   const tmpA = new Vector3();
   const tmpB = new Vector3();
   const tmpC = new Vector3();
+  const tmpD = new Vector3();
+  const tmpE = new Vector3();
   const basisU = new Vector3();
   const basisV = new Vector3();
   const normal = new Vector3();
   const targetNormal = new Vector3(0, 0, 1);
   const quat = new Quaternion();
   const anchor = new Vector3();
+  const axis = new Vector3();
 
   const clearScene = () => {
     renderer2d.root.children.forEach((child) => {
@@ -69,6 +70,90 @@ export function createUnfold2dManager(opts: ManagerDeps) {
       }
     });
     renderer2d.root.clear();
+  };
+
+  const computeFaceNormal = (faceId: number, out: Vector3) => {
+    const mapping = getFaceIndexMap().get(faceId);
+    if (!mapping) {
+      out.set(0, 0, 1);
+      return;
+    }
+    const geom = mapping.mesh.geometry;
+    const pos = geom.getAttribute("position");
+    if (!pos) {
+      out.set(0, 0, 1);
+      return;
+    }
+    const [ia, ib, ic] = getFaceVertexIndices(geom, mapping.localFace);
+    mapping.mesh.updateWorldMatrix(true, false);
+    tmpA.set(pos.getX(ia), pos.getY(ia), pos.getZ(ia)).applyMatrix4(mapping.mesh.matrixWorld);
+    tmpB.set(pos.getX(ib), pos.getY(ib), pos.getZ(ib)).applyMatrix4(mapping.mesh.matrixWorld);
+    tmpC.set(pos.getX(ic), pos.getY(ic), pos.getZ(ic)).applyMatrix4(mapping.mesh.matrixWorld);
+    out.subVectors(tmpB, tmpA).cross(tmpC.sub(tmpA)).normalize();
+  };
+
+  const findSharedEdge = (parentId: number, childId: number): number | null => {
+    const faceToEdges = getFaceToEdges();
+    const edgesArray = getEdgesArray();
+    const childEdges = faceToEdges.get(childId);
+    if (!childEdges) return null;
+    for (const eid of childEdges) {
+      const rec = edgesArray[eid];
+      if (rec && rec.faces.has(parentId)) return eid;
+    }
+    return null;
+  };
+
+  const buildChildTransform = (groupId: number, parentId: number, childId: number) => {
+    const sharedEdgeId = findSharedEdge(parentId, childId);
+    if (sharedEdgeId === null) {
+      console.warn("[unfold2d] no shared edge", { parentId, childId });
+      return;
+    }
+    const edgesArray = getEdgesArray();
+    const edge = edgesArray[sharedEdgeId];
+    if (!edge) return;
+    const vpos = getVertexKeyToPos();
+    const v1 = vpos.get(edge.vertices[0]);
+    const v2 = vpos.get(edge.vertices[1]);
+    if (!v1 || !v2) return;
+    const nParent = tmpD;
+    const nChild = tmpE;
+    computeFaceNormal(parentId, nParent);
+    computeFaceNormal(childId, nChild);
+
+    axis.copy(v2).sub(v1).normalize();
+    const projParent = nParent.clone().sub(axis.clone().multiplyScalar(nParent.dot(axis))).normalize();
+    const projChild = nChild.clone().sub(axis.clone().multiplyScalar(nChild.dot(axis))).normalize();
+    if (projParent.lengthSq() === 0 || projChild.lengthSq() === 0) return;
+    const cross = projChild.clone().cross(projParent);
+    const sign = Math.sign(axis.dot(cross));
+    const cos = projChild.dot(projParent);
+    const ang = Math.atan2(Math.min(Math.max(cross.length(), -1), 1) * sign, cos);
+
+    const rot = new Matrix4().makeRotationAxis(axis, ang);
+    const toOrigin = new Matrix4().makeTranslation(-v1.x, -v1.y, -v1.z);
+    const back = new Matrix4().makeTranslation(v1.x, v1.y, v1.z);
+    const mat = new Matrix4().multiplyMatrices(back, new Matrix4().multiplyMatrices(rot, toOrigin));
+    setFaceTransform(groupId, childId, mat);
+  };
+
+  const buildTransformsForGroup = (groupId: number) => {
+    const parentMap = getGroupTreeParent().get(groupId);
+    if (!parentMap) return;
+    // 根已在 buildRootTransforms 设置，这里做 BFS，子面依赖父面
+    const queue: number[] = [];
+    parentMap.forEach((parent, faceId) => {
+      if (parent === null) queue.push(faceId);
+    });
+    while (queue.length) {
+      const cur = queue.shift()!;
+      parentMap.forEach((parent, fid) => {
+        if (parent !== cur) return;
+        buildChildTransform(groupId, parent, fid);
+        queue.push(fid);
+      });
+    }
   };
 
   const clearTransforms = () => {
@@ -160,7 +245,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
       const back = new Matrix4().makeTranslation(anchor.x, anchor.y, anchor.z);
       const rootMat = new Matrix4().multiplyMatrices(back, new Matrix4().multiplyMatrices(rot, toOrigin));
       setRootTransform(groupId, faceId, rootMat);
-      console.log("[unfold2d] root transform set", { groupId, faceId, normal: normal.toArray(), matrix: rootMat.elements });
+      console.debug("[unfold2d] root transform set", { groupId, faceId, normal: normal.toArray(), matrix: rootMat.elements });
     });
   };
 
@@ -168,7 +253,9 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     const faces = getGroupFaces().get(groupId);
     clearScene();
     if (!faces || faces.size === 0) return;
+    clearTransforms();
     buildRootTransforms(groupId);
+    buildTransformsForGroup(groupId);
     refreshVertexWorldPositions();
     const positions: number[] = [];
     const colors: number[] = [];
@@ -221,7 +308,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     const zoomY = viewH / (spanY * pad);
     renderer2d.camera.zoom = Math.min(zoomX, zoomY);
     renderer2d.camera.updateProjectionMatrix();
-    console.log("[unfold2d] rebuild group", {
+    console.debug("[unfold2d] rebuild group", {
       groupId,
       faces: Array.from(faces),
       camera: {
@@ -253,7 +340,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
   const onFaceAdded = ({ groupId, faceId }: { groupId: number; faceId: number }) => {
     const cache = ensureGroup(groupId);
     cache.faces.add(faceId);
-    console.log("[unfold2d] face added", { groupId, faceId });
+    console.debug("[unfold2d] face added", { groupId, faceId });
     warmAnglesForFace(faceId, cache);
     rebuildGroup2D(groupId);
   };
@@ -261,7 +348,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
   const onFaceRemoved = ({ groupId, faceId }: { groupId: number; faceId: number }) => {
     const cache = ensureGroup(groupId);
     cache.faces.delete(faceId);
-    console.log("[unfold2d] face removed", { groupId, faceId });
+    console.debug("[unfold2d] face removed", { groupId, faceId });
     // 不强制清理 edges，避免重复计算，后续完整重建时可重置
     rebuildGroup2D(groupId);
   };

@@ -30,7 +30,7 @@ export class AngleIndex {
     if (this.cache.has(edgeId)) {
       const val = this.cache.get(edgeId)!;
       const deg = (val * 180) / Math.PI;
-      console.log("[angleIndex] hit", {
+      console.debug("[angleIndex] hit", {
         edgeId,
         angleRad: val,
         angleDeg: deg.toFixed(3),
@@ -40,7 +40,7 @@ export class AngleIndex {
     }
     const val = this.computeAngle(edgeId);
     const deg = (val * 180) / Math.PI;
-    console.log("[angleIndex] miss-computed", {
+    console.debug("[angleIndex] miss-computed", {
         edgeId,
         angleRad: val,
         angleDeg: deg.toFixed(3),

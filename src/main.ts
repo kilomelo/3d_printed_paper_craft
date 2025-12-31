@@ -169,7 +169,6 @@ const groupController = createGroupController(renderer.getGroupDeps());
 renderer.attachGroupApi(groupController);
 const renderer2d = initRenderer2D(groupPreview);
 const unfold2d = createUnfold2dManager({
-  geometryIndex: geometryContext.geometryIndex,
   angleIndex: geometryContext.angleIndex,
   renderer2d,
   getGroupFaces,

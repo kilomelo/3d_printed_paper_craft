@@ -81,7 +81,7 @@ export function refreshSeamResolution(ctx: SeamContext) {
 }
 
 export function rebuildSeamsFull(ctx: SeamContext) {
-  console.log("[seam] rebuild full");
+  console.debug("[seam] rebuild full");
   ctx.edges.forEach((_, edgeId) => {
     const isSeam = edgeIsSeam(edgeId, ctx);
     updateSeamLine(edgeId, isSeam, ctx);
@@ -92,14 +92,14 @@ export function rebuildSeamsFull(ctx: SeamContext) {
 
 export function rebuildSeamsForGroups(groupIds: Set<number>, ctx: SeamContext, groupFaces: Map<number, Set<number>>) {
   if (groupIds.size === 0) return;
-  console.log("[seam] rebuild partial", { groups: Array.from(groupIds) });
+  console.debug("[seam] rebuild partial", { groups: Array.from(groupIds) });
   const faceIds = new Set<number>(Array.from(groupIds).flatMap((gid) => Array.from(groupFaces.get(gid) ?? [])));
   rebuildSeamsForFaces(faceIds, ctx);
 }
 
 export function rebuildSeamsForFaces(faceIds: Set<number>, ctx: SeamContext) {
   if (faceIds.size === 0) return;
-  console.log("[seam] rebuild faces", { faces: Array.from(faceIds) });
+  console.debug("[seam] rebuild faces", { faces: Array.from(faceIds) });
   ctx.edges.forEach((edge, edgeId) => {
     let related = false;
     edge.faces.forEach((f) => {
