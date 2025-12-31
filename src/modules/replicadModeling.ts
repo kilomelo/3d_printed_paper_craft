@@ -5,6 +5,7 @@ import initOC from "replicad-opencascadejs/src/replicad_single.js";
 import ocWasmUrl from "replicad-opencascadejs/src/replicad_single.wasm?url";
 
 type Point2D = [number, number];
+export type Triangle2D = [Point2D, Point2D, Point2D];
 
 export type PlanarProfile = {
   outer: Point2D[];
@@ -44,15 +45,6 @@ const sketchLoop = (points: Point2D[]) => {
   return sketcher.close();
 };
 
-const createTriangleProfile = (height: number): PlanarProfile => ({
-  outer: [
-    [0, 0],
-    [40, 0],
-    [0, 40],
-  ],
-  height,
-});
-
 const meshToBufferGeometry = (mesh: ShapeMesh) => {
   const geometry = new BufferGeometry();
   const position = new Float32BufferAttribute(mesh.vertices, 3);
@@ -86,24 +78,46 @@ export async function buildReplicadExtrude(profile: PlanarProfile, meshOptions?:
   return geometry;
 }
 
-export async function buildDemoGeometry() {
-  const demoProfile = createTriangleProfile(10);
-  return buildReplicadExtrude(demoProfile, { tolerance: 0.2, angularTolerance: 0.1 });
-}
-
-export async function buildDemoStepBlob() {
+const buildSolidFromTriangles = async (triangles: Triangle2D[]) => {
   await ensureReplicadOC();
-  const profile = createTriangleProfile(10);
-  const outerSketch = sketchLoop(profile.outer);
-  const solid = outerSketch.extrude(profile.height);
-  const blob = solid.blobSTEP();
+  const solids: any[] = [];
+  const seen = new Set<string>();
+  const keyOf = (tri: Triangle2D) => tri.flat().map((v) => v.toFixed(5)).join("|");
+  triangles.forEach((tri) => {
+    const k = keyOf(tri);
+    if (seen.has(k)) return;
+    seen.add(k);
+    const sketch = new Sketcher("XY")
+      .movePointerTo(tri[0])
+      .lineTo(tri[1])
+      .lineTo(tri[2])
+      .close();
+    const solid = sketch.extrude(10);
+    solids.push(solid);
+  });
+  if (!solids.length) {
+    throw new Error("三角形建模失败");
+  }
+  let fused = solids[0];
+  for (let i = 1; i < solids.length; i += 1) {
+    fused = fused.fuse(solids[i], { optimisation: "commonFace" });
+  }
+  return fused;
+};
+
+export async function buildGroupStepFromTriangles(triangles: Triangle2D[]) {
+  if (!triangles.length) {
+    throw new Error("没有可用于建模的展开三角形");
+  }
+  const fused = await buildSolidFromTriangles(triangles);
+  const blob = fused.blobSTEP();
   return blob;
 }
 
-export async function buildDemoStlBlob() {
-  await ensureReplicadOC();
-  const profile = createTriangleProfile(10);
-  const outerSketch = sketchLoop(profile.outer);
-  const solid = outerSketch.extrude(profile.height);
-  return solid.blobSTL({ binary: true, tolerance: 0.2, angularTolerance: 0.1 });
+export async function buildGroupStlFromTriangles(triangles: Triangle2D[]) {
+  if (!triangles.length) {
+    throw new Error("没有可用于建模的展开三角形");
+  }
+  const fused = await buildSolidFromTriangles(triangles);
+  return fused.blobSTL({ binary: true, tolerance: 0.2, angularTolerance: 0.1 });
 }

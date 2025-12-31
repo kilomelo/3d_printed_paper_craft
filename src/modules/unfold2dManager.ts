@@ -320,6 +320,29 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     });
   };
 
+  const getGroupTriangles2D = (groupId: number) => {
+    const faces = getGroupFaces().get(groupId);
+    if (!faces || faces.size === 0) return [] as Array<[[number, number], [number, number], [number, number]]>;
+    // 确保有可用的变换矩阵
+    buildRootTransforms(groupId);
+    buildTransformsForGroup(groupId);
+    refreshVertexWorldPositions();
+    const tris: Array<[[number, number], [number, number], [number, number]]> = [];
+    faces.forEach((fid) => {
+      const tri = faceTo2D(groupId, fid);
+      if (!tri) return;
+      const [a, b, c] = tri;
+      tris.push(
+        [
+          [a.x, a.y],
+          [b.x, b.y],
+          [c.x, c.y],
+        ],
+      );
+    });
+    return tris;
+  };
+
   const ensureGroup = (groupId: number) => {
     if (!groupCache.has(groupId)) {
       groupCache.set(groupId, { faces: new Set(), edges: new Set() });
@@ -378,5 +401,6 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     setRootTransform,
     setFaceTransform,
     getTransformChain,
+    getGroupTriangles2D,
   };
 }

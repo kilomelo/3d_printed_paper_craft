@@ -21,7 +21,7 @@ import {
   getGroupTreeParent,
 } from "./modules/groups";
 import { getModel } from "./modules/model";
-import { buildDemoStepBlob, buildDemoStlBlob } from "./modules/replicadDemo";
+import { buildGroupStepFromTriangles, buildGroupStlFromTriangles } from "./modules/replicadModeling";
 
 const VERSION = packageJson.version ?? "0.0.0.0";
 
@@ -40,8 +40,6 @@ app.innerHTML = `
         <div class="home-title">3D Printed Paper Craft</div>
         <div class="home-subtitle">选择一个模型文件开始编辑</div>
         <button id="home-start" class="btn primary">打开模型</button>
-        <button id="replicad-demo-btn" class="btn ghost">生成并下载 STL 示例</button>
-        <button id="replicad-demo2-btn" class="btn ghost">生成并下载 STEP 示例</button>
         <div class="home-meta">支持 OBJ / FBX / STL / 3dppc</div>
       </div>
     </section>
@@ -54,6 +52,8 @@ app.innerHTML = `
       <nav class="editor-menu">
         <button class="btn ghost" id="menu-open">打开模型</button>
         <button class="btn ghost" id="export-btn" disabled>导出 .3dppc</button>
+        <button class="btn ghost" id="export-group-step-btn" disabled>导出展开组 STEP</button>
+        <button class="btn ghost" id="export-group-stl-btn" disabled>导出展开组 STL</button>
         <button class="btn ghost" disabled>设置</button>
       </nav>
       <section class="editor-preview">
@@ -95,8 +95,6 @@ const viewer = document.querySelector<HTMLDivElement>("#viewer");
 const statusEl = document.querySelector<HTMLDivElement>("#status");
 const fileInput = document.querySelector<HTMLInputElement>("#file-input");
 const homeStartBtn = document.querySelector<HTMLButtonElement>("#home-start");
-const replicadDemoBtn = document.querySelector<HTMLButtonElement>("#replicad-demo-btn");
-const replicadDemo2Btn = document.querySelector<HTMLButtonElement>("#replicad-demo2-btn");
 const menuOpenBtn = document.querySelector<HTMLButtonElement>("#menu-open");
 const resetViewBtn = document.querySelector<HTMLButtonElement>("#reset-view-btn");
 const lightToggle = document.querySelector<HTMLButtonElement>("#light-toggle");
@@ -104,6 +102,8 @@ const edgesToggle = document.querySelector<HTMLButtonElement>("#edges-toggle");
 const seamsToggle = document.querySelector<HTMLButtonElement>("#seams-toggle");
 const facesToggle = document.querySelector<HTMLButtonElement>("#faces-toggle");
 const exportBtn = document.querySelector<HTMLButtonElement>("#export-btn");
+const exportGroupStepBtn = document.querySelector<HTMLButtonElement>("#export-group-step-btn");
+const exportGroupStlBtn = document.querySelector<HTMLButtonElement>("#export-group-stl-btn");
 const triCounter = document.querySelector<HTMLDivElement>("#tri-counter");
 const groupTabsEl = document.querySelector<HTMLDivElement>("#group-tabs");
 const groupAddBtn = document.querySelector<HTMLButtonElement>("#group-add");
@@ -121,8 +121,6 @@ if (
   !statusEl ||
   !fileInput ||
   !homeStartBtn ||
-  !replicadDemoBtn ||
-  !replicadDemo2Btn ||
   !menuOpenBtn ||
   !resetViewBtn ||
   !lightToggle ||
@@ -130,6 +128,8 @@ if (
   !seamsToggle ||
   !facesToggle ||
   !exportBtn ||
+  !exportGroupStepBtn ||
+  !exportGroupStlBtn ||
   !triCounter ||
   !groupTabsEl ||
   !groupAddBtn ||
@@ -194,6 +194,10 @@ appEventBus.on("modelLoaded", () => seamManager.rebuildFull());
 appEventBus.on("seamsRebuildFull", () => seamManager.rebuildFull());
 appEventBus.on("seamsRebuildGroups", (groups) => seamManager.rebuildGroups(groups));
 appEventBus.on("seamsRebuildFaces", (faces) => seamManager.rebuildFaces(faces));
+appEventBus.on("modelLoaded", () => {
+  exportGroupStepBtn.disabled = false;
+  exportGroupStlBtn.disabled = false;
+});
 
 const buildGroupUIState = () => {
   const groupFaces = getGroupFaces();
@@ -266,48 +270,60 @@ appEventBus.on("groupDataChanged", () => updateGroupEditToggle());
 groupUI.render(buildGroupUIState());
 updateGroupEditToggle();
 
-replicadDemoBtn.addEventListener("click", async () => {
-  replicadDemoBtn.disabled = true;
+exportGroupStepBtn.addEventListener("click", async () => {
+  exportGroupStepBtn.disabled = true;
   try {
-    setStatus("正在生成 STL 示例...", "info");
-    const blob = await buildDemoStlBlob();
+    const targetGroupId = getEditGroupId() ?? getPreviewGroupId();
+    const tris = unfold2d.getGroupTriangles2D(targetGroupId);
+    if (!tris.length) {
+      setStatus("当前展开组没有三角面，无法导出。", "error");
+      return;
+    }
+    setStatus("正在导出展开组 STEP...", "info");
+    const blob = await buildGroupStepFromTriangles(tris);
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "replicad-demo.stl";
+    a.download = `group-${targetGroupId}.step`;
     a.style.display = "none";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    setStatus("STL 已生成并下载", "success");
+    setStatus("展开组 STEP 已导出", "success");
   } catch (error) {
-    console.error("Replicad STL 示例生成失败", error);
-    setStatus("STL 生成失败，请检查控制台日志。", "error");
+    console.error("展开组 STEP 导出失败", error);
+    setStatus("展开组 STEP 导出失败，请查看控制台日志。", "error");
   } finally {
-    replicadDemoBtn.disabled = false;
+    exportGroupStepBtn.disabled = false;
   }
 });
 
-replicadDemo2Btn.addEventListener("click", async () => {
-  replicadDemo2Btn.disabled = true;
+exportGroupStlBtn.addEventListener("click", async () => {
+  exportGroupStlBtn.disabled = true;
   try {
-    setStatus("正在生成 STEP 示例...", "info");
-    const blob = await buildDemoStepBlob();
+    const targetGroupId = getEditGroupId() ?? getPreviewGroupId();
+    const tris = unfold2d.getGroupTriangles2D(targetGroupId);
+    if (!tris.length) {
+      setStatus("当前展开组没有三角面，无法导出。", "error");
+      return;
+    }
+    setStatus("正在导出展开组 STL...", "info");
+    const blob = await buildGroupStlFromTriangles(tris);
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "replicad-demo.step";
+    a.download = `group-${targetGroupId}.stl`;
     a.style.display = "none";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    setStatus("STEP 已生成并下载", "success");
+    setStatus("展开组 STL 已导出", "success");
   } catch (error) {
-    console.error("Replicad STEP 示例生成失败", error);
-    setStatus("STEP 生成失败，请查看控制台日志。", "error");
+    console.error("展开组 STL 导出失败", error);
+    setStatus("展开组 STL 导出失败，请查看控制台日志。", "error");
   } finally {
-    replicadDemo2Btn.disabled = false;
+    exportGroupStlBtn.disabled = false;
   }
 });
