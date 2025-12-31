@@ -31,13 +31,15 @@ body {
 
 .shell {
   min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
 .page {
   display: none;
-  min-height: 100vh;
+  min-height: 0;
+  height: 100%;
 }
 
 .page.active {
@@ -47,7 +49,8 @@ body {
   justify-content: flex-start;
   padding: 0;
   flex: 1;
-  min-height: 100vh;
+  min-height: 0;
+  height: 100%;
 }
 
 .page.home {
@@ -168,12 +171,14 @@ body {
   flex: 1;
   display: grid;
   grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
   gap: 10px;
   padding: 0;
   background: var(--panel-muted);
   border: 1px solid var(--border);
   border-top: none;
   min-height: 0;
+  height: 100%;
 }
 
 .preview-panel {
@@ -181,6 +186,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 0;
   min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -247,6 +253,7 @@ body {
 
 .preview-area {
   flex: 1;
+  min-height: 0;
   display: flex;
   align-items: stretch;
   justify-content: stretch;
@@ -260,6 +267,13 @@ body {
   width: 100%;
   height: 100%;
   display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+#group-preview {
+  background: #0c121b;
 }
 
 .editor-status {
@@ -317,6 +331,12 @@ body {
   align-items: center;
   justify-content: center;
   color: var(--muted);
+  position: absolute;
+  inset: 0;
+}
+
+.preview-2d-placeholder.hidden {
+  display: none;
 }
 
 .placeholder {

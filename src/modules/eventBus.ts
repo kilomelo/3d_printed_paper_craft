@@ -31,6 +31,8 @@ export type AppEvents = {
   seamsRebuildGroups: Set<number>;
   seamsRebuildFaces: Set<number>;
   groupDataChanged: void;
+  group2dFaceAdded: { groupId: number; faceId: number };
+  group2dFaceRemoved: { groupId: number; faceId: number };
 };
 
 export const appEventBus = createEventBus<AppEvents>();
