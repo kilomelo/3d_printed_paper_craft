@@ -1,7 +1,7 @@
 // 应用入口与编排层：负责初始化页面结构、事件总线订阅、组/拼缝控制器与渲染器的装配，并绑定 UI 交互。
 import "./style.css";
 import packageJson from "../package.json";
-import { Color } from "three";
+import { Color, Mesh, MeshStandardMaterial } from "three";
 import { createStatus } from "./modules/status";
 import { initRenderer3D, type GroupUIHooks, type UIRefs } from "./modules/renderer3d";
 import { createGroupController } from "./modules/groupController";
@@ -21,6 +21,7 @@ import {
   getGroupTreeParent,
 } from "./modules/groups";
 import { getModel } from "./modules/model";
+import { buildDemoGeometry, buildDemoStepBlob } from "./modules/replicadDemo";
 
 const VERSION = packageJson.version ?? "0.0.0.0";
 
@@ -39,6 +40,8 @@ app.innerHTML = `
         <div class="home-title">3D Printed Paper Craft</div>
         <div class="home-subtitle">选择一个模型文件开始编辑</div>
         <button id="home-start" class="btn primary">打开模型</button>
+        <button id="replicad-demo-btn" class="btn ghost">生成 Replicad 示例</button>
+        <button id="replicad-demo2-btn" class="btn ghost">生成并下载 STEP 示例</button>
         <div class="home-meta">支持 OBJ / FBX / STL / 3dppc</div>
       </div>
     </section>
@@ -92,6 +95,8 @@ const viewer = document.querySelector<HTMLDivElement>("#viewer");
 const statusEl = document.querySelector<HTMLDivElement>("#status");
 const fileInput = document.querySelector<HTMLInputElement>("#file-input");
 const homeStartBtn = document.querySelector<HTMLButtonElement>("#home-start");
+const replicadDemoBtn = document.querySelector<HTMLButtonElement>("#replicad-demo-btn");
+const replicadDemo2Btn = document.querySelector<HTMLButtonElement>("#replicad-demo2-btn");
 const menuOpenBtn = document.querySelector<HTMLButtonElement>("#menu-open");
 const resetViewBtn = document.querySelector<HTMLButtonElement>("#reset-view-btn");
 const lightToggle = document.querySelector<HTMLButtonElement>("#light-toggle");
@@ -116,6 +121,8 @@ if (
   !statusEl ||
   !fileInput ||
   !homeStartBtn ||
+  !replicadDemoBtn ||
+  !replicadDemo2Btn ||
   !menuOpenBtn ||
   !resetViewBtn ||
   !lightToggle ||
@@ -258,3 +265,48 @@ appEventBus.on("groupDataChanged", () => updateGroupEditToggle());
 
 groupUI.render(buildGroupUIState());
 updateGroupEditToggle();
+
+replicadDemoBtn.addEventListener("click", async () => {
+  replicadDemoBtn.disabled = true;
+  try {
+    setStatus("正在用 Replicad 生成示例...", "info");
+    const geometry = await buildDemoGeometry();
+    const material = new MeshStandardMaterial({
+      color: new Color(0x6fa8dc),
+      metalness: 0.05,
+      roughness: 0.6,
+      flatShading: true,
+    });
+    const mesh = new Mesh(geometry, material);
+    mesh.name = "Replicad Demo";
+    await renderer.loadGeneratedModel(mesh, "Replicad 示例");
+  } catch (error) {
+    console.error("Replicad 示例生成失败", error);
+    setStatus("Replicad 示例生成失败，请检查控制台日志。", "error");
+  } finally {
+    replicadDemoBtn.disabled = false;
+  }
+});
+
+replicadDemo2Btn.addEventListener("click", async () => {
+  replicadDemo2Btn.disabled = true;
+  try {
+    setStatus("正在生成 STEP 示例...", "info");
+    const blob = await buildDemoStepBlob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "replicad-demo.step";
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setStatus("STEP 已生成并下载", "success");
+  } catch (error) {
+    console.error("Replicad STEP 示例生成失败", error);
+    setStatus("STEP 生成失败，请查看控制台日志。", "error");
+  } finally {
+    replicadDemo2Btn.disabled = false;
+  }
+});

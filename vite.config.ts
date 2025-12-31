@@ -9,4 +9,11 @@ export default defineConfig({
       "@": "/src",
     },
   },
+  assetsInclude: ["**/*.wasm"],
+  optimizeDeps: {
+    exclude: ["replicad", "replicad-opencascadejs"],
+  },
+  build: {
+    target: "esnext",
+  },
 });

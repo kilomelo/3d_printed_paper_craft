@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "replicad": "^0.20.5",
+    "replicad-opencascadejs": "^0.20.2",
     "three": "^0.160.0"
   },
   "devDependencies": {

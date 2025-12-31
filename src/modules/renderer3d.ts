@@ -752,47 +752,50 @@ export function initRenderer3D(
     seamManager = manager;
   }
 
+  async function applyObject(object: Object3D, name: string, importedGroups?: PPCFile["groups"], importedColorCursor?: number) {
+    clearModel();
+    setModel(object);
+    setLastFileName(name);
+    const model = getModel();
+    if (!model) throw new Error("模型初始化失败");
+    generateFunctionalMaterials(model);
+    geometryContext.rebuildFromModel(model);
+    faceAdjacency = geometryIndex.getFaceAdjacency();
+    faceIndexMap = geometryIndex.getFaceIndexMap();
+    meshFaceIdMap = geometryIndex.getMeshFaceIdMap();
+    faceToEdges = geometryIndex.getFaceToEdges();
+    edges = geometryIndex.getEdgesArray();
+    edgeKeyToId = geometryIndex.getEdgeKeyToId();
+    vertexKeyToPos = geometryIndex.getVertexKeyToPos();
+    groupTreeParent = getGroupTreeParent();
+    refreshGroupRefs();
+    markVertexPositionsDirty();
+    if (typeof importedColorCursor === "number") {
+      setGroupColorCursor(importedColorCursor);
+    }
+    if (importedGroups && importedGroups.length) {
+      applyImportedGroups(importedGroups);
+    }
+    applyFaceVisibility();
+    applyEdgeVisibility();
+    modelGroup.add(model);
+    initHoverLinesLocal();
+    setLastTriangleCount(geometryIndex.getTriangleCount());
+    fitCameraToObject(model, camera, controls);
+    refreshVertexWorldPositions();
+    showWorkspace(true);
+    resizeRenderer(); // 确保从隐藏切换到可见后尺寸正确
+    setStatus(`已加载：${name} · 三角面 ${geometryIndex.getTriangleCount()}`, "success");
+    exportBtn.disabled = false;
+    appEventBus.emit("modelLoaded", undefined);
+  }
+
   async function applyLoadedModel(file: File, ext: string) {
     setStatus("加载中...", "info");
 
     try {
       const { object, importedGroups, importedColorCursor } = await loadRawObject(file, ext);
-
-      clearModel();
-      setModel(object);
-      setLastFileName(file.name);
-      const model = getModel();
-      if (!model) throw new Error("模型初始化失败");
-      generateFunctionalMaterials(model);
-      geometryContext.rebuildFromModel(model);
-      faceAdjacency = geometryIndex.getFaceAdjacency();
-      faceIndexMap = geometryIndex.getFaceIndexMap();
-      meshFaceIdMap = geometryIndex.getMeshFaceIdMap();
-      faceToEdges = geometryIndex.getFaceToEdges();
-      edges = geometryIndex.getEdgesArray();
-      edgeKeyToId = geometryIndex.getEdgeKeyToId();
-      vertexKeyToPos = geometryIndex.getVertexKeyToPos();
-      groupTreeParent = getGroupTreeParent();
-      refreshGroupRefs();
-      markVertexPositionsDirty();
-      if (typeof importedColorCursor === "number") {
-        setGroupColorCursor(importedColorCursor);
-      }
-      if (importedGroups && importedGroups.length) {
-        applyImportedGroups(importedGroups);
-      }
-      applyFaceVisibility();
-      applyEdgeVisibility();
-      modelGroup.add(model);
-      initHoverLinesLocal();
-      setLastTriangleCount(geometryIndex.getTriangleCount());
-      fitCameraToObject(model, camera, controls);
-      refreshVertexWorldPositions();
-      showWorkspace(true);
-      resizeRenderer(); // 确保从隐藏切换到可见后尺寸正确
-      setStatus(`已加载：${file.name} · 三角面 ${geometryIndex.getTriangleCount()}`, "success");
-      exportBtn.disabled = false;
-      appEventBus.emit("modelLoaded", undefined);
+      await applyObject(object, file.name, importedGroups, importedColorCursor);
     } catch (error) {
       console.error("加载模型失败", error);
       if ((error as Error)?.stack) {
@@ -804,6 +807,19 @@ export function initRenderer3D(
 
   async function loadModel(file: File, ext: string) {
     await applyLoadedModel(file, ext);
+  }
+
+  async function loadGeneratedModel(object: Object3D, name: string) {
+    setStatus("生成中...", "info");
+    try {
+      await applyObject(object, name);
+    } catch (error) {
+      console.error("加载生成模型失败", error);
+      if ((error as Error)?.stack) {
+        console.error((error as Error).stack);
+      }
+      setStatus("生成模型失败，请重试。", "error");
+    }
   }
 
   function getExtension(name: string) {
@@ -823,6 +839,7 @@ export function initRenderer3D(
 
   return {
     loadModel,
+    loadGeneratedModel,
     clearModel,
     applyFaceVisibility,
     applyEdgeVisibility,
