@@ -99,3 +99,11 @@ export async function buildDemoStepBlob() {
   const blob = solid.blobSTEP();
   return blob;
 }
+
+export async function buildDemoStlBlob() {
+  await ensureReplicadOC();
+  const profile = createTriangleProfile(10);
+  const outerSketch = sketchLoop(profile.outer);
+  const solid = outerSketch.extrude(profile.height);
+  return solid.blobSTL({ binary: true, tolerance: 0.2, angularTolerance: 0.1 });
+}
