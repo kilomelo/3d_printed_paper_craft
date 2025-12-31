@@ -80,6 +80,7 @@ export function createGroupController(deps: GroupControllerDeps) {
       const facesToUpdate = new Set<number>([faceId]);
       (groupFaces().get(editGroupId) ?? new Set<number>()).forEach((f) => facesToUpdate.add(f));
       appEventBus.emit("seamsRebuildFaces", facesToUpdate);
+      appEventBus.emit("group2dFaceRemoved", { groupId: editGroupId, faceId });
       notifyGroupChange();
       deps.setStatus(`已从组${editGroupId}移除（面数量 ${groupFaces().get(editGroupId)?.size ?? 0}）`, "success");
     } else {
@@ -115,6 +116,10 @@ export function createGroupController(deps: GroupControllerDeps) {
     const groups = new Set<number>([targetGroup]);
     if (currentGroup !== null) groups.add(currentGroup);
     appEventBus.emit("seamsRebuildGroups", groups);
+    appEventBus.emit("group2dFaceAdded", { groupId: targetGroup, faceId });
+    if (currentGroup !== null) {
+      appEventBus.emit("group2dFaceRemoved", { groupId: currentGroup, faceId });
+    }
     notifyGroupChange();
   }
 

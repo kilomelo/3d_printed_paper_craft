@@ -29,15 +29,14 @@ import {
   generateFunctionalMaterials,
 } from "./modelLoader";
 import { createFaceColorService } from "./faceColorService";
-import { GeometryIndex } from "./geometryIndex";
 import { type SeamManagerApi, type SeamManagerDeps } from "./seamManager";
 import { initUIController } from "./uiController";
 import { appEventBus } from "./eventBus";
+import { type GeometryContext } from "./geometryContext";
 // group UI 渲染与交互由外部注入，renderer3d 只调用回调
 
 export type UIRefs = {
   viewer: HTMLDivElement;
-  placeholder: HTMLDivElement;
   fileInput: HTMLInputElement;
   homeStartBtn: HTMLButtonElement;
   menuOpenBtn: HTMLButtonElement;
@@ -82,10 +81,11 @@ export type GroupApi = {
 export function initRenderer3D(
   ui: UIRefs,
   setStatus: (msg: string, tone?: "info" | "error" | "success") => void,
+  geometryContext: GeometryContext,
+  _groupUiHooks?: GroupUIHooks,
 ) {
   const {
     viewer,
-    placeholder,
     fileInput,
     homeStartBtn,
     menuOpenBtn,
@@ -107,7 +107,8 @@ export function initRenderer3D(
   let edgesVisible = true;
   let seamsVisible = true;
   let facesVisible = true;
-  const geometryIndex = new GeometryIndex();
+  const geometryIndex = geometryContext.geometryIndex;
+  const angleIndex = geometryContext.angleIndex;
   let faceAdjacency = geometryIndex.getFaceAdjacency();
   let faceIndexMap = geometryIndex.getFaceIndexMap();
   let meshFaceIdMap = geometryIndex.getMeshFaceIdMap();
@@ -166,7 +167,7 @@ export function initRenderer3D(
   });
 
   const { scene, camera, renderer, controls, ambient, dir, modelGroup } = createScene(viewer);
-  controls.panSpeed = 2;
+  controls.panSpeed = 4;
   controls.rotateSpeed = 0.4;
   const el = renderer.domElement;
 
@@ -463,7 +464,7 @@ export function initRenderer3D(
     meshFaceIdMap.clear();
     resetGroups();
     refreshGroupRefs();
-    geometryIndex.reset();
+    geometryContext.reset();
     faceAdjacency = geometryIndex.getFaceAdjacency();
     faceIndexMap = geometryIndex.getFaceIndexMap();
     meshFaceIdMap = geometryIndex.getMeshFaceIdMap();
@@ -752,7 +753,6 @@ export function initRenderer3D(
   }
 
   async function applyLoadedModel(file: File, ext: string) {
-    placeholder.classList.add("hidden");
     setStatus("加载中...", "info");
 
     try {
@@ -764,7 +764,7 @@ export function initRenderer3D(
       const model = getModel();
       if (!model) throw new Error("模型初始化失败");
       generateFunctionalMaterials(model);
-      geometryIndex.buildFromObject(model);
+      geometryContext.rebuildFromModel(model);
       faceAdjacency = geometryIndex.getFaceAdjacency();
       faceIndexMap = geometryIndex.getFaceIndexMap();
       meshFaceIdMap = geometryIndex.getMeshFaceIdMap();

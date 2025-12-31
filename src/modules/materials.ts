@@ -1,5 +1,5 @@
 // 材质工厂：提供前/背面、线框、hover 等 Three.js 材质实例生成，集中管理颜色与透明度。
-import { BackSide, Color, FrontSide, MeshStandardMaterial } from "three";
+import { BackSide, Color, DoubleSide, FrontSide, MeshBasicMaterial, MeshStandardMaterial } from "three";
 
 export const FACE_DEFAULT_COLOR = new Color(0xffffff);
 
@@ -34,6 +34,20 @@ export function createEdgeMaterial() {
   return new MeshStandardMaterial({
     color: new Color(0x996600),
     flatShading: true,
+    wireframe: true,
+  });
+}
+
+export function createUnfoldFaceMaterial(baseColor?: Color) {
+  return new MeshBasicMaterial({
+    color: baseColor ?? FACE_DEFAULT_COLOR.clone(),
+    vertexColors: true,
+  });
+}
+
+export function createUnfoldEdgeMaterial(baseColor?: Color) {
+  return new MeshBasicMaterial({
+    color: baseColor ?? new Color(0x996600),
     wireframe: true,
   });
 }

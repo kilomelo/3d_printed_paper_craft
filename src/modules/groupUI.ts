@@ -21,7 +21,6 @@ export function initGroupUI(
   ui: {
     groupTabsEl: HTMLDivElement;
     groupPreview: HTMLDivElement;
-    groupPreviewLabel: HTMLDivElement;
     groupCountLabel: HTMLSpanElement;
     groupColorBtn: HTMLButtonElement;
     groupColorInput: HTMLInputElement;
@@ -49,8 +48,7 @@ export function initGroupUI(
   };
 
   const updatePreview = (state: GroupUIState) => {
-    if (!ui.groupPreview || !ui.groupPreviewLabel || !ui.groupColorBtn || !ui.groupColorInput || !ui.groupDeleteBtn || !ui.groupCountLabel) return;
-    ui.groupPreviewLabel.textContent = `展开组${state.previewGroupId}`;
+    if (!ui.groupPreview || !ui.groupColorBtn || !ui.groupColorInput || !ui.groupDeleteBtn || !ui.groupCountLabel) return;
     const color = state.getGroupColor(state.previewGroupId);
     const hex = `#${color.getHexString()}`;
     ui.groupColorBtn.style.background = hex;

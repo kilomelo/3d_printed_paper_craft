@@ -8,13 +8,19 @@ import { createGroupController } from "./modules/groupController";
 import { appEventBus } from "./modules/eventBus";
 import { initGroupUI } from "./modules/groupUI";
 import { createSeamManager } from "./modules/seamManager";
+import { initRenderer2D } from "./modules/renderer2d";
+import { createUnfold2dManager } from "./modules/unfold2dManager";
+import { createGeometryContext } from "./modules/geometryContext";
 import {
   getGroupFaces,
   getGroupColor,
   getPreviewGroupId,
   getEditGroupId,
   setPreviewGroupId,
+  getFaceGroupMap,
+  getGroupTreeParent,
 } from "./modules/groups";
+import { getModel } from "./modules/model";
 
 const VERSION = packageJson.version ?? "0.0.0.0";
 
@@ -58,9 +64,7 @@ app.innerHTML = `
             <div class="toolbar-spacer"></div>
             <span class="toolbar-stat" id="tri-counter">渲染三角形：0</span>
           </div>
-          <div class="preview-area" id="viewer">
-            <div class="placeholder" id="placeholder">选择模型以预览</div>
-          </div>
+          <div class="preview-area" id="viewer"></div>
         </div>
         <div class="preview-panel">
           <div class="preview-toolbar">
@@ -74,7 +78,6 @@ app.innerHTML = `
             <button class="overlay-btn color-swatch" id="group-color-btn" title="选择组颜色"></button>
             <button class="overlay-btn tab-delete" id="group-delete" title="删除展开组">删除组</button>
             <input type="color" id="group-color-input" class="color-input" />
-            <div class="preview-2d-placeholder" id="group-preview-label">展开组1</div>
           </div>
         </div>
       </section>
@@ -86,7 +89,6 @@ app.innerHTML = `
 `;
 
 const viewer = document.querySelector<HTMLDivElement>("#viewer");
-const placeholder = document.querySelector<HTMLDivElement>("#placeholder");
 const statusEl = document.querySelector<HTMLDivElement>("#status");
 const fileInput = document.querySelector<HTMLInputElement>("#file-input");
 const homeStartBtn = document.querySelector<HTMLButtonElement>("#home-start");
@@ -101,7 +103,6 @@ const triCounter = document.querySelector<HTMLDivElement>("#tri-counter");
 const groupTabsEl = document.querySelector<HTMLDivElement>("#group-tabs");
 const groupAddBtn = document.querySelector<HTMLButtonElement>("#group-add");
 const groupPreview = document.querySelector<HTMLDivElement>("#group-preview");
-const groupPreviewLabel = document.querySelector<HTMLDivElement>("#group-preview-label");
 const groupCountLabel = document.querySelector<HTMLSpanElement>("#group-count");
 const groupColorBtn = document.querySelector<HTMLButtonElement>("#group-color-btn");
 const groupColorInput = document.querySelector<HTMLInputElement>("#group-color-input");
@@ -112,7 +113,6 @@ const layoutWorkspace = document.querySelector<HTMLElement>("#layout-workspace")
 
 if (
   !viewer ||
-  !placeholder ||
   !statusEl ||
   !fileInput ||
   !homeStartBtn ||
@@ -127,7 +127,6 @@ if (
   !groupTabsEl ||
   !groupAddBtn ||
   !groupPreview ||
-  !groupPreviewLabel ||
   !groupCountLabel ||
   !groupColorBtn ||
   !groupColorInput ||
@@ -139,11 +138,13 @@ if (
   throw new Error("初始化界面失败，缺少必要的元素");
 }
 
+// 确保文件选择框只允许支持的模型/3dppc 后缀
+fileInput.setAttribute("accept", ".obj,.fbx,.stl,.3dppc");
+
 const { setStatus } = createStatus(statusEl);
 
 const uiRefs: UIRefs = {
   viewer,
-  placeholder,
   fileInput,
   homeStartBtn,
   menuOpenBtn,
@@ -160,11 +161,29 @@ const uiRefs: UIRefs = {
 
 const groupUiHooks: GroupUIHooks = {};
 
-const renderer = initRenderer3D(uiRefs, setStatus, groupUiHooks);
+const geometryContext = createGeometryContext();
+const renderer = initRenderer3D(uiRefs, setStatus, geometryContext, groupUiHooks);
 const seamManager = createSeamManager(renderer.getSeamManagerDeps());
 renderer.attachSeamManager(seamManager);
 const groupController = createGroupController(renderer.getGroupDeps());
 renderer.attachGroupApi(groupController);
+const renderer2d = initRenderer2D(groupPreview);
+const unfold2d = createUnfold2dManager({
+  geometryIndex: geometryContext.geometryIndex,
+  angleIndex: geometryContext.angleIndex,
+  renderer2d,
+  getGroupFaces,
+  getPreviewGroupId,
+  refreshVertexWorldPositions: () => geometryContext.geometryIndex.refreshVertexWorldPositions(getModel()),
+  getFaceGroupMap,
+  getGroupColor,
+  getGroupTreeParent,
+  getFaceToEdges: () => geometryContext.geometryIndex.getFaceToEdges(),
+  getEdgesArray: () => geometryContext.geometryIndex.getEdgesArray(),
+  getVertexKeyToPos: () => geometryContext.geometryIndex.getVertexKeyToPos(),
+  getFaceIndexMap: () => geometryContext.geometryIndex.getFaceIndexMap(),
+});
+appEventBus.on("modelLoaded", () => renderer2d.resize());
 appEventBus.on("modelLoaded", () => seamManager.rebuildFull());
 appEventBus.on("seamsRebuildFull", () => seamManager.rebuildFull());
 appEventBus.on("seamsRebuildGroups", (groups) => seamManager.rebuildGroups(groups));
@@ -189,7 +208,6 @@ const groupUI = initGroupUI(
   {
     groupTabsEl,
     groupPreview,
-    groupPreviewLabel,
     groupCountLabel,
     groupColorBtn,
     groupColorInput,
