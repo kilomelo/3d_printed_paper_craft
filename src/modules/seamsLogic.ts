@@ -26,19 +26,37 @@ function isParentChildEdge(f1: number, f2: number, ctx: SeamContext): boolean {
   return parentMap.get(f1) === f2 || parentMap.get(f2) === f1;
 }
 
-function edgeIsSeam(edgeId: number, ctx: SeamContext): boolean {
-  const edge = ctx.edges[edgeId];
+export function edgeIsSeamBasic(
+  edgeId: number,
+  opts: {
+    edges: EdgeRecord[];
+    faceGroupMap: Map<number, number | null>;
+    groupTreeParent: Map<number, Map<number, number | null>>;
+  },
+): boolean {
+  const { edges, faceGroupMap, groupTreeParent } = opts;
+  const edge = edges[edgeId];
   if (!edge) return false;
   const faces = Array.from(edge.faces);
   if (faces.length === 1) return false;
   if (faces.length !== 2) return true;
   const [f1, f2] = faces;
-  const g1 = ctx.faceGroupMap.get(f1) ?? null;
-  const g2 = ctx.faceGroupMap.get(f2) ?? null;
+  const g1 = faceGroupMap.get(f1) ?? null;
+  const g2 = faceGroupMap.get(f2) ?? null;
   if (g1 === null && g2 === null) return false;
   if (g1 === null || g2 === null) return true;
   if (g1 !== g2) return true;
-  return !isParentChildEdge(f1, f2, ctx);
+  const parentMap = groupTreeParent.get(g1);
+  if (!parentMap) return true;
+  return !(parentMap.get(f1) === f2 || parentMap.get(f2) === f1);
+}
+
+function edgeIsSeam(edgeId: number, ctx: SeamContext): boolean {
+  return edgeIsSeamBasic(edgeId, {
+    edges: ctx.edges,
+    faceGroupMap: ctx.faceGroupMap,
+    groupTreeParent: ctx.groupTreeParent,
+  });
 }
 
 function ensureSeamLine(edgeId: number, ctx: SeamContext): LineSegments2 {

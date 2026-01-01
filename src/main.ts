@@ -21,7 +21,7 @@ import {
   getGroupTreeParent,
 } from "./modules/groups";
 import { getModel } from "./modules/model";
-import { buildGroupStepFromTriangles, buildGroupStlFromTriangles } from "./modules/replicadModeling";
+import { buildGroupStepFromTriangles, buildGroupStlFromTriangles, buildGroupMeshFromTriangles } from "./modules/replicadModeling";
 
 const VERSION = packageJson.version ?? "0.0.0.0";
 
@@ -54,7 +54,7 @@ app.innerHTML = `
         <button class="btn ghost" id="export-btn" disabled>导出 .3dppc</button>
         <button class="btn ghost" id="export-group-step-btn" disabled>导出展开组 STEP</button>
         <button class="btn ghost" id="export-group-stl-btn" disabled>导出展开组 STL</button>
-        <button class="btn ghost" disabled>设置</button>
+        <button class="btn ghost" id="setting-btn">设置</button>
       </nav>
       <section class="editor-preview">
         <div class="preview-panel">
@@ -104,6 +104,7 @@ const facesToggle = document.querySelector<HTMLButtonElement>("#faces-toggle");
 const exportBtn = document.querySelector<HTMLButtonElement>("#export-btn");
 const exportGroupStepBtn = document.querySelector<HTMLButtonElement>("#export-group-step-btn");
 const exportGroupStlBtn = document.querySelector<HTMLButtonElement>("#export-group-stl-btn");
+const settingBtn = document.querySelector<HTMLButtonElement>("#setting-btn");
 const triCounter = document.querySelector<HTMLDivElement>("#tri-counter");
 const groupTabsEl = document.querySelector<HTMLDivElement>("#group-tabs");
 const groupAddBtn = document.querySelector<HTMLButtonElement>("#group-add");
@@ -130,6 +131,7 @@ if (
   !exportBtn ||
   !exportGroupStepBtn ||
   !exportGroupStlBtn ||
+  !settingBtn ||
   !triCounter ||
   !groupTabsEl ||
   !groupAddBtn ||
@@ -327,3 +329,23 @@ exportGroupStlBtn.addEventListener("click", async () => {
     exportGroupStlBtn.disabled = false;
   }
 });
+
+settingBtn.addEventListener("click", async () => {
+    settingBtn.disabled = true;
+    try {
+      const targetGroupId = getEditGroupId() ?? getPreviewGroupId();
+      const trisWithAngles = unfold2d.getGroupTrianglesWithEdgeInfo(targetGroupId);
+      if (!trisWithAngles.length) {
+        setStatus("当前展开组没有三角面，无法导出。", "error");
+        return;
+      }
+      setStatus("正在用 Replicad 生成 mesh...", "info");
+      const mesh = await buildGroupMeshFromTriangles(trisWithAngles);
+      await renderer.loadGeneratedModel(mesh, "Replicad 示例");
+    } catch (error) {
+      console.error("Replicad 示例生成失败", error);
+      setStatus("Replicad 示例生成失败，请检查控制台日志。", "error");
+    } finally {
+      settingBtn.disabled = false;
+    }
+})

@@ -7,6 +7,7 @@ import { appEventBus } from "./eventBus";
 import type { Renderer2DContext } from "./renderer2d";
 import { createUnfoldEdgeMaterial, createUnfoldFaceMaterial } from "./materials";
 import type { GroupTreeParent } from "./groups";
+import { edgeIsSeamBasic } from "./seamsLogic";
 
 type GroupCache = {
   faces: Set<number>;
@@ -343,6 +344,49 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     return tris;
   };
 
+  const getGroupTrianglesWithEdgeInfo = (groupId: number) => {
+    const faces = getGroupFaces().get(groupId);
+    if (!faces || faces.size === 0) return [];
+    buildRootTransforms(groupId);
+    buildTransformsForGroup(groupId);
+    refreshVertexWorldPositions();
+    const faceToEdges = getFaceToEdges();
+    const tris: Array<{
+      tri: [[number, number], [number, number], [number, number]];
+      faceId: number;
+      edges: { isOuter: boolean; angle: number }[];
+    }> = [];
+    faces.forEach((fid) => {
+      const tri = faceTo2D(groupId, fid);
+      if (!tri) return;
+      const [a, b, c] = tri;
+      const edgeIds = faceToEdges.get(fid) ?? [];
+      const edges = edgeIds.map((eid) => {
+        const edgeRec = getEdgesArray()[eid];
+        const isOuter =
+          edgeIsSeamBasic(eid, {
+            edges: getEdgesArray(),
+            faceGroupMap: getFaceGroupMap(),
+            groupTreeParent: getGroupTreeParent(),
+          }) || (edgeRec?.faces.size ?? 0) === 1;
+        return {
+          isOuter,
+          angle: angleIndex.getAngle(eid),
+        };
+      });
+      tris.push({
+        tri: [
+          [a.x, a.y],
+          [b.x, b.y],
+          [c.x, c.y],
+        ],
+        faceId: fid,
+        edges,
+      });
+    });
+    return tris;
+  };
+
   const ensureGroup = (groupId: number) => {
     if (!groupCache.has(groupId)) {
       groupCache.set(groupId, { faces: new Set(), edges: new Set() });
@@ -402,5 +446,6 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     setFaceTransform,
     getTransformChain,
     getGroupTriangles2D,
+    getGroupTrianglesWithEdgeInfo,
   };
 }

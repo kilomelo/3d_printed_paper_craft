@@ -51,12 +51,13 @@ export class AngleIndex {
   }
 
   private computeAngle(edgeId: number): number {
-    if (!this.geometryIndex) return 0;
+    const fallbackAngle = 180;
+    if (!this.geometryIndex) return fallbackAngle;
     const edges = this.geometryIndex.getEdgesArray();
     const edge = edges[edgeId];
-    if (!edge) return 0;
+    if (!edge) return fallbackAngle;
     const faces = Array.from(edge.faces);
-    if (faces.length < 2) return 0;
+    if (faces.length < 2) return fallbackAngle;
     const faceIndexMap = this.geometryIndex.getFaceIndexMap();
     const vertexKeyToPos = this.geometryIndex.getVertexKeyToPos();
 
@@ -64,13 +65,13 @@ export class AngleIndex {
     const faceBId = faces[1];
     const faceA = faceIndexMap.get(faceAId);
     const faceB = faceIndexMap.get(faceBId);
-    if (!faceA || !faceB) return 0;
+    if (!faceA || !faceB) return fallbackAngle;
 
     // 取共享边两个顶点的世界坐标
     const [k1, k2] = edge.vertices;
     const v1 = vertexKeyToPos.get(k1);
     const v2 = vertexKeyToPos.get(k2);
-    if (!v1 || !v2) return 0;
+    if (!v1 || !v2) return fallbackAngle;
 
     // 更新矩阵并转世界坐标
     this.applyWorld(v1, faceA.mesh, this.tempA);
@@ -80,10 +81,20 @@ export class AngleIndex {
     // 计算两面法线
     this.computeFaceNormal(faceA.mesh, faceA.localFace, this.n1);
     this.computeFaceNormal(faceB.mesh, faceB.localFace, this.n2);
-
     this.crossN.crossVectors(this.n1, this.n2);
-    const angle = Math.atan2(this.edgeDir.dot(this.crossN), this.n1.dot(this.n2));
-    return angle;
+    console.debug('[angleIndex] n1', this.n1, 'n2', this.n2, 'edgeDir', this.edgeDir, 'crossN', this.crossN);    
+    const sin = this.edgeDir.dot(this.crossN);
+    const cos = Math.min(1, Math.max(-1, this.n1.dot(this.n2)));
+    const crossLen = this.crossN.length();
+    if (crossLen < 1e-6) {
+      // 法线平行：同向 => 面角 180°，反向 => 面角 0°
+      return cos > 0 ? Math.PI : 0;
+    }
+    // 面间角 = 180° - 法线夹角；用 sin 判定凹/凸的符号
+    const normalAngle = Math.acos(cos); // ∈ [0, π]
+    const faceAngle = Math.PI - normalAngle; // 同向 -> 180°, 反向 -> 0°
+    const sign = sin >= 0 ? 1 : -1;
+    return faceAngle * sign;
   }
 
   private applyWorld(src: Vector3, mesh: Mesh, out: Vector3) {

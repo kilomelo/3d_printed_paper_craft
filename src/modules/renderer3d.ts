@@ -167,7 +167,7 @@ export function initRenderer3D(
   });
 
   const { scene, camera, renderer, controls, ambient, dir, modelGroup } = createScene(viewer);
-  controls.panSpeed = 4;
+  controls.panSpeed = 6;
   controls.rotateSpeed = 0.4;
   const el = renderer.domElement;
 
