@@ -1,4 +1,4 @@
-import { Triangle2D, TriangleWithEdgeInfo } from "../types/triangles";
+import { TriangleWithEdgeInfo } from "../types/triangles";
 import {
   BufferGeometry,
   Float32BufferAttribute,
@@ -21,8 +21,8 @@ type WorkerResponse =
   | { id: number; ok: false; error: string };
 
 type WorkerRequest =
-  | { id: number; type: "step"; triangles: Triangle2D[] }
-  | { id: number; type: "stl"; triangles: Triangle2D[] }
+  | { id: number; type: "step"; triangles: TriangleWithEdgeInfo[] }
+  | { id: number; type: "stl"; triangles: TriangleWithEdgeInfo[] }
   | { id: number; type: "mesh"; triangles: TriangleWithEdgeInfo[] };
 
 let worker: Worker | null = null;
@@ -79,13 +79,13 @@ export const onWorkerBusyChange = (cb: (busy: boolean) => void) => {
   return () => busyListeners.delete(cb);
 };
 
-export async function buildStepInWorker(triangles: Triangle2D[]) {
-  const res = (await callWorker({ type: "step", triangles })) as Extract<WorkerResponse, { type: "step"; ok: true }>;
+export async function buildStepInWorker(trisWithAngles: TriangleWithEdgeInfo[]) {
+  const res = (await callWorker({ type: "step", trisWithAngles })) as Extract<WorkerResponse, { type: "step"; ok: true }>;
   return new Blob([res.buffer], { type: res.mime });
 }
 
-export async function buildStlInWorker(triangles: Triangle2D[]) {
-  const res = (await callWorker({ type: "stl", triangles })) as Extract<WorkerResponse, { type: "stl"; ok: true }>;
+export async function buildStlInWorker(trisWithAngles: TriangleWithEdgeInfo[]) {
+  const res = (await callWorker({ type: "stl", trisWithAngles })) as Extract<WorkerResponse, { type: "stl"; ok: true }>;
   return new Blob([res.buffer], { type: res.mime });
 }
 
@@ -107,7 +107,7 @@ const reconstructMesh = (payload: MeshPayload) => {
   return mesh;
 };
 
-export async function buildMeshInWorker(triangles: TriangleWithEdgeInfo[]) {
-  const res = (await callWorker({ type: "mesh", triangles })) as Extract<WorkerResponse, { type: "mesh"; ok: true }>;
+export async function buildMeshInWorker(trisWithAngles: TriangleWithEdgeInfo[]) {
+  const res = (await callWorker({ type: "mesh", trisWithAngles })) as Extract<WorkerResponse, { type: "mesh"; ok: true }>;
   return reconstructMesh(res.mesh);
 }

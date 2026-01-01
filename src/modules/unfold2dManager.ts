@@ -352,11 +352,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     buildTransformsForGroup(groupId);
     refreshVertexWorldPositions();
     const faceToEdges = getFaceToEdges();
-    const tris: Array<{
-      tri: [[number, number], [number, number], [number, number]];
-      faceId: number;
-      edges: { isOuter: boolean; angle: number }[];
-    }> = [];
+    const tris: Array<TriangleWithEdgeInfo> = [];
     faces.forEach((fid) => {
       const tri = faceTo2D(groupId, fid);
       if (!tri) return;

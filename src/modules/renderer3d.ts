@@ -80,7 +80,7 @@ export type GroupApi = {
 
 export function initRenderer3D(
   ui: UIRefs,
-  setStatus: (msg: string, tone?: "info" | "error" | "success") => void,
+  log: (msg: string, tone?: "info" | "error" | "success") => void,
   geometryContext: GeometryContext,
   _groupUiHooks?: GroupUIHooks,
 ) {
@@ -364,7 +364,7 @@ export function initRenderer3D(
       onFileSelected: async (file) => {
         const ext = getExtension(file.name);
         if (!allowedExtensions.includes(ext)) {
-          setStatus("不支持的格式，请选择 OBJ / FBX / STL。", "error");
+          log("不支持的格式，请选择 OBJ / FBX / STL。", "error");
           fileInput.value = "";
           return;
         }
@@ -406,17 +406,17 @@ export function initRenderer3D(
       onExport: async () => {
         const model = getModel();
         if (!model) {
-          setStatus("没有可导出的模型", "error");
+          log("没有可导出的模型", "error");
           return;
         }
         try {
-          setStatus("正在导出 .3dppc ...", "info");
+          log("正在导出 .3dppc ...", "info");
           const data = await build3dppcData(model);
           await download3dppc(data);
-          setStatus("导出成功", "success");
+          log("导出成功", "success");
         } catch (error) {
           console.error("导出失败", error);
-          setStatus("导出失败，请重试。", "error");
+          log("导出失败，请重试。", "error");
         }
       },
       onKeyDown: (event) => {
@@ -526,7 +526,7 @@ export function initRenderer3D(
       getFaceAdjacency: () => faceAdjacency,
       refreshGroupRefs,
       repaintAllFaces: () => repaintAllFaces(),
-      setStatus,
+      log,
       startGroupBreath: (gid: number) => startGroupBreath(gid),
       stopGroupBreath: () => stopGroupBreath(),
       faceColorService,
@@ -539,7 +539,7 @@ export function initRenderer3D(
     setPreviewGroupId(groupId);
     refreshGroupRefs();
     previewGroupId = groupId;
-    setStatus(`预览展开组 ${groupId}`, "info");
+    log(`预览展开组 ${groupId}`, "info");
     startGroupBreath(groupId);
   }
 
@@ -785,13 +785,13 @@ export function initRenderer3D(
     refreshVertexWorldPositions();
     showWorkspace(true);
     resizeRenderer(); // 确保从隐藏切换到可见后尺寸正确
-    setStatus(`已加载：${name} · 三角面 ${geometryIndex.getTriangleCount()}`, "success");
+    log(`已加载：${name} · 三角面 ${geometryIndex.getTriangleCount()}`, "success");
     exportBtn.disabled = false;
     appEventBus.emit("modelLoaded", undefined);
   }
 
   async function applyLoadedModel(file: File, ext: string) {
-    setStatus("加载中...", "info");
+    log("加载中...", "info");
 
     try {
       const { object, importedGroups, importedColorCursor } = await loadRawObject(file, ext);
@@ -801,7 +801,7 @@ export function initRenderer3D(
       if ((error as Error)?.stack) {
         console.error((error as Error).stack);
       }
-      setStatus("加载失败，请检查文件格式是否正确。", "error");
+      log("加载失败，请检查文件格式是否正确。", "error");
     }
   }
 
@@ -810,7 +810,7 @@ export function initRenderer3D(
   }
 
   async function loadGeneratedModel(object: Object3D, name: string) {
-    setStatus("加载中...", "info");
+    log("加载中...", "info");
     try {
       const mat = createFrontMaterial();
       object.traverse((child) => {
@@ -824,7 +824,7 @@ export function initRenderer3D(
       if ((error as Error)?.stack) {
         console.error((error as Error).stack);
       }
-      setStatus("生成模型失败，请重试。", "error");
+      log("生成模型失败，请重试。", "error");
     }
   }
 

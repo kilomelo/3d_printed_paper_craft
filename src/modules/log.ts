@@ -7,7 +7,7 @@ type LogEntry = {
 };
 
 export type LogController = {
-  setStatus: (message: string, tone?: LogTone) => void;
+  log: (message: string, tone?: LogTone) => void;
 };
 
 export function createLog(listEl: HTMLElement): LogController {
@@ -24,7 +24,7 @@ export function createLog(listEl: HTMLElement): LogController {
     listEl.scrollTop = listEl.scrollHeight;
   };
 
-  const setStatus = (message: string, tone: LogTone = "info") => {
+  const log = (message: string, tone: LogTone = "info") => {
     const last = entries[entries.length - 1];
     if (last && last.message === message && last.tone === tone) {
       last.count += 1;
@@ -34,5 +34,5 @@ export function createLog(listEl: HTMLElement): LogController {
     render();
   };
 
-  return { setStatus };
+  return { log };
 }

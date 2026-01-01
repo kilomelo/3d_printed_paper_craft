@@ -3,12 +3,12 @@ import {
   buildGroupStepFromTriangles,
   buildGroupStlFromTriangles,
 } from "../modules/replicadModeling";
-import type { Triangle2D, TriangleWithEdgeInfo } from "../types/triangles";
+import type { TriangleWithEdgeInfo } from "../types/triangles";
 
 type WorkerRequest =
-  | { id: number; type: "step"; triangles: Triangle2D[] }
-  | { id: number; type: "stl"; triangles: Triangle2D[] }
-  | { id: number; type: "mesh"; triangles: TriangleWithEdgeInfo[] };
+  | { id: number; type: "step"; trisWithAngles: TriangleWithEdgeInfo[] }
+  | { id: number; type: "stl"; trisWithAngles: TriangleWithEdgeInfo[] }
+  | { id: number; type: "mesh"; trisWithAngles: TriangleWithEdgeInfo[] };
 
 type MeshPayload = {
   positions: ArrayBuffer;
@@ -52,19 +52,19 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const { id, type } = event.data;
   try {
     if (type === "step") {
-      const buffer = await (await buildGroupStepFromTriangles(event.data.triangles)).arrayBuffer();
+      const buffer = await (await buildGroupStepFromTriangles(event.data.trisWithAngles)).arrayBuffer();
       const resp: WorkerResponse = { id, ok: true, type: "step", buffer, mime: "application/step" };
       ctx.postMessage(resp, [resp.buffer]);
       return;
     }
     if (type === "stl") {
-      const buffer = await (await buildGroupStlFromTriangles(event.data.triangles)).arrayBuffer();
+      const buffer = await (await buildGroupStlFromTriangles(event.data.trisWithAngles)).arrayBuffer();
       const resp: WorkerResponse = { id, ok: true, type: "stl", buffer, mime: "model/stl" };
       ctx.postMessage(resp, [resp.buffer]);
       return;
     }
     if (type === "mesh") {
-      const mesh = await serializeMesh(event.data.triangles);
+      const mesh = await serializeMesh(event.data.trisWithAngles);
       const transfers: ArrayBuffer[] = [mesh.positions, mesh.normals].filter(Boolean) as ArrayBuffer[];
       if (mesh.indices) transfers.push(mesh.indices);
       const resp: WorkerResponse = { id, ok: true, type: "mesh", mesh };
