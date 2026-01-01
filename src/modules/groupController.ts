@@ -112,7 +112,7 @@ export function createGroupController(deps: GroupControllerDeps) {
     const affectedGroups = new Set<number>([targetGroup]);
     if (currentGroup !== null) affectedGroups.add(currentGroup);
     rebuildGroupTrees(affectedGroups);
-    deps.setStatus(`已加入组${targetGroup}（面数量 ${groupFaces().get(targetGroup)?.size ?? 0}）`, "success");
+    deps.setStatus(`已加入组${targetGroup}`, "success");
     const groups = new Set<number>([targetGroup]);
     if (currentGroup !== null) groups.add(currentGroup);
     appEventBus.emit("seamsRebuildGroups", groups);

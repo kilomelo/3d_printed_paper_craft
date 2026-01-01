@@ -13,6 +13,10 @@ import {
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
+const clearColor = new Color("#808592");
+const AmbientLightIntensity = 0.8;
+const DirectionalLightIntensity = 1;
+
 export type SceneContext = {
   scene: Scene;
   camera: PerspectiveCamera;
@@ -27,7 +31,7 @@ export function createScene(viewer: HTMLDivElement): SceneContext {
   const width = Math.max(1, viewer.clientWidth || viewer.offsetWidth || 0);
   const height = Math.max(1, viewer.clientHeight || viewer.offsetHeight || 0);
   const scene = new Scene();
-  scene.background = new Color("#a8b4c0");
+  scene.background = clearColor.clone();
 
   const camera = new PerspectiveCamera(50, width / height, 0.1, 5000);
   camera.up.set(0, 0, 1);
@@ -36,7 +40,6 @@ export function createScene(viewer: HTMLDivElement): SceneContext {
   const renderer = new WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(width, height);
-  renderer.setClearColor("#a8b4c0", 1);
   renderer.toneMapping = NoToneMapping;
   // @ts-expect-error three typings may differ by version
   renderer.outputColorSpace = SRGBColorSpace;
@@ -45,8 +48,8 @@ export function createScene(viewer: HTMLDivElement): SceneContext {
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(0, 0, 0);
 
-  const ambient = new AmbientLight(0xffffff, 0.6);
-  const dir = new DirectionalLight(0xffffff, 0.8);
+  const ambient = new AmbientLight(0xffffff, AmbientLightIntensity);
+  const dir = new DirectionalLight(0xffffff, DirectionalLightIntensity);
   dir.position.set(4, -6, 8);
   scene.add(ambient, dir);
 
@@ -63,27 +66,22 @@ export type Scene2DContext = {
 };
 
 // 创建 2D 正交场景，用于展开预览
-export function createScene2D(
-  viewer: HTMLElement,
-  options?: { clearColor?: string | number; alpha?: boolean },
-): Scene2DContext {
+export function createScene2D(viewer: HTMLElement): Scene2DContext {
   const width = Math.max(1, viewer.clientWidth || viewer.offsetWidth || 1);
   const height = Math.max(1, viewer.clientHeight || viewer.offsetHeight || 1);
   const halfW = width / 2;
   const halfH = height / 2;
 
   const scene = new Scene();
-  const clearColor = options?.clearColor ?? "#ff0000";
-  scene.background = new Color(clearColor as any);
+  scene.background = clearColor.clone();
 
   const camera = new OrthographicCamera(-halfW, halfW, halfH, -halfH, -1000, 1000);
   camera.position.set(0, 0, 10);
   camera.lookAt(0, 0, 0);
 
-  const renderer = new WebGLRenderer({ antialias: true, alpha: options?.alpha ?? false });
+  const renderer = new WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(width, height);
-  renderer.setClearColor(clearColor, 1);
   renderer.toneMapping = NoToneMapping;
   // @ts-expect-error three typings may differ by version
   renderer.outputColorSpace = SRGBColorSpace;

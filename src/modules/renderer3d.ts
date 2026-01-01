@@ -381,7 +381,7 @@ export function initRenderer3D(
       onLightToggle: () => {
         const enabled = !dir.visible;
         dir.visible = enabled;
-        ambient.intensity = enabled ? 0.6 : 3;
+        ambient.intensity = enabled ? 0.8 : 5;
         lightToggle.classList.toggle("active", enabled);
         lightToggle.textContent = `光源：${enabled ? "开" : "关"}`;
       },
@@ -457,7 +457,6 @@ export function initRenderer3D(
     setModel(null);
     exportBtn.disabled = true;
     setLastTriangleCount(0);
-    setStatus("尚未加载模型");
     showWorkspace(false);
     faceAdjacency.clear();
     faceIndexMap.clear();
@@ -481,6 +480,7 @@ export function initRenderer3D(
     hideHoverLines(hoverState);
     setEditGroupId(null);
     editGroupId = null;
+    appEventBus.emit("modelCleared", undefined);
   }
 
   function getFaceIdFromIntersection(mesh: Mesh, localFace: number | undefined): number | null {
@@ -810,7 +810,7 @@ export function initRenderer3D(
   }
 
   async function loadGeneratedModel(object: Object3D, name: string) {
-    setStatus("生成中...", "info");
+    setStatus("加载中...", "info");
     try {
       const mat = createFrontMaterial();
       object.traverse((child) => {

@@ -292,25 +292,48 @@ body {
   background: #0c121b;
 }
 
-.editor-status {
-  padding: 10px 18px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-top: none;
-  border-radius: 0 0 14px 14px;
-}
-
-.status-text {
+.log-panel {
+  position: fixed;
+  left: 4px;
+  right: 12px;
+  bottom: 12px;
+  height: 200px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 4px 12px;
+  color: #e5e7eb;
   font-size: 14px;
-  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 30;
+  pointer-events: none;
 }
 
-.status.error {
-  color: #f87171;
+.log-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 6px;
+  overflow-y: auto;
 }
 
-.status.success {
-  color: #34d399;
+.log-entry {
+  color: #e5e7eb;
+}
+
+.log-entry.error {
+  color: #ff6131;
+}
+
+.log-entry.success {
+  color: #34f399;
+}
+
+.log-panel.hidden {
+  display: none;
 }
 
 .overlay-btn {

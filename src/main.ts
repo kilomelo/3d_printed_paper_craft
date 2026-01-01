@@ -2,7 +2,7 @@
 import "./style.css";
 import packageJson from "../package.json";
 import { Color } from "three";
-import { createStatus } from "./modules/status";
+import { createLog } from "./modules/log";
 import { initRenderer3D, type GroupUIHooks, type UIRefs } from "./modules/renderer3d";
 import { createGroupController } from "./modules/groupController";
 import { appEventBus } from "./modules/eventBus";
@@ -91,15 +91,16 @@ app.innerHTML = `
           </div>
         </div>
       </section>
-      <footer class="editor-status">
-        <div class="status-text" id="status">尚未加载模型</div>
-      </footer>
-    </section>
-  </main>
+  </section>
+</main>
+  <div id="log-panel" class="log-panel hidden">
+    <div id="log-list" class="log-list"></div>
+  </div>
 `;
 
 const viewer = document.querySelector<HTMLDivElement>("#viewer");
-const statusEl = document.querySelector<HTMLDivElement>("#status");
+const logListEl = document.querySelector<HTMLDivElement>("#log-list");
+const logPanelEl = document.querySelector<HTMLDivElement>("#log-panel");
 const fileInput = document.querySelector<HTMLInputElement>("#file-input");
 const homeStartBtn = document.querySelector<HTMLButtonElement>("#home-start");
 const menuOpenBtn = document.querySelector<HTMLButtonElement>("#menu-open");
@@ -126,7 +127,7 @@ const layoutWorkspace = document.querySelector<HTMLElement>("#layout-workspace")
 
 if (
   !viewer ||
-  !statusEl ||
+  !logListEl ||
   !fileInput ||
   !homeStartBtn ||
   !menuOpenBtn ||
@@ -157,7 +158,7 @@ if (
 // 确保文件选择框只允许支持的模型/3dppc 后缀
 fileInput.setAttribute("accept", ".obj,.fbx,.stl,.3dppc");
 
-const { setStatus } = createStatus(statusEl);
+const { setStatus } = createLog(logListEl);
 
 const uiRefs: UIRefs = {
   viewer,
@@ -206,6 +207,10 @@ appEventBus.on("seamsRebuildFaces", (faces) => seamManager.rebuildFaces(faces));
 appEventBus.on("modelLoaded", () => {
   exportGroupStepBtn.disabled = false;
   exportGroupStlBtn.disabled = false;
+  logPanelEl?.classList.remove("hidden");
+});
+appEventBus.on("modelCleared", () => {
+  logPanelEl?.classList.add("hidden");
 });
 
 const buildGroupUIState = () => {
@@ -357,8 +362,8 @@ settingBtn.addEventListener("click", async () => {
         setStatus("当前展开组没有三角面，无法导出。", "error");
         return;
       }
-      const mesh = await buildMeshInWorker(trisWithAngles);
       setStatus("正在用 Replicad 生成 mesh...", "info");
+      const mesh = await buildMeshInWorker(trisWithAngles);
       await renderer.loadGeneratedModel(mesh, "Replicad 示例");
     } catch (error) {
       console.error("Replicad 示例生成失败", error);
