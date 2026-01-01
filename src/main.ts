@@ -21,7 +21,13 @@ import {
   getGroupTreeParent,
 } from "./modules/groups";
 import { getModel } from "./modules/model";
-import { buildGroupStepFromTriangles, buildGroupStlFromTriangles, buildGroupMeshFromTriangles } from "./modules/replicadModeling";
+import {
+  buildStepInWorker,
+  buildStlInWorker,
+  buildMeshInWorker,
+  onWorkerBusyChange,
+  isWorkerBusy,
+} from "./modules/replicadWorkerClient";
 
 const VERSION = packageJson.version ?? "0.0.0.0";
 
@@ -55,6 +61,7 @@ app.innerHTML = `
         <button class="btn ghost" id="export-group-step-btn" disabled>导出展开组 STEP</button>
         <button class="btn ghost" id="export-group-stl-btn" disabled>导出展开组 STL</button>
         <button class="btn ghost" id="setting-btn">设置</button>
+        <div id="menu-blocker" class="menu-blocker"></div>
       </nav>
       <section class="editor-preview">
         <div class="preview-panel">
@@ -258,6 +265,10 @@ const updateGroupEditToggle = () => {
 };
 
 groupEditToggle.addEventListener("click", () => {
+  if (isWorkerBusy()) {
+    setStatus("正在生成展开组模型，请稍后再编辑", "info");
+    return;
+  }
   const currentEdit = getEditGroupId();
   if (currentEdit === null) {
     groupController.setEditGroup(getPreviewGroupId(), null, getPreviewGroupId());
@@ -272,6 +283,13 @@ appEventBus.on("groupDataChanged", () => updateGroupEditToggle());
 groupUI.render(buildGroupUIState());
 updateGroupEditToggle();
 
+onWorkerBusyChange((busy) => {
+  if (busy && getEditGroupId() !== null) {
+    groupController.setEditGroup(null, getEditGroupId(), getPreviewGroupId());
+    updateGroupEditToggle();
+  }
+});
+
 exportGroupStepBtn.addEventListener("click", async () => {
   exportGroupStepBtn.disabled = true;
   try {
@@ -282,7 +300,7 @@ exportGroupStepBtn.addEventListener("click", async () => {
       return;
     }
     setStatus("正在导出展开组 STEP...", "info");
-    const blob = await buildGroupStepFromTriangles(tris);
+    const blob = await buildStepInWorker(tris);
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -311,7 +329,7 @@ exportGroupStlBtn.addEventListener("click", async () => {
       return;
     }
     setStatus("正在导出展开组 STL...", "info");
-    const blob = await buildGroupStlFromTriangles(tris);
+    const blob = await buildStlInWorker(tris);
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -339,8 +357,8 @@ settingBtn.addEventListener("click", async () => {
         setStatus("当前展开组没有三角面，无法导出。", "error");
         return;
       }
+      const mesh = await buildMeshInWorker(trisWithAngles);
       setStatus("正在用 Replicad 生成 mesh...", "info");
-      const mesh = await buildGroupMeshFromTriangles(trisWithAngles);
       await renderer.loadGeneratedModel(mesh, "Replicad 示例");
     } catch (error) {
       console.error("Replicad 示例生成失败", error);

@@ -1,11 +1,9 @@
-import { BufferGeometry, Float32BufferAttribute, Uint16BufferAttribute, Uint32BufferAttribute, MeshStandardMaterial, Color, Mesh } from "three";
+import { BufferGeometry, Float32BufferAttribute, Uint16BufferAttribute, Uint32BufferAttribute, Mesh } from "three";
 import { Sketcher, setOC, FaceFinder, EdgeFinder, type ShapeMesh, makeOffset } from "replicad";
 import type { OpenCascadeInstance } from "replicad-opencascadejs";
 import initOC from "replicad-opencascadejs/src/replicad_single.js";
 import ocWasmUrl from "replicad-opencascadejs/src/replicad_single.wasm?url";
-
-type Point2D = [number, number];
-export type Triangle2D = [Point2D, Point2D, Point2D];
+import type { Point2D, Triangle2D, TriangleWithEdgeInfo } from "../types/triangles";
 
 type OcFactory = (opts?: { locateFile?: (path: string) => string }) => Promise<OpenCascadeInstance>;
 
@@ -402,12 +400,6 @@ export async function buildGroupMeshFromTriangles(trianglesWithAngles: {
   if (!trianglesWithAngles.length) {
     throw new Error("没有可用于建模的展开三角形");
   }
-  const material = new MeshStandardMaterial({
-        color: new Color(0x6fa8dc),
-        metalness: 0.05,
-        roughness: 0.6,
-        flatShading: true,
-      });
   const solid = await buildSolidFromTrianglesWithAngles(trianglesWithAngles);
   const mesh = solid.mesh({ tolerance: 0.2, angularTolerance: 0.1 });
   const geometry = new BufferGeometry();
@@ -422,7 +414,7 @@ export async function buildGroupMeshFromTriangles(trianglesWithAngles: {
   geometry.setIndex(indexArray);
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
-  const expotMesh = new Mesh(geometry, material);
+  const expotMesh = new Mesh(geometry);
   expotMesh.name = "Replicad Demo";
   return expotMesh;
 }

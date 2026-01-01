@@ -165,6 +165,22 @@ body {
   background: var(--panel-muted);
   border: 1px solid var(--border);
   border-top: none;
+  position: relative;
+}
+
+.menu-blocker {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  border-radius: 4px;
+}
+
+.menu-blocker.active {
+  pointer-events: auto;
+  opacity: 1;
 }
 
 .editor-preview {

@@ -7,6 +7,7 @@ import { appEventBus } from "./eventBus";
 import type { Renderer2DContext } from "./renderer2d";
 import { createUnfoldEdgeMaterial, createUnfoldFaceMaterial } from "./materials";
 import type { GroupTreeParent } from "./groups";
+import type { Triangle2D, TriangleWithEdgeInfo } from "../types/triangles";
 import { edgeIsSeamBasic } from "./seamsLogic";
 
 type GroupCache = {
@@ -321,9 +322,9 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     });
   };
 
-  const getGroupTriangles2D = (groupId: number) => {
+  const getGroupTriangles2D = (groupId: number): Triangle2D[] => {
     const faces = getGroupFaces().get(groupId);
-    if (!faces || faces.size === 0) return [] as Array<[[number, number], [number, number], [number, number]]>;
+    if (!faces || faces.size === 0) return [] as Triangle2D[];
     // 确保有可用的变换矩阵
     buildRootTransforms(groupId);
     buildTransformsForGroup(groupId);
@@ -344,7 +345,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     return tris;
   };
 
-  const getGroupTrianglesWithEdgeInfo = (groupId: number) => {
+  const getGroupTrianglesWithEdgeInfo = (groupId: number): TriangleWithEdgeInfo[] => {
     const faces = getGroupFaces().get(groupId);
     if (!faces || faces.size === 0) return [];
     buildRootTransforms(groupId);

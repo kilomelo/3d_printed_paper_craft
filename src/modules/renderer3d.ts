@@ -812,6 +812,12 @@ export function initRenderer3D(
   async function loadGeneratedModel(object: Object3D, name: string) {
     setStatus("生成中...", "info");
     try {
+      const mat = createFrontMaterial();
+      object.traverse((child) => {
+        if ((child as Mesh).isMesh) {
+          (child as Mesh).material = mat.clone();
+        }
+      });
       await applyObject(object, name);
     } catch (error) {
       console.error("加载生成模型失败", error);
