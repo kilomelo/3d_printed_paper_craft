@@ -281,42 +281,11 @@ export function offsetTriangleWithAngles(
   return {offsettedTri, extraOffsetValue};
 }
 
-// const buildSolidFromTriangles = async (trisWithAngles: TriangleWithEdgeInfo[]) => {
-//   await ensureReplicadOC();
-//   const outer = triangles2Outer(trisWithAngles);
-//   if (!outer.length) {
-//     throw new Error("三角形建模失败");
-//   }
-//   const baseSketcher = new Sketcher("XY");
-//   outer.forEach(([x, y], idx) => {
-//     if (idx === 0) baseSketcher.movePointerTo([x, y]);
-//     else baseSketcher.lineTo([x, y]);
-//   });
-//   let connectionSolid = baseSketcher.close().extrude(-1);
-//   const sideFinder = new FaceFinder().when(({ normal }) => (normal ? Math.abs(normal.z) < 0.99 : false));
-//   trisWithAngles.forEach((triData) => {
-//     const sketch = new Sketcher("XY")
-//       .movePointerTo(triData.tri[0])
-//       .lineTo(triData.tri[1])
-//       .lineTo(triData.tri[2])
-//       .close();
-//     const solid = sketch.extrude(0.5);
-//     const sideFaces = sideFinder.find(solid, { unique: false });
-//     console.log('sideFaces', sideFaces.length);
-//     sideFaces.forEach((f) => {
-//       makeOffset(f, -0.5);
-//     });
-//     connectionSolid = connectionSolid.fuse(solid, { optimisation: "commonFace" });
-//   });
-//   return connectionSolid;
-// };
-
 const buildSolidFromTrianglesWithAngles = async (trianglesWithAngles: TriangleWithEdgeInfo[]) => {
     const bodyThickness = 0.4;
     const connectionThickness = 0.2;
     const nonSeamShrinkFactor = 0.2;
     const topSketchObsoluteExtraOffsets = [0.05, 0.05, 0.05];
-    // const topSketchObsoluteExtraOffsets = [0, 0, 0];
     const chamferSize = 0.2;
     await ensureReplicadOC();
     const outer = triangles2Outer(trianglesWithAngles);
@@ -330,10 +299,7 @@ const buildSolidFromTrianglesWithAngles = async (trianglesWithAngles: TriangleWi
       else baseSketcher.lineTo([x, y]);
     });
     let connectionSolid = baseSketcher.close().extrude(-connectionThickness);
-    let i = 0;
     trianglesWithAngles.forEach((triData) => {
-      i++;
-      // if (i != 1) return;
       const offsetResult = offsetTriangleWithAngles(triData, bodyThickness, nonSeamShrinkFactor, topSketchObsoluteExtraOffsets);
       const bodyTopTriangle = offsetResult.offsettedTri;
       const bodyBottomTriangle = offsetTriangleWithAngles(triData, 0, 0, offsetResult.extraOffsetValue).offsettedTri;

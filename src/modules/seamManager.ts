@@ -1,5 +1,5 @@
 // 拼缝管理器：桥接 seamsLogic 与运行态依赖（scene/viewer/geometry 索引等），提供全量/按组/按面重建、可见性与分辨率更新，并负责拼缝资源释放。
-import { Scene, Vector3 } from "three";
+import { Scene, Vector3, Object3D } from "three";
 import {
   applySeamsVisibility,
   rebuildSeamsForFaces,
@@ -13,6 +13,7 @@ import { type EdgeRecord } from "./modelLoader";
 export type SeamManagerDeps = {
   viewer: HTMLElement;
   scene: Scene;
+  getModelRoot: () => Object3D | null;
   getEdges: () => EdgeRecord[];
   getFaceAdjacency: () => Map<number, Set<number>>;
   getFaceGroupMap: () => Map<number, number | null>;
@@ -38,6 +39,7 @@ export function createSeamManager(deps: SeamManagerDeps) {
     vertexKeyToPos: deps.getVertexKeyToPos(),
     seamsVisible: deps.isSeamsVisible(),
     getEdgeWorldPositions: deps.getEdgeWorldPositions,
+    root: deps.getModelRoot() ?? deps.scene,
   });
 
   const rebuildFull = () => {

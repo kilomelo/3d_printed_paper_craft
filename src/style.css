@@ -29,6 +29,10 @@ body {
   min-height: 100vh;
 }
 
+.hidden {
+  display: none !important;
+}
+
 .shell {
   min-height: 100vh;
   height: 100vh;
@@ -195,6 +199,10 @@ body {
   border-top: none;
   min-height: 0;
   height: 100%;
+}
+
+.editor-preview.single-col {
+  grid-template-columns: 1fr;
 }
 
 .preview-panel {

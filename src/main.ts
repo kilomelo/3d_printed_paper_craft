@@ -55,7 +55,8 @@ app.innerHTML = `
         <div class="editor-title">3D Printed Paper Craft</div>
         <div class="version-badge">v${VERSION}</div>
       </header>
-      <nav class="editor-menu">
+    <nav class="editor-menu">
+        <button class="btn ghost hidden" id="exit-preview-btn">退出预览</button>
         <button class="btn ghost" id="menu-open">打开模型</button>
         <button class="btn ghost" id="export-btn" disabled>导出 .3dppc</button>
         <button class="btn ghost" id="export-group-step-btn" disabled>导出展开组 STEP</button>
@@ -103,7 +104,9 @@ const logListEl = document.querySelector<HTMLDivElement>("#log-list");
 const logPanelEl = document.querySelector<HTMLDivElement>("#log-panel");
 const fileInput = document.querySelector<HTMLInputElement>("#file-input");
 const homeStartBtn = document.querySelector<HTMLButtonElement>("#home-start");
+const exitPreviewBtn = document.querySelector<HTMLButtonElement>("#exit-preview-btn");
 const menuOpenBtn = document.querySelector<HTMLButtonElement>("#menu-open");
+const editorPreviewEl = document.querySelector<HTMLElement>(".editor-preview");
 const resetViewBtn = document.querySelector<HTMLButtonElement>("#reset-view-btn");
 const lightToggle = document.querySelector<HTMLButtonElement>("#light-toggle");
 const edgesToggle = document.querySelector<HTMLButtonElement>("#edges-toggle");
@@ -117,6 +120,7 @@ const triCounter = document.querySelector<HTMLDivElement>("#tri-counter");
 const groupTabsEl = document.querySelector<HTMLDivElement>("#group-tabs");
 const groupAddBtn = document.querySelector<HTMLButtonElement>("#group-add");
 const groupPreview = document.querySelector<HTMLDivElement>("#group-preview");
+const groupPreviewPanel = groupPreview?.closest(".preview-panel") as HTMLDivElement | null;
 const groupCountLabel = document.querySelector<HTMLSpanElement>("#group-count");
 const groupColorBtn = document.querySelector<HTMLButtonElement>("#group-color-btn");
 const groupColorInput = document.querySelector<HTMLInputElement>("#group-color-input");
@@ -130,6 +134,8 @@ if (
   !logListEl ||
   !fileInput ||
   !homeStartBtn ||
+  !exitPreviewBtn ||
+  !editorPreviewEl ||
   !menuOpenBtn ||
   !resetViewBtn ||
   !lightToggle ||
@@ -143,6 +149,7 @@ if (
   !triCounter ||
   !groupTabsEl ||
   !groupAddBtn ||
+  !groupPreviewPanel ||
   !groupPreview ||
   !groupCountLabel ||
   !groupColorBtn ||
@@ -180,6 +187,15 @@ const groupUiHooks: GroupUIHooks = {};
 
 const geometryContext = createGeometryContext();
 const renderer = initRenderer3D(uiRefs, log, geometryContext, groupUiHooks);
+const menuButtons = [menuOpenBtn, exportBtn, exportGroupStepBtn, exportGroupStlBtn, previewGroupModelBtn];
+const updateMenuState = () => {
+  const isPreview = renderer.getWorkspaceState() === "previewGroupModel";
+  menuButtons.forEach((btn) => btn.classList.toggle("hidden", isPreview));
+  exitPreviewBtn.classList.toggle("hidden", !isPreview);
+  groupPreviewPanel.classList.toggle("hidden", isPreview);
+  editorPreviewEl.classList.toggle("single-col", isPreview);
+  requestAnimationFrame(() => renderer.resizeRenderer());
+};
 const seamManager = createSeamManager(renderer.getSeamManagerDeps());
 renderer.attachSeamManager(seamManager);
 const groupController = createGroupController(renderer.getGroupDeps());
@@ -208,9 +224,11 @@ appEventBus.on("modelLoaded", () => {
   exportGroupStepBtn.disabled = false;
   exportGroupStlBtn.disabled = false;
   logPanelEl?.classList.remove("hidden");
+  updateMenuState();
 });
 appEventBus.on("modelCleared", () => {
   logPanelEl?.classList.add("hidden");
+  updateMenuState();
 });
 
 const buildGroupUIState = () => {
@@ -287,6 +305,7 @@ appEventBus.on("groupDataChanged", () => updateGroupEditToggle());
 
 groupUI.render(buildGroupUIState());
 updateGroupEditToggle();
+updateMenuState();
 
 onWorkerBusyChange((busy) => {
   if (busy && getEditGroupId() !== null) {
@@ -364,11 +383,19 @@ previewGroupModelBtn.addEventListener("click", async () => {
     }
     log("正在用 Replicad 生成 mesh...", "info");
     const mesh = await buildMeshInWorker(trisWithAngles);
-    await renderer.loadGeneratedModel(mesh, "Replicad 示例");
+    renderer.loadPreviewModel(mesh);
+    log("展开组模型预览已加载", "success");
+    updateMenuState();
   } catch (error) {
     console.error("Replicad mesh 生成失败", error);
     log("Replicad mesh 生成失败，请检查控制台日志。", "error");
   } finally {
     previewGroupModelBtn.disabled = false;
   }
+});
+
+exitPreviewBtn.addEventListener("click", () => {
+  renderer.clearPreviewModel();
+  updateMenuState();
+  log("已退出展开组模型预览", "info");
 });

@@ -1,7 +1,7 @@
 // 3dppc 格式处理：负责序列化/反序列化自定义 3dppc 文件，提供加载与下载工具。
 import { BufferGeometry, Float32BufferAttribute, Group, Mesh } from "three";
 import { collectGeometry, filterLargestComponent } from "./geometry";
-import { getLastFileName, setLastTriangleCount } from "./model";
+import { getLastFileName } from "./model";
 import { getGroupColorCursor, getGroupFaces, getGroupColor } from "./groups";
 
 export type PPCFile = {
@@ -123,7 +123,6 @@ export async function load3dppc(url: string, frontMaterial: Mesh["material"]) {
 
   const vertices = json.vertices;
   const triangles = json.triangles;
-  setLastTriangleCount(triangles.length);
 
   const positions: number[] = [];
   const indices: number[] = [];

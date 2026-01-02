@@ -25,6 +25,7 @@ export type SceneContext = {
   ambient: AmbientLight;
   dir: DirectionalLight;
   modelGroup: Group;
+   previewModelGroup: Group;
 };
 
 export function createScene(viewer: HTMLDivElement): SceneContext {
@@ -54,9 +55,10 @@ export function createScene(viewer: HTMLDivElement): SceneContext {
   scene.add(ambient, dir);
 
   const modelGroup = new Group();
-  scene.add(modelGroup);
+  const previewModelGroup = new Group();
+  scene.add(modelGroup, previewModelGroup);
 
-  return { scene, camera, renderer, controls, ambient, dir, modelGroup };
+  return { scene, camera, renderer, controls, ambient, dir, modelGroup, previewModelGroup };
 }
 
 export type Scene2DContext = {

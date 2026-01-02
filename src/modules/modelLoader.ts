@@ -48,38 +48,27 @@ function applyDefaultFaceColors(mesh: Mesh) {
   geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
 }
 
-export function generateFunctionalMaterials(root: Object3D) {
-  const replacements: { parent: Object3D; mesh: Mesh }[] = [];
-  root.traverse((child) => {
+export function generateFunctionalMaterials(root: Object3D, target: Object3D) {
+  target.traverse((child) => {
     if ((child as Mesh).isMesh) {
       const mesh = child as Mesh;
       if (mesh.userData.functional) return;
       applyDefaultFaceColors(mesh);
-      replacements.push({ parent: mesh.parent ? mesh.parent : root, mesh });
+      const geomBack = mesh.geometry.clone();
+      const meshBack = new Mesh(geomBack, createBackMaterial());
+      meshBack.userData.functional = "back";
+      meshBack.castShadow = false;
+      meshBack.receiveShadow = false;
+      meshBack.name = mesh.name ? `${mesh.name}-back` : "back-only";
+      root.add(meshBack);
+      const geomWireframe = mesh.geometry.clone();
+      const meshWireframe = new Mesh(geomWireframe, createEdgeMaterial());
+      meshWireframe.userData.functional = "edge";
+      meshWireframe.castShadow = false;
+      meshWireframe.receiveShadow = false;
+      meshWireframe.name = mesh.name ? `${mesh.name}-wireframe` : "wireframe-only";
+      root.add(meshWireframe);
     }
-  });
-  replacements.forEach(({ parent, mesh }) => {
-    const geomBack = mesh.geometry.clone();
-    const meshBack = new Mesh(geomBack, createBackMaterial());
-    meshBack.userData.functional = "back";
-    meshBack.castShadow = mesh.castShadow;
-    meshBack.receiveShadow = mesh.receiveShadow;
-    meshBack.name = mesh.name ? `${mesh.name}-back` : "back-only";
-    meshBack.position.copy(mesh.position);
-    meshBack.rotation.copy(mesh.rotation);
-    meshBack.scale.copy(mesh.scale);
-    parent.add(meshBack);
-
-    const geomWireframe = mesh.geometry.clone();
-    const meshWireframe = new Mesh(geomWireframe, createEdgeMaterial());
-    meshWireframe.userData.functional = "edge";
-    meshWireframe.castShadow = false;
-    meshWireframe.receiveShadow = false;
-    meshWireframe.name = mesh.name ? `${mesh.name}-wireframe` : "wireframe-only";
-    meshWireframe.position.copy(mesh.position);
-    meshWireframe.rotation.copy(mesh.rotation);
-    meshWireframe.scale.copy(mesh.scale);
-    parent.add(meshWireframe);
   });
 }
 
