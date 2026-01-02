@@ -35,75 +35,6 @@ const polygonArea = (pts: Point2D[]) => {
   return area * 0.5;
 };
 
-// 从三角形列表提取外轮廓（去除重复边，返回面积最大的环）
-// export function triangles2Outer(triangles: Triangle2D[]): Point2D[] {
-//   if (!triangles.length) return [];
-//   const edgeMap = new Map<string, { a: Point2D; b: Point2D; count: number }>();
-//   triangles.forEach((tri) => {
-//     const edges: [Point2D, Point2D][] = [
-//       [tri[0], tri[1]],
-//       [tri[1], tri[2]],
-//       [tri[2], tri[0]],
-//     ];
-//     edges.forEach(([a, b]) => {
-//       const k = edgeKey(a, b);
-//       const rec = edgeMap.get(k);
-//       if (rec) rec.count += 1;
-//       else edgeMap.set(k, { a, b, count: 1 });
-//     });
-//   });
-
-//   const boundary = Array.from(edgeMap.values()).filter((e) => e.count === 1);
-//   if (!boundary.length) return [];
-
-//   const adjacency = new Map<string, Point2D[]>();
-//   boundary.forEach(({ a, b }) => {
-//     const ka = pointKey(a);
-//     const kb = pointKey(b);
-//     if (!adjacency.has(ka)) adjacency.set(ka, []);
-//     if (!adjacency.has(kb)) adjacency.set(kb, []);
-//     adjacency.get(ka)!.push(b);
-//     adjacency.get(kb)!.push(a);
-//   });
-
-//   const visited = new Set<string>();
-//   const loops: Point2D[][] = [];
-
-//   boundary.forEach(({ a, b }) => {
-//     const startEdgeKey = edgeKey(a, b);
-//     if (visited.has(startEdgeKey)) return;
-//     let current = a;
-//     const loop: Point2D[] = [];
-//     let guard = boundary.length * 3 + 3;
-//     while (guard-- > 0) {
-//       loop.push(current);
-//       const neigh = adjacency.get(pointKey(current)) || [];
-//       const next = neigh.find((n) => !visited.has(edgeKey(current, n)));
-//       if (!next) break;
-//       visited.add(edgeKey(current, next));
-//       current = next;
-//       if (pointKey(current) === pointKey(loop[0])) break;
-//     }
-//     if (loop.length >= 3 && pointKey(current) === pointKey(loop[0])) {
-//       loops.push(loop);
-//     }
-//   });
-
-//   if (!loops.length) return [];
-//   let best = loops[0];
-//   let bestArea = Math.abs(polygonArea(best));
-//   loops.slice(1).forEach((lp) => {
-//     const area = Math.abs(polygonArea(lp));
-//     if (area > bestArea) {
-//       bestArea = area;
-//       best = lp;
-//     }
-//   });
-//   if (best.length > 1 && pointKey(best[0]) === pointKey(best[best.length - 1])) {
-//     best = best.slice(0, -1);
-//   }
-//   return best;
-// }
 export function triangles2Outer(trianglesWithAngles: TriangleWithEdgeInfo[]): Point2D[] {
   if (!trianglesWithAngles.length) return [];
   const edgeMap = new Map<string, { a: Point2D; b: Point2D }>();
@@ -207,7 +138,6 @@ export function offsetTriangleWithAngles(
     console.warn('offsetTriangleWithAngles: invalid obsoluteExtraOffsets length, skip offsetting');
     return {offsettedTri: triData.tri, extraOffsetValue: [0, 0, 0]};
   }
-  console.debug('[offset] offsetTriangleWithAngles', 'shrinkFactor', shrinkFactor, 'nonSeamShrinkFactor', nonSeamShrinkFactor, 'obsoluteExtraOffsets', obsoluteExtraOffsets);
   const { tri, edges } = triData;
   const area = polygonArea(tri);
   const inwardNormal = (vx: number, vy: number): Point2D => {
@@ -244,9 +174,7 @@ export function offsetTriangleWithAngles(
       offset = Math.sign(offset) * heightCap;
       console.warn('offsetTriangleWithAngles: offset exceeds height cap, adjusted', offset);
     }
-    console.log('Math.abs(angleRad - Math.PI)', Math.abs(angleRad - Math.PI * 0.5));
     const bendingOffset = (Math.abs(angleRad - Math.PI) < 0.001 || edges[i]?.isOuter? 0 : obsoluteExtraOffsets[i] + offset * nonSeamShrinkFactor);
-    console.log('offset', offset, 'bendingOffset', bendingOffset, 'obsoluteExtraOffsets[i]', obsoluteExtraOffsets[i]);
     extraOffsetValue.push(bendingOffset);
     if (!edges[i]?.isOuter) offset += bendingOffset;
     offsets.push(offset);
@@ -281,15 +209,18 @@ export function offsetTriangleWithAngles(
   return {offsettedTri, extraOffsetValue};
 }
 
-const buildSolidFromTrianglesWithAngles = async (trianglesWithAngles: TriangleWithEdgeInfo[]) => {
+const buildSolidFromTrianglesWithAngles = async (
+  trianglesWithAngles: TriangleWithEdgeInfo[],
+  onProgress?: (progress: number) => void,
+) => {
     const bodyThickness = 0.4;
     const connectionThickness = 0.2;
     const nonSeamShrinkFactor = 0.2;
     const topSketchObsoluteExtraOffsets = [0.05, 0.05, 0.05];
     const chamferSize = 0.2;
+    onProgress?.(1);
     await ensureReplicadOC();
     const outer = triangles2Outer(trianglesWithAngles);
-    console.log('trianglesWithAngles', trianglesWithAngles, 'outer', outer);
     if (!outer.length) {
       throw new Error("三角形建模失败");
     }
@@ -299,11 +230,13 @@ const buildSolidFromTrianglesWithAngles = async (trianglesWithAngles: TriangleWi
       else baseSketcher.lineTo([x, y]);
     });
     let connectionSolid = baseSketcher.close().extrude(-connectionThickness);
+    onProgress?.(2);
+    const progressPerTriangle = 98 / trianglesWithAngles.length;
+    let i = 0;
     trianglesWithAngles.forEach((triData) => {
       const offsetResult = offsetTriangleWithAngles(triData, bodyThickness, nonSeamShrinkFactor, topSketchObsoluteExtraOffsets);
       const bodyTopTriangle = offsetResult.offsettedTri;
       const bodyBottomTriangle = offsetTriangleWithAngles(triData, 0, 0, offsetResult.extraOffsetValue).offsettedTri;
-      console.log('bodyTopTriangle', bodyTopTriangle, 'extraOffsetValue', offsetResult.extraOffsetValue);
       const bodyTopSketch = new Sketcher("XY", bodyThickness)
         .movePointerTo(bodyTopTriangle[0])
         .lineTo(bodyTopTriangle[1])
@@ -324,32 +257,40 @@ const buildSolidFromTrianglesWithAngles = async (trianglesWithAngles: TriangleWi
         );
       const bodyFilleted = bodySolid.chamfer(chamferSize, onlySideEdges);
       connectionSolid = connectionSolid.fuse(bodyFilleted, { optimisation: "commonFace" });
+      onProgress?.(Math.floor(2 + progressPerTriangle * (i + 1)));
+      i++;
     });
     return connectionSolid;
   }
 
-export async function buildGroupStepFromTriangles(trisWithAngles: TriangleWithEdgeInfo[]) {
+export async function buildGroupStepFromTriangles(
+  trisWithAngles: TriangleWithEdgeInfo[],
+  onProgress?: (msg: string) => void,
+) {
   if (!trisWithAngles.length) {
     throw new Error("没有可用于建模的展开三角形");
   }
-  const fused = await buildSolidFromTrianglesWithAngles(trisWithAngles);
+  const fused = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress);
   const blob = fused.blobSTEP();
   return blob;
 }
 
-export async function buildGroupStlFromTriangles(trisWithAngles: TriangleWithEdgeInfo[]) {
+export async function buildGroupStlFromTriangles(
+  trisWithAngles: TriangleWithEdgeInfo[],
+  onProgress?: (msg: string) => void,
+) {
   if (!trisWithAngles.length) {
     throw new Error("没有可用于建模的展开三角形");
   }
-  const fused = await buildSolidFromTrianglesWithAngles(trisWithAngles);
+  const fused = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress);
   return fused.blobSTL({ binary: true, tolerance: 0.2, angularTolerance: 0.1 });
 }
 
-export async function buildGroupMeshFromTriangles(trisWithAngles: TriangleWithEdgeInfo[]) {
+export async function buildGroupMeshFromTriangles(trisWithAngles: TriangleWithEdgeInfo[], onProgress?: (msg: string) => void) {
   if (!trisWithAngles.length) {
     throw new Error("没有可用于建模的展开三角形");
   }
-  const solid = await buildSolidFromTrianglesWithAngles(trisWithAngles);
+  const solid = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress);
   const mesh = solid.mesh({ tolerance: 0.2, angularTolerance: 0.1 });
   const geometry = new BufferGeometry();
   const position = new Float32BufferAttribute(mesh.vertices, 3);

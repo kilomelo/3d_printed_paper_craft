@@ -1,5 +1,20 @@
 // 3D 渲染与交互层：负责 Three.js 场景、相机/光源、模型加载展示、拾取/hover/刷子交互，消费外部注入的组/拼缝接口，不持有业务状态。
-import { Color, Vector3, Mesh, MeshStandardMaterial, Quaternion, MathUtils, Spherical, PerspectiveCamera, OrthographicCamera, Group, type Object3D } from "three";
+import {
+  Color,
+  Vector3,
+  Mesh,
+  MeshStandardMaterial,
+  Quaternion,
+  MathUtils,
+  Spherical,
+  PerspectiveCamera,
+  OrthographicCamera,
+  Vector2,
+  Group,
+  AxesHelper,
+  Scene,
+  type Object3D,
+} from "three";
 import type { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
@@ -167,7 +182,12 @@ export function initRenderer3D(
   });
 
   const { scene, camera, renderer, controls, ambient, dir, modelGroup, previewModelGroup } = createScene(viewer);
-  controls.panSpeed = 10;
+  const axesScene = new Scene();
+  const axesCamera = new PerspectiveCamera(50, 1, 0.1, 10);
+  const axesHelper = new AxesHelper(1.2);
+  axesScene.add(axesHelper);
+  const tempVec = new Vector3();
+  controls.panSpeed = 1;
   controls.rotateSpeed = 0.4;
   const el = renderer.domElement;
   previewModelGroup.visible = false;
@@ -264,8 +284,7 @@ export function initRenderer3D(
 
     // 每像素的世界位移（OrbitControls 习惯用 el.clientHeight 来统一 X/Y 的手感）
     const worldPerPixel = worldHeight / el.clientHeight;
-
-    return worldPerPixel * panSpeed;
+    return worldPerPixel * panSpeed + 0.4;
   }
   const panOffset = new Vector3();
   const panLeftV = new Vector3();
@@ -617,6 +636,8 @@ export function initRenderer3D(
     renderer.setSize(clientWidth, clientHeight);
     camera.aspect = clientWidth / clientHeight;
     camera.updateProjectionMatrix();
+    axesCamera.aspect = 1;
+    axesCamera.updateProjectionMatrix();
     refreshSeamResolution();
     updateHoverResolution(viewer, hoverLines);
   }
@@ -892,11 +913,38 @@ export function initRenderer3D(
     return parts.length > 1 ? parts.pop()!.toLowerCase() : "";
   }
 
+  function renderAxesInset() {
+    const size = renderer.getSize(new Vector2());
+    const inset = 150;
+    const padding = 12;
+    const left = size.x - inset - padding;
+    const bottom = size.y - inset - padding;
+    // 相机朝向跟随主相机方向
+    tempVec.copy(camera.position).sub(controls.target).normalize().multiplyScalar(3);
+    axesCamera.position.copy(tempVec);
+    axesCamera.lookAt(axesScene.position);
+    axesCamera.up.copy(camera.up);
+    axesCamera.updateProjectionMatrix();
+
+    const prevAutoClear = renderer.autoClear;
+    renderer.autoClear = false;
+    renderer.clearDepth();
+    renderer.setScissorTest(true);
+    renderer.setViewport(left, bottom, inset, inset);
+    renderer.setScissor(left, bottom, inset, inset);
+    renderer.render(axesScene, axesCamera);
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, size.x, size.y);
+    renderer.autoClear = prevAutoClear;
+  }
+
   function animate() {
     requestAnimationFrame(animate);
     controls.update();
     renderer.render(scene, camera);
-    triCounter.textContent = `渲染三角形：${renderer.info.render.triangles}`;
+    const tris = renderer.info.render.triangles;
+    renderAxesInset();
+    triCounter.textContent = `渲染三角形：${tris}`;
   }
 
   resizeRenderer();

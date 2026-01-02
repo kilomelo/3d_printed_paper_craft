@@ -324,7 +324,7 @@ exportGroupStepBtn.addEventListener("click", async () => {
       return;
     }
     log("正在导出展开组 STEP...", "info");
-    const blob = await buildStepInWorker(trisWithAngles);
+    const blob = await buildStepInWorker(trisWithAngles, (progress) => log(progress, "progress"));
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -353,7 +353,7 @@ exportGroupStlBtn.addEventListener("click", async () => {
       return;
     }
     log("正在导出展开组 STL...", "info");
-    const blob = await buildStlInWorker(trisWithAngles);
+    const blob = await buildStlInWorker(trisWithAngles, (progress) => log(progress, "progress"));
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -382,7 +382,7 @@ previewGroupModelBtn.addEventListener("click", async () => {
       return;
     }
     log("正在用 Replicad 生成 mesh...", "info");
-    const mesh = await buildMeshInWorker(trisWithAngles);
+    const mesh = await buildMeshInWorker(trisWithAngles, (progress) => log(progress, "progress"));
     renderer.loadPreviewModel(mesh);
     log("展开组模型预览已加载", "success");
     updateMenuState();

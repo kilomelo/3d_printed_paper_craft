@@ -6,9 +6,9 @@ import {
 import type { TriangleWithEdgeInfo } from "../types/triangles";
 
 type WorkerRequest =
-  | { id: number; type: "step"; trisWithAngles: TriangleWithEdgeInfo[] }
-  | { id: number; type: "stl"; trisWithAngles: TriangleWithEdgeInfo[] }
-  | { id: number; type: "mesh"; trisWithAngles: TriangleWithEdgeInfo[] };
+  | { id: number; type: "step"; triangles: TriangleWithEdgeInfo[] }
+  | { id: number; type: "stl"; triangles: TriangleWithEdgeInfo[] }
+  | { id: number; type: "mesh"; triangles: TriangleWithEdgeInfo[] };
 
 type MeshPayload = {
   positions: ArrayBuffer;
@@ -21,12 +21,13 @@ type WorkerResponse =
   | { id: number; ok: true; type: "step"; buffer: ArrayBuffer; mime: string }
   | { id: number; ok: true; type: "stl"; buffer: ArrayBuffer; mime: string }
   | { id: number; ok: true; type: "mesh"; mesh: MeshPayload }
+  | { id: number; ok: true; type: "progress"; message: number }
   | { id: number; ok: false; error: string };
 
 const ctx: DedicatedWorkerGlobalScope = self as any;
 
-const serializeMesh = async (triangles: TriangleWithEdgeInfo[]): Promise<MeshPayload> => {
-  const mesh = await buildGroupMeshFromTriangles(triangles);
+const serializeMesh = async (triangles: TriangleWithEdgeInfo[], onProgress?: (msg: number) => void): Promise<MeshPayload> => {
+  const mesh = await buildGroupMeshFromTriangles(triangles, onProgress);
   const geom = mesh.geometry;
   const posAttr = geom.getAttribute("position");
   const normAttr = geom.getAttribute("normal");
@@ -51,20 +52,21 @@ const serializeMesh = async (triangles: TriangleWithEdgeInfo[]): Promise<MeshPay
 ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const { id, type } = event.data;
   try {
+    const report = (message: string) => ctx.postMessage({ id, ok: true, type: "progress", message } as WorkerResponse);
     if (type === "step") {
-      const buffer = await (await buildGroupStepFromTriangles(event.data.trisWithAngles)).arrayBuffer();
+      const buffer = await (await buildGroupStepFromTriangles(event.data.triangles, report)).arrayBuffer();
       const resp: WorkerResponse = { id, ok: true, type: "step", buffer, mime: "application/step" };
       ctx.postMessage(resp, [resp.buffer]);
       return;
     }
     if (type === "stl") {
-      const buffer = await (await buildGroupStlFromTriangles(event.data.trisWithAngles)).arrayBuffer();
+      const buffer = await (await buildGroupStlFromTriangles(event.data.triangles, report)).arrayBuffer();
       const resp: WorkerResponse = { id, ok: true, type: "stl", buffer, mime: "model/stl" };
       ctx.postMessage(resp, [resp.buffer]);
       return;
     }
     if (type === "mesh") {
-      const mesh = await serializeMesh(event.data.trisWithAngles);
+      const mesh = await serializeMesh(event.data.triangles, report);
       const transfers: ArrayBuffer[] = [mesh.positions, mesh.normals].filter(Boolean) as ArrayBuffer[];
       if (mesh.indices) transfers.push(mesh.indices);
       const resp: WorkerResponse = { id, ok: true, type: "mesh", mesh };

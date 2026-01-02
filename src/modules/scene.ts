@@ -25,7 +25,7 @@ export type SceneContext = {
   ambient: AmbientLight;
   dir: DirectionalLight;
   modelGroup: Group;
-   previewModelGroup: Group;
+  previewModelGroup: Group;
 };
 
 export function createScene(viewer: HTMLDivElement): SceneContext {

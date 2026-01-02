@@ -312,6 +312,7 @@ body {
   padding: 4px 12px;
   color: #e5e7eb;
   font-size: 14px;
+  font-family: monospace;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -338,6 +339,10 @@ body {
 
 .log-entry.success {
   color: #34f399;
+}
+
+.log-entry.progress {
+  color: #93c5fd;
 }
 
 .log-panel.hidden {
