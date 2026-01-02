@@ -7,6 +7,8 @@ import { appEventBus } from "./eventBus";
 import type { Renderer2DContext } from "./renderer2d";
 import { createUnfoldEdgeMaterial, createUnfoldFaceMaterial } from "./materials";
 import type { GroupTreeParent } from "./groups";
+import type { Triangle2D, TriangleWithEdgeInfo } from "../types/triangles";
+import { edgeIsSeamBasic } from "./seamsLogic";
 
 type GroupCache = {
   faces: Set<number>;
@@ -320,6 +322,68 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     });
   };
 
+  const getGroupTriangles2D = (groupId: number): Triangle2D[] => {
+    const faces = getGroupFaces().get(groupId);
+    if (!faces || faces.size === 0) return [] as Triangle2D[];
+    // 确保有可用的变换矩阵
+    buildRootTransforms(groupId);
+    buildTransformsForGroup(groupId);
+    refreshVertexWorldPositions();
+    const tris: Array<[[number, number], [number, number], [number, number]]> = [];
+    faces.forEach((fid) => {
+      const tri = faceTo2D(groupId, fid);
+      if (!tri) return;
+      const [a, b, c] = tri;
+      tris.push(
+        [
+          [a.x, a.y],
+          [b.x, b.y],
+          [c.x, c.y],
+        ],
+      );
+    });
+    return tris;
+  };
+
+  const getGroupTrianglesWithEdgeInfo = (groupId: number): TriangleWithEdgeInfo[] => {
+    const faces = getGroupFaces().get(groupId);
+    if (!faces || faces.size === 0) return [];
+    buildRootTransforms(groupId);
+    buildTransformsForGroup(groupId);
+    refreshVertexWorldPositions();
+    const faceToEdges = getFaceToEdges();
+    const tris: Array<TriangleWithEdgeInfo> = [];
+    faces.forEach((fid) => {
+      const tri = faceTo2D(groupId, fid);
+      if (!tri) return;
+      const [a, b, c] = tri;
+      const edgeIds = faceToEdges.get(fid) ?? [];
+      const edges = edgeIds.map((eid) => {
+        const edgeRec = getEdgesArray()[eid];
+        const isOuter =
+          edgeIsSeamBasic(eid, {
+            edges: getEdgesArray(),
+            faceGroupMap: getFaceGroupMap(),
+            groupTreeParent: getGroupTreeParent(),
+          }) || (edgeRec?.faces.size ?? 0) === 1;
+        return {
+          isOuter,
+          angle: angleIndex.getAngle(eid),
+        };
+      });
+      tris.push({
+        tri: [
+          [a.x, a.y],
+          [b.x, b.y],
+          [c.x, c.y],
+        ],
+        faceId: fid,
+        edges,
+      });
+    });
+    return tris;
+  };
+
   const ensureGroup = (groupId: number) => {
     if (!groupCache.has(groupId)) {
       groupCache.set(groupId, { faces: new Set(), edges: new Set() });
@@ -378,5 +442,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     setRootTransform,
     setFaceTransform,
     getTransformChain,
+    getGroupTriangles2D,
+    getGroupTrianglesWithEdgeInfo,
   };
 }

@@ -12,7 +12,7 @@ export type Renderer2DContext = {
 };
 
 export function initRenderer2D(container: HTMLElement): Renderer2DContext {
-  const { scene, camera, renderer } = createScene2D(container, { clearColor: "#a8b4c0", alpha: true });
+  const { scene, camera, renderer } = createScene2D(container);
   const root = new Group();
   scene.add(root);
 

@@ -1,6 +1,6 @@
 {
   "name": "3d_printed_paper_craft",
-  "version": "0.0.1.31",
+  "version": "0.0.1.56",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "replicad": "^0.20.5",
+    "replicad-opencascadejs": "^0.20.2",
     "three": "^0.160.0"
   },
   "devDependencies": {

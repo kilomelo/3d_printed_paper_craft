@@ -2,7 +2,7 @@
 import "./style.css";
 import packageJson from "../package.json";
 import { Color } from "three";
-import { createStatus } from "./modules/status";
+import { createLog } from "./modules/log";
 import { initRenderer3D, type GroupUIHooks, type UIRefs } from "./modules/renderer3d";
 import { createGroupController } from "./modules/groupController";
 import { appEventBus } from "./modules/eventBus";
@@ -21,6 +21,13 @@ import {
   getGroupTreeParent,
 } from "./modules/groups";
 import { getModel } from "./modules/model";
+import {
+  buildStepInWorker,
+  buildStlInWorker,
+  buildMeshInWorker,
+  onWorkerBusyChange,
+  isWorkerBusy,
+} from "./modules/replicadWorkerClient";
 
 const VERSION = packageJson.version ?? "0.0.0.0";
 
@@ -48,10 +55,14 @@ app.innerHTML = `
         <div class="editor-title">3D Printed Paper Craft</div>
         <div class="version-badge">v${VERSION}</div>
       </header>
-      <nav class="editor-menu">
+    <nav class="editor-menu">
+        <button class="btn ghost hidden" id="exit-preview-btn">退出预览</button>
         <button class="btn ghost" id="menu-open">打开模型</button>
         <button class="btn ghost" id="export-btn" disabled>导出 .3dppc</button>
-        <button class="btn ghost" disabled>设置</button>
+        <button class="btn ghost" id="export-group-step-btn" disabled>导出展开组 STEP</button>
+        <button class="btn ghost" id="export-group-stl-btn" disabled>导出展开组 STL</button>
+        <button class="btn ghost" id="preview-group-model-btn">预览展开组模型</button>
+        <div id="menu-blocker" class="menu-blocker"></div>
       </nav>
       <section class="editor-preview">
         <div class="preview-panel">
@@ -81,28 +92,35 @@ app.innerHTML = `
           </div>
         </div>
       </section>
-      <footer class="editor-status">
-        <div class="status-text" id="status">尚未加载模型</div>
-      </footer>
-    </section>
-  </main>
+  </section>
+</main>
+  <div id="log-panel" class="log-panel hidden">
+    <div id="log-list" class="log-list"></div>
+  </div>
 `;
 
 const viewer = document.querySelector<HTMLDivElement>("#viewer");
-const statusEl = document.querySelector<HTMLDivElement>("#status");
+const logListEl = document.querySelector<HTMLDivElement>("#log-list");
+const logPanelEl = document.querySelector<HTMLDivElement>("#log-panel");
 const fileInput = document.querySelector<HTMLInputElement>("#file-input");
 const homeStartBtn = document.querySelector<HTMLButtonElement>("#home-start");
+const exitPreviewBtn = document.querySelector<HTMLButtonElement>("#exit-preview-btn");
 const menuOpenBtn = document.querySelector<HTMLButtonElement>("#menu-open");
+const editorPreviewEl = document.querySelector<HTMLElement>(".editor-preview");
 const resetViewBtn = document.querySelector<HTMLButtonElement>("#reset-view-btn");
 const lightToggle = document.querySelector<HTMLButtonElement>("#light-toggle");
 const edgesToggle = document.querySelector<HTMLButtonElement>("#edges-toggle");
 const seamsToggle = document.querySelector<HTMLButtonElement>("#seams-toggle");
 const facesToggle = document.querySelector<HTMLButtonElement>("#faces-toggle");
 const exportBtn = document.querySelector<HTMLButtonElement>("#export-btn");
+const exportGroupStepBtn = document.querySelector<HTMLButtonElement>("#export-group-step-btn");
+const exportGroupStlBtn = document.querySelector<HTMLButtonElement>("#export-group-stl-btn");
+const previewGroupModelBtn = document.querySelector<HTMLButtonElement>("#preview-group-model-btn");
 const triCounter = document.querySelector<HTMLDivElement>("#tri-counter");
 const groupTabsEl = document.querySelector<HTMLDivElement>("#group-tabs");
 const groupAddBtn = document.querySelector<HTMLButtonElement>("#group-add");
 const groupPreview = document.querySelector<HTMLDivElement>("#group-preview");
+const groupPreviewPanel = groupPreview?.closest(".preview-panel") as HTMLDivElement | null;
 const groupCountLabel = document.querySelector<HTMLSpanElement>("#group-count");
 const groupColorBtn = document.querySelector<HTMLButtonElement>("#group-color-btn");
 const groupColorInput = document.querySelector<HTMLInputElement>("#group-color-input");
@@ -113,9 +131,11 @@ const layoutWorkspace = document.querySelector<HTMLElement>("#layout-workspace")
 
 if (
   !viewer ||
-  !statusEl ||
+  !logListEl ||
   !fileInput ||
   !homeStartBtn ||
+  !exitPreviewBtn ||
+  !editorPreviewEl ||
   !menuOpenBtn ||
   !resetViewBtn ||
   !lightToggle ||
@@ -123,9 +143,13 @@ if (
   !seamsToggle ||
   !facesToggle ||
   !exportBtn ||
+  !exportGroupStepBtn ||
+  !exportGroupStlBtn ||
+  !previewGroupModelBtn ||
   !triCounter ||
   !groupTabsEl ||
   !groupAddBtn ||
+  !groupPreviewPanel ||
   !groupPreview ||
   !groupCountLabel ||
   !groupColorBtn ||
@@ -141,7 +165,7 @@ if (
 // 确保文件选择框只允许支持的模型/3dppc 后缀
 fileInput.setAttribute("accept", ".obj,.fbx,.stl,.3dppc");
 
-const { setStatus } = createStatus(statusEl);
+const { log } = createLog(logListEl);
 
 const uiRefs: UIRefs = {
   viewer,
@@ -162,7 +186,16 @@ const uiRefs: UIRefs = {
 const groupUiHooks: GroupUIHooks = {};
 
 const geometryContext = createGeometryContext();
-const renderer = initRenderer3D(uiRefs, setStatus, geometryContext, groupUiHooks);
+const renderer = initRenderer3D(uiRefs, log, geometryContext, groupUiHooks);
+const menuButtons = [menuOpenBtn, exportBtn, exportGroupStepBtn, exportGroupStlBtn, previewGroupModelBtn];
+const updateMenuState = () => {
+  const isPreview = renderer.getWorkspaceState() === "previewGroupModel";
+  menuButtons.forEach((btn) => btn.classList.toggle("hidden", isPreview));
+  exitPreviewBtn.classList.toggle("hidden", !isPreview);
+  groupPreviewPanel.classList.toggle("hidden", isPreview);
+  editorPreviewEl.classList.toggle("single-col", isPreview);
+  requestAnimationFrame(() => renderer.resizeRenderer());
+};
 const seamManager = createSeamManager(renderer.getSeamManagerDeps());
 renderer.attachSeamManager(seamManager);
 const groupController = createGroupController(renderer.getGroupDeps());
@@ -187,6 +220,16 @@ appEventBus.on("modelLoaded", () => seamManager.rebuildFull());
 appEventBus.on("seamsRebuildFull", () => seamManager.rebuildFull());
 appEventBus.on("seamsRebuildGroups", (groups) => seamManager.rebuildGroups(groups));
 appEventBus.on("seamsRebuildFaces", (faces) => seamManager.rebuildFaces(faces));
+appEventBus.on("modelLoaded", () => {
+  exportGroupStepBtn.disabled = false;
+  exportGroupStlBtn.disabled = false;
+  logPanelEl?.classList.remove("hidden");
+  updateMenuState();
+});
+appEventBus.on("modelCleared", () => {
+  logPanelEl?.classList.add("hidden");
+  updateMenuState();
+});
 
 const buildGroupUIState = () => {
   const groupFaces = getGroupFaces();
@@ -245,6 +288,10 @@ const updateGroupEditToggle = () => {
 };
 
 groupEditToggle.addEventListener("click", () => {
+  if (isWorkerBusy()) {
+    log("正在生成展开组模型，请稍后再编辑", "info");
+    return;
+  }
   const currentEdit = getEditGroupId();
   if (currentEdit === null) {
     groupController.setEditGroup(getPreviewGroupId(), null, getPreviewGroupId());
@@ -258,3 +305,97 @@ appEventBus.on("groupDataChanged", () => updateGroupEditToggle());
 
 groupUI.render(buildGroupUIState());
 updateGroupEditToggle();
+updateMenuState();
+
+onWorkerBusyChange((busy) => {
+  if (busy && getEditGroupId() !== null) {
+    groupController.setEditGroup(null, getEditGroupId(), getPreviewGroupId());
+    updateGroupEditToggle();
+  }
+});
+
+exportGroupStepBtn.addEventListener("click", async () => {
+  exportGroupStepBtn.disabled = true;
+  try {
+    const targetGroupId = getEditGroupId() ?? getPreviewGroupId();
+    const trisWithAngles = unfold2d.getGroupTrianglesWithEdgeInfo(targetGroupId);
+    if (!trisWithAngles.length) {
+      log("当前展开组没有三角面，无法导出。", "error");
+      return;
+    }
+    log("正在导出展开组 STEP...", "info");
+    const blob = await buildStepInWorker(trisWithAngles, (progress) => log(progress, "progress"));
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `group-${targetGroupId}.step`;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    log("展开组 STEP 已导出", "success");
+  } catch (error) {
+    console.error("展开组 STEP 导出失败", error);
+    log("展开组 STEP 导出失败，请查看控制台日志。", "error");
+  } finally {
+    exportGroupStepBtn.disabled = false;
+  }
+});
+
+exportGroupStlBtn.addEventListener("click", async () => {
+  exportGroupStlBtn.disabled = true;
+  try {
+    const targetGroupId = getEditGroupId() ?? getPreviewGroupId();
+    const trisWithAngles = unfold2d.getGroupTrianglesWithEdgeInfo(targetGroupId);
+    if (!trisWithAngles.length) {
+      log("当前展开组没有三角面，无法导出。", "error");
+      return;
+    }
+    log("正在导出展开组 STL...", "info");
+    const blob = await buildStlInWorker(trisWithAngles, (progress) => log(progress, "progress"));
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `group-${targetGroupId}.stl`;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    log("展开组 STL 已导出", "success");
+  } catch (error) {
+    console.error("展开组 STL 导出失败", error);
+    log("展开组 STL 导出失败，请查看控制台日志。", "error");
+  } finally {
+    exportGroupStlBtn.disabled = false;
+  }
+});
+
+previewGroupModelBtn.addEventListener("click", async () => {
+  previewGroupModelBtn.disabled = true;
+  try {
+    const targetGroupId = getEditGroupId() ?? getPreviewGroupId();
+    const trisWithAngles = unfold2d.getGroupTrianglesWithEdgeInfo(targetGroupId);
+    if (!trisWithAngles.length) {
+      log("当前展开组没有三角面，无法导出。", "error");
+      return;
+    }
+    log("正在用 Replicad 生成 mesh...", "info");
+    const mesh = await buildMeshInWorker(trisWithAngles, (progress) => log(progress, "progress"));
+    renderer.loadPreviewModel(mesh);
+    log("展开组模型预览已加载", "success");
+    updateMenuState();
+  } catch (error) {
+    console.error("Replicad mesh 生成失败", error);
+    log("Replicad mesh 生成失败，请检查控制台日志。", "error");
+  } finally {
+    previewGroupModelBtn.disabled = false;
+  }
+});
+
+exitPreviewBtn.addEventListener("click", () => {
+  renderer.clearPreviewModel();
+  updateMenuState();
+  log("已退出展开组模型预览", "info");
+});

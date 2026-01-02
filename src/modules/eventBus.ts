@@ -27,6 +27,7 @@ export function createEventBus<Events extends Record<string, unknown>>(): EventB
 
 export type AppEvents = {
   modelLoaded: void;
+  modelCleared: void;
   seamsRebuildFull: void;
   seamsRebuildGroups: Set<number>;
   seamsRebuildFaces: Set<number>;

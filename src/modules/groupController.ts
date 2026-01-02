@@ -27,7 +27,7 @@ export type GroupControllerDeps = {
   getFaceAdjacency: () => Map<number, Set<number>>;
   refreshGroupRefs: () => void;
   repaintAllFaces: () => void;
-  setStatus: (msg: string, tone?: "info" | "error" | "success") => void;
+  log: (msg: string, tone?: "info" | "error" | "success") => void;
   startGroupBreath: (groupId: number) => void;
   stopGroupBreath: () => void;
   faceColorService: FaceColorService;
@@ -82,9 +82,9 @@ export function createGroupController(deps: GroupControllerDeps) {
       appEventBus.emit("seamsRebuildFaces", facesToUpdate);
       appEventBus.emit("group2dFaceRemoved", { groupId: editGroupId, faceId });
       notifyGroupChange();
-      deps.setStatus(`已从组${editGroupId}移除（面数量 ${groupFaces().get(editGroupId)?.size ?? 0}）`, "success");
+      deps.log(`已从组${editGroupId}移除（面数量 ${groupFaces().get(editGroupId)?.size ?? 0}）`, "success");
     } else {
-      deps.setStatus("移除会导致展开组不连通，已取消", "error");
+      deps.log("移除会导致展开组不连通，已取消", "error");
     }
   }
 
@@ -97,12 +97,12 @@ export function createGroupController(deps: GroupControllerDeps) {
     const targetSet = groupFaces().get(targetGroup) ?? new Set<number>();
 
     if (currentGroup !== null && !canRemoveFace(currentGroup, faceId)) {
-      deps.setStatus("该面所在的组移出后会断开，未加入当前组", "error");
+      deps.log("该面所在的组移出后会断开，未加入当前组", "error");
       return;
     }
 
     if (targetSet.size > 0 && !shareEdgeWithGroup(faceId, targetGroup)) {
-      deps.setStatus("该面与当前组无共边，未加入", "error");
+      deps.log("该面与当前组无共边，未加入", "error");
       return;
     }
 
@@ -112,7 +112,7 @@ export function createGroupController(deps: GroupControllerDeps) {
     const affectedGroups = new Set<number>([targetGroup]);
     if (currentGroup !== null) affectedGroups.add(currentGroup);
     rebuildGroupTrees(affectedGroups);
-    deps.setStatus(`已加入组${targetGroup}（面数量 ${groupFaces().get(targetGroup)?.size ?? 0}）`, "success");
+    deps.log(`已加入组${targetGroup}`, "success");
     const groups = new Set<number>([targetGroup]);
     if (currentGroup !== null) groups.add(currentGroup);
     appEventBus.emit("seamsRebuildGroups", groups);
@@ -128,7 +128,7 @@ export function createGroupController(deps: GroupControllerDeps) {
     setEditGroupId(groupId);
     deps.refreshGroupRefs();
     if (groupId === null) {
-      deps.setStatus("已退出展开组编辑模式");
+      deps.log("已退出展开组编辑模式");
       deps.stopGroupBreath();
       return { editGroupId: null, previewGroupId };
     }
@@ -137,7 +137,7 @@ export function createGroupController(deps: GroupControllerDeps) {
     }
     setPreviewGroupId(groupId);
     deps.refreshGroupRefs();
-    deps.setStatus(`展开组 ${groupId} 编辑模式：左键加入，右键移出`, "info");
+    deps.log(`展开组 ${groupId} 编辑模式：左键加入，右键移出`, "info");
     deps.startGroupBreath(groupId);
     notifyGroupChange();
     return { editGroupId: groupId, previewGroupId: groupId };
@@ -157,7 +157,7 @@ export function createGroupController(deps: GroupControllerDeps) {
     deps.refreshGroupRefs();
     deps.repaintAllFaces();
     appEventBus.emit("seamsRebuildFull", undefined);
-    deps.setStatus(`已删除展开组 ${groupId}`, "success");
+    deps.log(`已删除展开组 ${groupId}`, "success");
     notifyGroupChange();
     return { editGroupId: getEditGroupId(), previewGroupId: getPreviewGroupId() };
   }
@@ -183,7 +183,7 @@ export function createGroupController(deps: GroupControllerDeps) {
     setEditGroupId(nextEdit);
     deps.refreshGroupRefs();
     notifyGroupChange();
-    deps.setStatus(`已创建展开组 ${id}`, "success");
+    deps.log(`已创建展开组 ${id}`, "success");
     return { groupId: id, previewGroupId: id, editGroupId: nextEdit };
   }
 

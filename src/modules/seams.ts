@@ -2,7 +2,7 @@
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
-import { Vector2, Vector3 } from "three";
+import { Vector2, Vector3, Object3D } from "three";
 
 export type SeamState = {
   seamLines: Map<number, LineSegments2>;
@@ -10,7 +10,7 @@ export type SeamState = {
   seamsVisible: boolean;
 };
 
-export function createSeamLine(edgeId: number, viewer: HTMLDivElement, scene: THREE.Scene, seamLines: Map<number, LineSegments2>) {
+export function createSeamLine(edgeId: number, viewer: HTMLDivElement, parent: Object3D, seamLines: Map<number, LineSegments2>) {
   const existing = seamLines.get(edgeId);
   if (existing) return existing;
   const geom = new LineSegmentsGeometry();
@@ -23,7 +23,7 @@ export function createSeamLine(edgeId: number, viewer: HTMLDivElement, scene: TH
   line.userData.functional = "seam";
   line.renderOrder = 2;
   seamLines.set(edgeId, line);
-  scene.add(line);
+  parent.add(line);
   return line;
 }
 

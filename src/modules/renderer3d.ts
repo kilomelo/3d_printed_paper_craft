@@ -1,10 +1,25 @@
 // 3D 渲染与交互层：负责 Three.js 场景、相机/光源、模型加载展示、拾取/hover/刷子交互，消费外部注入的组/拼缝接口，不持有业务状态。
-import { Color, Vector3, Mesh, MeshStandardMaterial, Quaternion, MathUtils, Spherical, PerspectiveCamera, OrthographicCamera, type Object3D } from "three";
+import {
+  Color,
+  Vector3,
+  Mesh,
+  MeshStandardMaterial,
+  Quaternion,
+  MathUtils,
+  Spherical,
+  PerspectiveCamera,
+  OrthographicCamera,
+  Vector2,
+  Group,
+  AxesHelper,
+  Scene,
+  type Object3D,
+} from "three";
 import type { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import { getModel, setModel, setLastFileName, setLastTriangleCount, getLastFileName } from "./model";
+import { getModel, setModel, setLastFileName } from "./model";
 import {
   resetGroups,
   ensureGroup,
@@ -20,7 +35,7 @@ import {
 } from "./groups";
 import { build3dppcData, download3dppc, load3dppc, type PPCFile } from "./ppc";
 import { createScene } from "./scene";
-import { FACE_DEFAULT_COLOR, createFrontMaterial } from "./materials";
+import { FACE_DEFAULT_COLOR, createFrontMaterial, createPreviewMaterial, createEdgeMaterial } from "./materials";
 import { createHoverLines, disposeHoverLines, hideHoverLines, updateHoverResolution, createRaycaster, type HoverState } from "./interactions";
 import { initInteractionController } from "./interactionController";
 import {
@@ -80,7 +95,7 @@ export type GroupApi = {
 
 export function initRenderer3D(
   ui: UIRefs,
-  setStatus: (msg: string, tone?: "info" | "error" | "success") => void,
+  log: (msg: string, tone?: "info" | "error" | "success") => void,
   geometryContext: GeometryContext,
   _groupUiHooks?: GroupUIHooks,
 ) {
@@ -166,10 +181,49 @@ export function initRenderer3D(
     defaultColor: FACE_DEFAULT_COLOR,
   });
 
-  const { scene, camera, renderer, controls, ambient, dir, modelGroup } = createScene(viewer);
-  controls.panSpeed = 4;
+  const { scene, camera, renderer, controls, ambient, dir, modelGroup, previewModelGroup } = createScene(viewer);
+  const axesScene = new Scene();
+  const axesCamera = new PerspectiveCamera(50, 1, 0.1, 10);
+  const axesHelper = new AxesHelper(1.2);
+  axesScene.add(axesHelper);
+  const tempVec = new Vector3();
+  controls.panSpeed = 1;
   controls.rotateSpeed = 0.4;
   const el = renderer.domElement;
+  previewModelGroup.visible = false;
+
+  type WorkspaceState = "normal" | "editingGroup" | "previewGroupModel";
+  let workspaceState: WorkspaceState = "normal";
+  let lastNonPreviewState: WorkspaceState = "normal";
+  let previewCameraState: { position: Vector3; target: Vector3 } | null = null;
+
+  const setWorkspaceState = (state: WorkspaceState) => {
+    workspaceState = state;
+    if (state !== "previewGroupModel") {
+      lastNonPreviewState = state;
+    }
+  };
+
+  const getWorkspaceState = () => workspaceState;
+
+  function applyFrontMaterialToMeshes(root: Object3D) {
+    const mat = createFrontMaterial();
+    root.traverse((child) => {
+      if (!(child as Mesh).isMesh) return;
+      const mesh = child as Mesh;
+      if (mesh.userData.functional) return;
+      mesh.material = mat.clone();
+    });
+  }
+
+  function buildRenderableRoot(object: Object3D, name: string) {
+    const root = new Group();
+    root.name = name;
+    root.add(object);
+    applyFrontMaterialToMeshes(root);
+    generateFunctionalMaterials(root, object);
+    return root;
+  }
 
   let pointerLocked = false;
   let lockedButton: number | null = null;
@@ -230,8 +284,7 @@ export function initRenderer3D(
 
     // 每像素的世界位移（OrbitControls 习惯用 el.clientHeight 来统一 X/Y 的手感）
     const worldPerPixel = worldHeight / el.clientHeight;
-
-    return worldPerPixel * panSpeed;
+    return worldPerPixel * panSpeed + 0.4;
   }
   const panOffset = new Vector3();
   const panLeftV = new Vector3();
@@ -364,16 +417,16 @@ export function initRenderer3D(
       onFileSelected: async (file) => {
         const ext = getExtension(file.name);
         if (!allowedExtensions.includes(ext)) {
-          setStatus("不支持的格式，请选择 OBJ / FBX / STL。", "error");
+          log("不支持的格式，请选择 OBJ / FBX / STL。", "error");
           fileInput.value = "";
           return;
         }
-        await loadModel(file, ext);
+        await applyLoadedModel(file, ext);
       },
       onHomeStart: () => fileInput.click(),
       onMenuOpen: () => fileInput.click(),
       onResetView: () => {
-        const model = getModel();
+        const model = workspaceState === "previewGroupModel" ? previewModelGroup : modelGroup;
         if (!model) return;
         fitCameraToObject(model, camera, controls);
         refreshVertexWorldPositions();
@@ -381,7 +434,7 @@ export function initRenderer3D(
       onLightToggle: () => {
         const enabled = !dir.visible;
         dir.visible = enabled;
-        ambient.intensity = enabled ? 0.6 : 3;
+        ambient.intensity = enabled ? 0.8 : 5;
         lightToggle.classList.toggle("active", enabled);
         lightToggle.textContent = `光源：${enabled ? "开" : "关"}`;
       },
@@ -406,17 +459,17 @@ export function initRenderer3D(
       onExport: async () => {
         const model = getModel();
         if (!model) {
-          setStatus("没有可导出的模型", "error");
+          log("没有可导出的模型", "error");
           return;
         }
         try {
-          setStatus("正在导出 .3dppc ...", "info");
-          const data = await build3dppcData(model);
+          log("正在导出 .3dppc ...", "info");
+          const data = await build3dppcData(model as Group);
           await download3dppc(data);
-          setStatus("导出成功", "success");
+          log("导出成功", "success");
         } catch (error) {
           console.error("导出失败", error);
-          setStatus("导出失败，请重试。", "error");
+          log("导出失败，请重试。", "error");
         }
       },
       onKeyDown: (event) => {
@@ -452,12 +505,12 @@ export function initRenderer3D(
     stopGroupBreath();
     interactionController?.endBrush();
     modelGroup.clear();
+    previewModelGroup.clear();
+    previewModelGroup.visible = false;
     disposeSeams();
     disposeHoverLinesLocal();
     setModel(null);
     exportBtn.disabled = true;
-    setLastTriangleCount(0);
-    setStatus("尚未加载模型");
     showWorkspace(false);
     faceAdjacency.clear();
     faceIndexMap.clear();
@@ -477,10 +530,12 @@ export function initRenderer3D(
     ensureGroup(1);
     refreshGroupRefs();
     setPreviewGroupId(1);
-    seamManager.dispose();
+    seamManager?.dispose();
     hideHoverLines(hoverState);
     setEditGroupId(null);
     editGroupId = null;
+    setWorkspaceState("normal");
+    appEventBus.emit("modelCleared", undefined);
   }
 
   function getFaceIdFromIntersection(mesh: Mesh, localFace: number | undefined): number | null {
@@ -492,6 +547,7 @@ export function initRenderer3D(
   }
 
   function pickFace(event: PointerEvent): number | null {
+    if (workspaceState === "previewGroupModel") return null;
     const model = getModel();
     if (!model || !facesVisible) return null;
     const rect = el.getBoundingClientRect();
@@ -514,11 +570,15 @@ export function initRenderer3D(
   const handleAddFace = (faceId: number) => groupApi?.handleAddFace(faceId, editGroupId);
 
   function setEditGroup(groupId: number | null) {
+    if (workspaceState === "previewGroupModel" && groupId !== null) return;
     interactionController?.endBrush();
     if (!groupApi) return;
     const result = groupApi.setEditGroup(groupId, editGroupId, previewGroupId);
     editGroupId = result.editGroupId;
     previewGroupId = result.previewGroupId;
+    if (workspaceState !== "previewGroupModel") {
+      setWorkspaceState(editGroupId === null ? "normal" : "editingGroup");
+    }
   }
 
   function getGroupDeps() {
@@ -526,7 +586,7 @@ export function initRenderer3D(
       getFaceAdjacency: () => faceAdjacency,
       refreshGroupRefs,
       repaintAllFaces: () => repaintAllFaces(),
-      setStatus,
+      log,
       startGroupBreath: (gid: number) => startGroupBreath(gid),
       stopGroupBreath: () => stopGroupBreath(),
       faceColorService,
@@ -539,7 +599,7 @@ export function initRenderer3D(
     setPreviewGroupId(groupId);
     refreshGroupRefs();
     previewGroupId = groupId;
-    setStatus(`预览展开组 ${groupId}`, "info");
+    log(`预览展开组 ${groupId}`, "info");
     startGroupBreath(groupId);
   }
 
@@ -560,7 +620,7 @@ export function initRenderer3D(
   }
 
   function applyFaceVisibility() {
-    const model = getModel();
+    const model = workspaceState === "previewGroupModel" ? previewModelGroup : modelGroup;
     if (!model) return;
     model.traverse((child) => {
       if (!(child as Mesh).isMesh) return;
@@ -576,6 +636,8 @@ export function initRenderer3D(
     renderer.setSize(clientWidth, clientHeight);
     camera.aspect = clientWidth / clientHeight;
     camera.updateProjectionMatrix();
+    axesCamera.aspect = 1;
+    axesCamera.updateProjectionMatrix();
     refreshSeamResolution();
     updateHoverResolution(viewer, hoverLines);
   }
@@ -587,7 +649,7 @@ export function initRenderer3D(
   }
 
   function applyEdgeVisibility() {
-    const model = getModel();
+    const model = workspaceState === "previewGroupModel" ? previewModelGroup : modelGroup;
     if (!model) return;
     model.traverse((child) => {
       if (!(child as Mesh).isMesh) return;
@@ -621,6 +683,12 @@ export function initRenderer3D(
   function disposeHoverLinesLocal() {
     disposeHoverLines(hoverLines);
     hoverState.hoveredFaceId = null;
+  }
+
+  function setHoverLinesVisible(visible: boolean) {
+    hoverLines.forEach((line) => {
+      if (line) line.visible = visible;
+    });
   }
 
   appEventBus.on("groupDataChanged", () => syncGroupStateFromData());
@@ -736,6 +804,7 @@ export function initRenderer3D(
     return {
       viewer,
       scene,
+      getModelRoot: () => getModel(),
       getEdges: () => edges,
       getFaceAdjacency: () => faceAdjacency,
       getFaceGroupMap: () => faceGroupMap,
@@ -752,58 +821,91 @@ export function initRenderer3D(
     seamManager = manager;
   }
 
+  async function applyObject(object: Object3D, name: string, importedGroups?: PPCFile["groups"], importedColorCursor?: number) {
+    clearModel();
+    setModel(buildRenderableRoot(object, "model-root"));
+    setLastFileName(name);
+    const model = getModel();
+    if (!model) throw new Error("模型初始化失败");
+    geometryContext.rebuildFromModel(model);
+    faceAdjacency = geometryIndex.getFaceAdjacency();
+    faceIndexMap = geometryIndex.getFaceIndexMap();
+    meshFaceIdMap = geometryIndex.getMeshFaceIdMap();
+    faceToEdges = geometryIndex.getFaceToEdges();
+    edges = geometryIndex.getEdgesArray();
+    edgeKeyToId = geometryIndex.getEdgeKeyToId();
+    vertexKeyToPos = geometryIndex.getVertexKeyToPos();
+    groupTreeParent = getGroupTreeParent();
+    refreshGroupRefs();
+    markVertexPositionsDirty();
+    if (typeof importedColorCursor === "number") {
+      setGroupColorCursor(importedColorCursor);
+    }
+    if (importedGroups && importedGroups.length) {
+      applyImportedGroups(importedGroups);
+    }
+    applyFaceVisibility();
+    applyEdgeVisibility();
+    modelGroup.add(model);
+    initHoverLinesLocal();
+    fitCameraToObject(model, camera, controls);
+    refreshVertexWorldPositions();
+    showWorkspace(true);
+    setWorkspaceState("normal");
+    resizeRenderer(); // 确保从隐藏切换到可见后尺寸正确
+    log(`已加载：${name} · 三角面 ${geometryIndex.getTriangleCount()}`, "success");
+    exportBtn.disabled = false;
+    appEventBus.emit("modelLoaded", undefined);
+  }
+
   async function applyLoadedModel(file: File, ext: string) {
-    setStatus("加载中...", "info");
+    log("加载中...", "info");
 
     try {
       const { object, importedGroups, importedColorCursor } = await loadRawObject(file, ext);
-
-      clearModel();
-      setModel(object);
-      setLastFileName(file.name);
-      const model = getModel();
-      if (!model) throw new Error("模型初始化失败");
-      generateFunctionalMaterials(model);
-      geometryContext.rebuildFromModel(model);
-      faceAdjacency = geometryIndex.getFaceAdjacency();
-      faceIndexMap = geometryIndex.getFaceIndexMap();
-      meshFaceIdMap = geometryIndex.getMeshFaceIdMap();
-      faceToEdges = geometryIndex.getFaceToEdges();
-      edges = geometryIndex.getEdgesArray();
-      edgeKeyToId = geometryIndex.getEdgeKeyToId();
-      vertexKeyToPos = geometryIndex.getVertexKeyToPos();
-      groupTreeParent = getGroupTreeParent();
-      refreshGroupRefs();
-      markVertexPositionsDirty();
-      if (typeof importedColorCursor === "number") {
-        setGroupColorCursor(importedColorCursor);
-      }
-      if (importedGroups && importedGroups.length) {
-        applyImportedGroups(importedGroups);
-      }
-      applyFaceVisibility();
-      applyEdgeVisibility();
-      modelGroup.add(model);
-      initHoverLinesLocal();
-      setLastTriangleCount(geometryIndex.getTriangleCount());
-      fitCameraToObject(model, camera, controls);
-      refreshVertexWorldPositions();
-      showWorkspace(true);
-      resizeRenderer(); // 确保从隐藏切换到可见后尺寸正确
-      setStatus(`已加载：${file.name} · 三角面 ${geometryIndex.getTriangleCount()}`, "success");
-      exportBtn.disabled = false;
-      appEventBus.emit("modelLoaded", undefined);
+      await applyObject(object, file.name, importedGroups, importedColorCursor);
     } catch (error) {
       console.error("加载模型失败", error);
       if ((error as Error)?.stack) {
         console.error((error as Error).stack);
       }
-      setStatus("加载失败，请检查文件格式是否正确。", "error");
+      log("加载失败，请检查文件格式是否正确。", "error");
     }
   }
 
-  async function loadModel(file: File, ext: string) {
-    await applyLoadedModel(file, ext);
+  function loadPreviewModel(mesh: Mesh) {
+    previewModelGroup.clear();
+    mesh.material = createPreviewMaterial().clone();
+    previewModelGroup.add(mesh);
+    const geomWireframe = mesh.geometry.clone();
+    const meshWireframe = new Mesh(geomWireframe, createEdgeMaterial());
+    meshWireframe.userData.functional = "edge";
+    meshWireframe.castShadow = false;
+    meshWireframe.receiveShadow = false;
+    meshWireframe.name = mesh.name ? `${mesh.name}-wireframe` : "wireframe-only";
+    previewModelGroup.add(meshWireframe);
+    previewModelGroup.visible = true;
+    modelGroup.visible = false;
+    previewCameraState = {
+      position: camera.position.clone(),
+      target: controls.target.clone(),
+    };
+    fitCameraToObject(previewModelGroup, camera, controls);
+    setWorkspaceState("previewGroupModel");
+  }
+
+  function clearPreviewModel() {
+    previewModelGroup.clear();
+    previewModelGroup.visible = false;
+    modelGroup.visible = true;
+    // setHoverLinesVisible(true);
+    if (previewCameraState) {
+      camera.position.copy(previewCameraState.position);
+      controls.target.copy(previewCameraState.target);
+      controls.update();
+      previewCameraState = null;
+    }
+    setWorkspaceState(lastNonPreviewState);
   }
 
   function getExtension(name: string) {
@@ -811,18 +913,48 @@ export function initRenderer3D(
     return parts.length > 1 ? parts.pop()!.toLowerCase() : "";
   }
 
+  function renderAxesInset() {
+    const size = renderer.getSize(new Vector2());
+    const inset = 150;
+    const padding = 12;
+    const left = size.x - inset - padding;
+    const bottom = size.y - inset - padding;
+    // 相机朝向跟随主相机方向
+    tempVec.copy(camera.position).sub(controls.target).normalize().multiplyScalar(3);
+    axesCamera.position.copy(tempVec);
+    axesCamera.lookAt(axesScene.position);
+    axesCamera.up.copy(camera.up);
+    axesCamera.updateProjectionMatrix();
+
+    const prevAutoClear = renderer.autoClear;
+    renderer.autoClear = false;
+    renderer.clearDepth();
+    renderer.setScissorTest(true);
+    renderer.setViewport(left, bottom, inset, inset);
+    renderer.setScissor(left, bottom, inset, inset);
+    renderer.render(axesScene, axesCamera);
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, size.x, size.y);
+    renderer.autoClear = prevAutoClear;
+  }
+
   function animate() {
     requestAnimationFrame(animate);
     controls.update();
     renderer.render(scene, camera);
-    triCounter.textContent = `渲染三角形：${renderer.info.render.triangles}`;
+    const tris = renderer.info.render.triangles;
+    renderAxesInset();
+    triCounter.textContent = `渲染三角形：${tris}`;
   }
 
   resizeRenderer();
   animate();
 
   return {
-    loadModel,
+    loadPreviewModel,
+    clearPreviewModel,
+    getWorkspaceState,
+    resizeRenderer,
     clearModel,
     applyFaceVisibility,
     applyEdgeVisibility,
