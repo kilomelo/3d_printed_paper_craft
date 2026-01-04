@@ -265,7 +265,7 @@ const buildSolidFromTrianglesWithAngles = async (
 
 export async function buildGroupStepFromTriangles(
   trisWithAngles: TriangleWithEdgeInfo[],
-  onProgress?: (msg: string) => void,
+  onProgress?: (msg: number) => void,
 ) {
   if (!trisWithAngles.length) {
     throw new Error("没有可用于建模的展开三角形");
@@ -277,7 +277,7 @@ export async function buildGroupStepFromTriangles(
 
 export async function buildGroupStlFromTriangles(
   trisWithAngles: TriangleWithEdgeInfo[],
-  onProgress?: (msg: string) => void,
+  onProgress?: (msg: number) => void,
 ) {
   if (!trisWithAngles.length) {
     throw new Error("没有可用于建模的展开三角形");
@@ -286,7 +286,7 @@ export async function buildGroupStlFromTriangles(
   return fused.blobSTL({ binary: true, tolerance: 0.2, angularTolerance: 0.1 });
 }
 
-export async function buildGroupMeshFromTriangles(trisWithAngles: TriangleWithEdgeInfo[], onProgress?: (msg: string) => void) {
+export async function buildGroupMeshFromTriangles(trisWithAngles: TriangleWithEdgeInfo[], onProgress?: (msg: number) => void) {
   if (!trisWithAngles.length) {
     throw new Error("没有可用于建模的展开三角形");
   }

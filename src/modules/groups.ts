@@ -1,83 +1,107 @@
-// 展开组数据层：维护组-面映射、组颜色、组树结构等核心数据，提供基础操作并通过事件总线通知变更。
+// 展开组数据层：使用统一的 GroupData 结构管理组的面、颜色与树结构，并维护 face->group 的映射。
 import { Color } from "three";
-import { appEventBus } from "./eventBus";
 
-export type GroupFacesMap = Map<number, Set<number>>;
-export type FaceGroupMap = Map<number, number | null>;
-export type GroupTreeParent = Map<number, Map<number, number | null>>;
+export type GroupData = {
+  id: number;
+  faces: Set<number>;
+  color: Color;
+  treeParent: Map<number, number | null>;
+};
 
 const GROUP_COLOR_PALETTE = [0x759fff, 0xff5757, 0xffff00, 0x00ee00, 0x00ffff, 0xff70ff];
 
-let faceGroupMap: FaceGroupMap = new Map();
-let groupFaces: GroupFacesMap = new Map();
-let groupColors = new Map<number, Color>();
+let groups: GroupData[] = [];
+let faceGroupMap: Map<number, number | null> = new Map();
 let groupColorCursor = 0;
-let groupTreeParent: GroupTreeParent = new Map();
-let previewGroupId = 1;
-let editGroupId: number | null = null;
 
-export function resetGroups() {
-  faceGroupMap = new Map();
-  groupFaces = new Map();
-  groupColors = new Map();
-  groupTreeParent = new Map();
-  groupColorCursor = 0;
-  previewGroupId = 1;
-  editGroupId = null;
-  ensureGroup(1);
-  appEventBus.emit("groupDataChanged", undefined);
+function nextPaletteColor(): Color {
+  const color = new Color(GROUP_COLOR_PALETTE[groupColorCursor % GROUP_COLOR_PALETTE.length]);
+  groupColorCursor = (groupColorCursor + 1) % GROUP_COLOR_PALETTE.length;
+  return color;
 }
 
-export function ensureGroup(id: number) {
-  let changed = false;
-  if (!groupFaces.has(id)) {
-    groupFaces.set(id, new Set<number>());
-    changed = true;
+function findGroup(id: number): GroupData | undefined {
+  return groups.find((g) => g.id === id);
+}
+
+function nextGroupId(): number {
+  if (!groups.length) return 1;
+  const maxId = Math.max(...groups.map((g) => g.id));
+  return maxId + 1;
+}
+
+export function resetGroups() {
+  groups = [];
+  faceGroupMap = new Map();
+  groupColorCursor = 0;
+  addGroup(1);
+}
+
+export function addGroup(newGroupId?: number): number | undefined {
+  // console.trace(`[groups] Adding group with id: ${newGroupId}`); 
+  newGroupId = newGroupId ?? nextGroupId();
+  let exists = findGroup(newGroupId);
+  if (exists) return undefined;
+  else{
+    exists = {
+      id: newGroupId,
+      faces: new Set<number>(),
+      color: nextPaletteColor(),
+      treeParent: new Map<number, number | null>(),
+    };
+    groups.push(exists);
+    return newGroupId;
   }
-  if (!groupColors.has(id)) {
-    groupColors.set(id, nextPaletteColor());
-    changed = true;
-  }
-  if (!groupTreeParent.has(id)) {
-    groupTreeParent.set(id, new Map<number, number | null>());
-    changed = true;
-  }
-  if (changed) appEventBus.emit("groupDataChanged", undefined);
+}
+
+export function deleteGroup(
+  groupId: number,
+): boolean {
+  if (groups.length <= 1) return false;
+  const target = findGroup(groupId);
+  if (!target) return false;
+
+  // 清理 face->group
+  faceGroupMap.forEach((gid, fid) => {
+    if (gid === groupId) {
+      faceGroupMap.set(fid, null);
+    }
+  });
+  // 移除组数据
+  groups = groups.filter((g) => g.id !== groupId);
+  return true;
+}
+
+export function getGroupsCount(): number {
+  return groups.length;
+}
+
+export function getGroupIds(): number[] {
+  return groups.map((g) => g.id);
 }
 
 export function getFaceGroupMap() {
   return faceGroupMap;
 }
 
-export function getGroupFaces() {
-  return groupFaces;
+export function getGroupFaces(id: number): Set<number> | undefined {
+  return findGroup(id)?.faces;
 }
 
-export function getGroupColors() {
-  return groupColors;
+export function getGroupColor(id: number): Color | undefined {
+  const g = findGroup(id);
+  return g ? g.color.clone() : undefined;
 }
 
-export function getGroupTreeParent() {
-  return groupTreeParent;
+export function setGroupColor(groupId: number, color: Color): boolean {
+  const g = findGroup(groupId);
+  if (!g) return false;
+  g.color = color;
+  return true;
 }
 
-export function getPreviewGroupId() {
-  return previewGroupId;
-}
-
-export function setPreviewGroupId(id: number) {
-  previewGroupId = id;
-  appEventBus.emit("groupDataChanged", undefined);
-}
-
-export function getEditGroupId() {
-  return editGroupId;
-}
-
-export function setEditGroupId(id: number | null) {
-  if (editGroupId === id) return;
-  editGroupId = id;
-  appEventBus.emit("groupDataChanged", undefined);
+export function getGroupTreeParent(id: number): Map<number, number | null> | undefined {
+  return findGroup(id)?.treeParent;
 }
 
 export function getGroupColorCursor() {
@@ -88,42 +112,22 @@ export function setGroupColorCursor(value: number) {
   groupColorCursor = value;
 }
 
-function nextPaletteColor(): Color {
-  const color = new Color(GROUP_COLOR_PALETTE[groupColorCursor % GROUP_COLOR_PALETTE.length]);
-  groupColorCursor = (groupColorCursor + 1) % GROUP_COLOR_PALETTE.length;
-  return color;
-}
-
-export function getGroupColor(id: number): Color {
-  if (!groupColors.has(id)) {
-    groupColors.set(id, nextPaletteColor());
-  }
-  return groupColors.get(id)!.clone();
-}
-
-export function setGroupColor(groupId: number, color: Color) {
-  groupColors.set(groupId, color);
-  appEventBus.emit("groupDataChanged", undefined);
-}
-
-export function setFaceGroup(faceId: number, groupId: number | null) {
-  const hasPrev = faceGroupMap.has(faceId);
+export function setFaceGroup(faceId: number, groupId: number | null): boolean {
   const prev = faceGroupMap.get(faceId) ?? null;
-  if (hasPrev && prev === groupId) return;
+  if (prev === groupId) return false;
 
   if (prev !== null) {
-    groupFaces.get(prev)?.delete(faceId);
+    const pg = findGroup(prev);
+    pg?.faces.delete(faceId);
   }
-
-  faceGroupMap.set(faceId, groupId);
 
   if (groupId !== null) {
-    ensureGroup(groupId);
-    groupFaces.get(groupId)!.add(faceId);
+    const g = findGroup(groupId);
+    if (!g) return false;
+    g.faces.add(faceId);
   }
-  if (!hasPrev || prev !== groupId) {
-    appEventBus.emit("groupDataChanged", undefined);
-  }
+  faceGroupMap.set(faceId, groupId);
+  return true;
 }
 
 export function shareEdgeWithGroup(
@@ -133,7 +137,7 @@ export function shareEdgeWithGroup(
 ): boolean {
   const neighbors = faceAdjacency.get(faceId);
   if (!neighbors) return false;
-  const groupSet = groupFaces.get(groupId);
+  const groupSet = findGroup(groupId)?.faces;
   if (!groupSet || groupSet.size === 0) return false;
   for (const n of neighbors) {
     if (groupSet.has(n)) return true;
@@ -141,12 +145,23 @@ export function shareEdgeWithGroup(
   return false;
 }
 
+export function sharedEdgeIsSeam(a: number, b: number): boolean {
+  const g1 = faceGroupMap.get(a) ?? null;
+  const g2 = faceGroupMap.get(b) ?? null;
+  if (g1 === null && g2 === null) return false;
+  if (g1 === null || g2 === null) return true;
+  if (g1 !== g2) return true;
+  const parentMap = getGroupTreeParent(g1);
+  if (!parentMap) return false;
+  return !(parentMap.get(a) === b || parentMap.get(b) === a);
+}
+
 export function canRemoveFace(
   groupId: number,
   faceId: number,
   faceAdjacency: Map<number, Set<number>>,
 ): boolean {
-  const faces = groupFaces.get(groupId);
+  const faces = findGroup(groupId)?.faces;
   if (!faces || faces.size <= 1) return true;
   if (!faces.has(faceId)) return true;
 
@@ -180,18 +195,16 @@ function areFacesAdjacent(a: number, b: number, faceAdjacency: Map<number, Set<n
 }
 
 export function rebuildGroupTree(groupId: number, faceAdjacency: Map<number, Set<number>>) {
-  const faces = groupFaces.get(groupId);
-  const parentMap = new Map<number, number | null>();
-  if (!faces || faces.size === 0) {
-    groupTreeParent.set(groupId, parentMap);
-    return;
-  }
-  const order = Array.from(faces);
+  const g = findGroup(groupId);
+  if (!g) return;
+  g.treeParent.clear();
+  if (g.faces.size === 0) return;
+  const order = Array.from(g.faces);
   const assigned = new Set<number>();
   const assignedOrder: number[] = [];
 
   const assign = (face: number, parent: number | null) => {
-    parentMap.set(face, parent);
+    g.treeParent.set(face, parent);
     assigned.add(face);
     assignedOrder.push(face);
   };
@@ -221,125 +234,40 @@ export function rebuildGroupTree(groupId: number, faceAdjacency: Map<number, Set
       assign(remaining, assignedOrder[0]);
     }
   }
-
-  groupTreeParent.set(groupId, parentMap);
 }
 
 export function getGroupTree(groupId: number) {
-  return groupTreeParent.get(groupId);
-}
-
-export function nextGroupId(): number {
-  let id = 1;
-  while (groupFaces.has(id)) id += 1;
-  return id;
-}
-
-export function deleteGroup(
-  groupId: number,
-  faceAdjacency: Map<number, Set<number>>,
-  rebuildCb: (gid: number) => void,
-) {
-  if (groupFaces.size <= 1) return;
-  const ids = Array.from(groupFaces.keys());
-  if (!ids.includes(groupId)) return;
-
-  const newColors = new Map<number, Color>();
-  groupColors.forEach((c, id) => {
-    if (id === groupId) return;
-    const newId = id > groupId ? id - 1 : id;
-    newColors.set(newId, c);
-  });
-
-  const assignments: Array<{ faceId: number; groupId: number | null }> = [];
-  faceGroupMap.forEach((gid, faceId) => {
-    if (gid === null) {
-      assignments.push({ faceId, groupId: null });
-    } else if (gid === groupId) {
-      assignments.push({ faceId, groupId: null });
-    } else {
-      assignments.push({ faceId, groupId: gid > groupId ? gid - 1 : gid });
-    }
-  });
-
-  faceGroupMap.clear();
-  groupColors = newColors;
-  groupFaces = new Map<number, Set<number>>();
-  groupColors.forEach((_, id) => {
-    groupFaces.set(id, new Set<number>());
-  });
-  groupTreeParent = new Map<number, Map<number, number | null>>();
-  if (groupFaces.size === 0) {
-    const color = getGroupColor(1);
-    groupFaces.set(1, new Set<number>());
-    groupColors.set(1, color);
-  }
-
-  assignments.forEach(({ faceId, groupId }) => {
-    setFaceGroup(faceId, groupId);
-  });
-  groupFaces.forEach((_, gid) => rebuildGroupTree(gid, faceAdjacency));
-  const candidates = Array.from(groupFaces.keys()).sort((a, b) => a - b);
-  const maxId = candidates[candidates.length - 1];
-  let target = groupId - 1;
-  if (target < 1) target = 1;
-  if (target > maxId) target = maxId;
-  previewGroupId = target;
-  if (editGroupId !== null) {
-    setEditGroupId(previewGroupId);
-  }
-  if (rebuildCb) rebuildCb(previewGroupId);
-  appEventBus.emit("groupDataChanged", undefined);
+  return findGroup(groupId)?.treeParent;
 }
 
 export function applyImportedGroups(
-  groups: NonNullable<PPCFile["groups"]>,
-  faceAdjacency: Map<number, Set<number>>,
-) {
-  if (!groups || !groups.length) return;
-  groupFaces = new Map<number, Set<number>>();
-  groupColors = new Map<number, Color>();
-  groups
-    .sort((a, b) => a.id - b.id)
-    .forEach((g) => {
-      const id = g.id;
-      groupFaces.set(id, new Set<number>());
-      const color = new Color(g.color);
-      groupColors.set(id, color);
-      g.faces.forEach((faceId) => {
-        setFaceGroup(faceId, id);
-      });
-      rebuildGroupTree(id, faceAdjacency);
-    });
-  const ids = Array.from(groupFaces.keys());
-  if (!ids.includes(1)) {
-    groupFaces.set(1, new Set<number>());
-    groupColors.set(1, getGroupColor(1));
-  }
-  previewGroupId = Math.min(...Array.from(groupFaces.keys()));
-  appEventBus.emit("groupDataChanged", undefined);
-}
-
-export type PPCFile = {
-  version: string;
-  meta: {
-    generator: string;
-    createdAt: string;
-    source: string;
-    units: string;
-    checksum: {
-      algorithm: string;
-      value: string;
-      scope: string;
-    };
-  };
-  vertices: number[][];
-  triangles: number[][];
-  groups?: {
+  imported: NonNullable<{
     id: number;
     color: string;
     faces: number[];
-  }[];
-  groupColorCursor?: number;
-  annotations?: Record<string, unknown>;
-};
+  }[]>,
+  faceAdjacency: Map<number, Set<number>>,
+) {
+  if (!imported || !imported.length) return;
+  groups = [];
+  faceGroupMap = new Map<number, number | null>();
+  groupColorCursor = 0;
+
+  imported
+    .sort((a, b) => a.id - b.id)
+    .forEach((g) => {
+      const data: GroupData = {
+        id: g.id,
+        faces: new Set<number>(),
+        color: new Color(g.color),
+        treeParent: new Map<number, number | null>(),
+      };
+      groups.push(data);
+      g.faces.forEach((fid) => setFaceGroup(fid, g.id));
+      rebuildGroupTree(g.id, faceAdjacency);
+    });
+
+  if (!groups.find((g) => g.id === 1)) {
+    addGroup(1);
+  }
+}

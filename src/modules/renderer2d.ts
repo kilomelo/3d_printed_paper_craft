@@ -1,18 +1,24 @@
 // 2D 展开预览渲染器：在右侧区域创建正交相机的 Three.js 场景，用于后续绘制展开组三角面与交互。
 import { Group } from "three";
 import { createScene2D } from "./scene";
+import { appEventBus } from "./eventBus";
 
 export type Renderer2DContext = {
   scene: THREE.Scene;
   camera: THREE.OrthographicCamera;
   renderer: THREE.WebGLRenderer;
   root: Group;
-  resize: () => void;
+  resizeRenderer2D: () => void;
   dispose: () => void;
 };
 
-export function initRenderer2D(container: HTMLElement): Renderer2DContext {
-  const { scene, camera, renderer } = createScene2D(container);
+export function createRenderer2D(
+  getViewport: () => { width: number; height: number },
+  mountRenderer: (canvas: HTMLElement) => void): Renderer2DContext {
+  const {width, height} = getViewport();
+  console.log("createRenderer2D with size:", width, height);
+  const { scene, camera, renderer } = createScene2D(width, height);
+  mountRenderer(renderer.domElement);
   const root = new Group();
   scene.add(root);
 
@@ -20,13 +26,12 @@ export function initRenderer2D(container: HTMLElement): Renderer2DContext {
   const panStart = { x: 0, y: 0 };
 
   const resize = () => {
-    const w = Math.max(1, container.clientWidth || container.offsetWidth || 1);
-    const h = Math.max(1, container.clientHeight || container.offsetHeight || 1);
-    renderer.setSize(w, h);
-    camera.left = -w * 0.5;
-    camera.right = w * 0.5;
-    camera.top = h * 0.5;
-    camera.bottom = -h * 0.5;
+    const { width, height } = getViewport();
+    renderer.setSize(width, height);
+    camera.left = -width * 0.5;
+    camera.right = width * 0.5;
+    camera.top = height * 0.5;
+    camera.bottom = -height * 0.5;
     camera.updateProjectionMatrix();
   };
   window.addEventListener("resize", resize);
@@ -107,5 +112,7 @@ export function initRenderer2D(container: HTMLElement): Renderer2DContext {
     renderer.domElement.remove();
   };
 
-  return { scene, camera, renderer, root, resize, dispose };
+  appEventBus.on("modelLoaded", resize);
+
+  return { scene, camera, renderer, root, resizeRenderer2D: resize, dispose };
 }

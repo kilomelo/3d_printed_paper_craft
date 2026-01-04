@@ -266,10 +266,6 @@ body {
   background: rgba(56, 189, 248, 0.16);
 }
 
-.tab-btn.editing {
-  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.35);
-}
-
 .tab-add {
   padding: 6px 10px;
   border-radius: 8px;
@@ -349,6 +345,91 @@ body {
   display: none;
 }
 
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+}
+
+.settings-overlay.hidden {
+  display: none;
+}
+
+.settings-modal {
+  width: 500px;
+  height: 200px;
+  background: #0b1020;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-header {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.settings-body {
+  flex: 1;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-footer {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-action {
+  flex: 1;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.setting-field {
+  flex: 1;
+  display: flex;
+  gap: 8px;
+}
+
+.settings-inline-btn {
+  white-space: nowrap;
+}
+
+.setting-row label {
+  min-width: 80px;
+  color: var(--text);
+}
+
+.setting-row input {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #0f1628;
+  color: var(--text);
+}
 .overlay-btn {
   position: absolute;
   z-index: 5;
@@ -404,7 +485,7 @@ body {
   display: none;
 }
 
-.group-count {
+.group-faces-count {
   color: var(--muted);
 }
 

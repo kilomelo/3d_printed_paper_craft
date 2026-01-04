@@ -24,9 +24,13 @@ type WorkerResponse =
   | { id: number; ok: true; type: "progress"; message: number }
   | { id: number; ok: false; error: string };
 
+/// <reference lib="webworker" />
 const ctx: DedicatedWorkerGlobalScope = self as any;
 
-const serializeMesh = async (triangles: TriangleWithEdgeInfo[], onProgress?: (msg: number) => void): Promise<MeshPayload> => {
+const serializeMesh = async (
+  triangles: TriangleWithEdgeInfo[],
+  onProgress?: (msg: number) => void,
+): Promise<MeshPayload> => {
   const mesh = await buildGroupMeshFromTriangles(triangles, onProgress);
   const geom = mesh.geometry;
   const posAttr = geom.getAttribute("position");
