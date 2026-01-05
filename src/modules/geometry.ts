@@ -5,6 +5,8 @@ import { EdgeRecord, prepareGeometryData, getFaceVertexIndices } from "./model";
 // 角度索引：按需计算并缓存边的二面角（弧度），在模型重新加载时清空。
 export class AngleIndex {
   private cache: Map<number, number> = new Map();
+  // 顶点 -> 已见到的最小二面角（弧度，取绝对值）
+  private vertexMinAngle: Map<string, number> = new Map();
   private geometryIndex: GeometryIndex | null = null;
   private tempA = new Vector3();
   private tempB = new Vector3();
@@ -17,10 +19,12 @@ export class AngleIndex {
   setGeometryIndex(geometryIndex: GeometryIndex) {
     this.geometryIndex = geometryIndex;
     this.cache.clear();
+    this.vertexMinAngle.clear();
   }
 
   clear() {
     this.cache.clear();
+    this.vertexMinAngle.clear();
     this.geometryIndex = null;
   }
 
@@ -66,12 +70,30 @@ export class AngleIndex {
     const cos = Math.min(1, Math.max(-1, this.n1.dot(this.n2)));
     const crossLen = this.crossN.length();
     if (crossLen < 1e-6) {
-      return cos > 0 ? Math.PI : 0;
+      const angle = cos > 0 ? Math.PI : 0;
+      this.updateVertexMinAngles(edge.vertices, angle);
+      return angle;
     }
     const normalAngle = Math.acos(cos);
     const faceAngle = Math.PI - normalAngle;
     const sign = sin >= 0 ? 1 : -1;
-    return faceAngle * sign;
+    const angle = faceAngle * sign;
+    this.updateVertexMinAngles(edge.vertices, angle);
+    return angle;
+  }
+
+  private updateVertexMinAngles(vertexKeys: [string, string], angleRad: number) {
+    const mag = Math.abs(angleRad);
+    vertexKeys.forEach((vk) => {
+      const prev = this.vertexMinAngle.get(vk);
+      if (prev === undefined || mag < prev) {
+        this.vertexMinAngle.set(vk, mag);
+      }
+    });
+  }
+
+  getVertexMinAngle(key: string): number | undefined {
+    return this.vertexMinAngle.get(key);
   }
 
   private applyWorld(src: Vector3, mesh: Mesh, out: Vector3) {

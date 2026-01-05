@@ -5,4 +5,5 @@ export type TriangleWithEdgeInfo = {
   tri: Triangle2D;
   faceId: number;
   edges: { isOuter: boolean; angle: number }[];
+  pointAngleData: { vertexKey: string; unfold2dPos: Point2D; minAngle: number }[];
 };

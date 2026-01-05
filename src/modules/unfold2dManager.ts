@@ -1,5 +1,14 @@
 // 展开组 2D 管理器：监听面增删事件，按需查询角度索引并维护组内面/边的缓存，后续可用于 2D 重建。
-import { BufferGeometry, Mesh, Vector3, Float32BufferAttribute, Matrix4, Quaternion } from "three";
+import {
+  BufferGeometry,
+  Mesh,
+  Vector3,
+  Float32BufferAttribute,
+  Matrix4,
+  Quaternion,
+  BufferAttribute,
+  InterleavedBufferAttribute,
+} from "three";
 import type { GeometryIndex } from "./geometry";
 import { sharedEdgeIsSeam } from "./groups";
 import { getFaceVertexIndices } from "./model";
@@ -7,7 +16,7 @@ import { AngleIndex } from "./geometry";
 import { appEventBus } from "./eventBus";
 import type { Renderer2DContext } from "./renderer2d";
 import { createUnfoldEdgeMaterial, createUnfoldFaceMaterial } from "./materials";
-import type { Triangle2D, TriangleWithEdgeInfo } from "../types/triangles";
+import type { Triangle2D, TriangleWithEdgeInfo as TriangleData } from "../types/triangles";
 import { getSettings } from "./settings";
 
 // 记录“3D → 2D”变换矩阵，后续将按组树关系进行累乘展开。
@@ -320,38 +329,18 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     renderer2d.camera.updateProjectionMatrix();
   };
 
-  const getGroupTriangles2D = (groupId: number): Triangle2D[] => {
-    const faces = getGroupFaces(groupId);
-    if (!faces || faces.size === 0) return [] as Triangle2D[];
-    // 确保有可用的变换矩阵
-    buildRootTransforms(groupId);
-    buildTransformsForGroup(groupId);
-    refreshVertexWorldPositions();
-    const tris: Array<[[number, number], [number, number], [number, number]]> = [];
-    faces.forEach((fid) => {
-      const tri = faceTo2D(groupId, fid);
-      if (!tri) return;
-      const [a, b, c] = tri;
-      tris.push(
-        [
-          [a.x, a.y],
-          [b.x, b.y],
-          [c.x, c.y],
-        ],
-      );
-    });
-    return tris;
-  };
-
-  const getGroupTrianglesWithEdgeInfo = (groupId: number): TriangleWithEdgeInfo[] => {
+  const getGroupTrianglesData = (groupId: number): TriangleData[] => {
     const faces = getGroupFaces(groupId);
     if (!faces || faces.size === 0) return [];
     buildRootTransforms(groupId);
     buildTransformsForGroup(groupId);
     refreshVertexWorldPositions();
     const faceToEdges = getFaceToEdges();
-    const tris: Array<TriangleWithEdgeInfo> = [];
+    const faceIndexMap = getFaceIndexMap();
+    const tris: Array<TriangleData> = [];
     const { scale } = getSettings();
+    const makeVertexKey = (pos: BufferAttribute | InterleavedBufferAttribute, idx: number) =>
+      `${pos.getX(idx)},${pos.getY(idx)},${pos.getZ(idx)}`;
     faces.forEach((fid) => {
       const tri = faceTo2D(groupId, fid);
       if (!tri) return;
@@ -366,6 +355,26 @@ export function createUnfold2dManager(opts: ManagerDeps) {
           angle: angleIndex.getAngle(eid),
         };
       });
+      const mapping = faceIndexMap.get(fid);
+      const pointAngleData: TriangleData["pointAngleData"] = [];
+      if (mapping) {
+        const geom = mapping.mesh.geometry;
+        const pos = geom.getAttribute("position");
+        if (pos) {
+          const [ia, ib, ic] = getFaceVertexIndices(geom, mapping.localFace);
+          const keys = [
+            { key: makeVertexKey(pos, ia), pos: a },
+            { key: makeVertexKey(pos, ib), pos: b },
+            { key: makeVertexKey(pos, ic), pos: c },
+          ];
+          keys.forEach(({ key, pos }) => {
+            const minAngle = angleIndex.getVertexMinAngle(key);
+            if (minAngle !== undefined) {
+              pointAngleData.push({ vertexKey: key, unfold2dPos: [pos.x * scale, pos.y * scale], minAngle });
+            }
+          });
+        }
+      }
       tris.push({
         tri: [
           [a.x * scale, a.y * scale],
@@ -374,6 +383,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
         ],
         faceId: fid,
         edges,
+        pointAngleData,
       });
     });
     return tris;
@@ -412,6 +422,6 @@ export function createUnfold2dManager(opts: ManagerDeps) {
   });
 
   return {
-    getGroupTrianglesWithEdgeInfo,
+    getGroupTrianglesData,
   };
 }

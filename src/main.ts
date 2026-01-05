@@ -533,7 +533,7 @@ exportGroupStepBtn.addEventListener("click", async () => {
   exportGroupStepBtn.disabled = true;
   try {
     const targetGroupId = groupController.getPreviewGroupId();
-    const trisWithAngles = unfold2d.getGroupTrianglesWithEdgeInfo(targetGroupId);
+    const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
     if (!trisWithAngles.length) {
       log("当前展开组没有三角面，无法导出。", "error");
       return;
@@ -587,7 +587,7 @@ exportGroupStlBtn.addEventListener("click", async () => {
       URL.revokeObjectURL(url);
       log("展开组 STL 已导出", "success");
     } else {
-      const trisWithAngles = unfold2d.getGroupTrianglesWithEdgeInfo(targetGroupId);
+      const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
       if (!trisWithAngles.length) {
         log("当前展开组没有三角面，无法导出。", "error");
         return;
@@ -620,7 +620,7 @@ previewGroupModelBtn.addEventListener("click", async () => {
     if (cached) {
       renderer3d.loadPreviewModel(cached.clone());
     } else {
-      const trisWithAngles = unfold2d.getGroupTrianglesWithEdgeInfo(targetGroupId);
+      const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
       if (!trisWithAngles.length) {
         log("当前展开组没有三角面，无法导出。", "error");
         return;
