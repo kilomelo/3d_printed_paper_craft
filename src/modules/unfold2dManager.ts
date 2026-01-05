@@ -8,6 +8,7 @@ import { appEventBus } from "./eventBus";
 import type { Renderer2DContext } from "./renderer2d";
 import { createUnfoldEdgeMaterial, createUnfoldFaceMaterial } from "./materials";
 import type { Triangle2D, TriangleWithEdgeInfo } from "../types/triangles";
+import { getSettings } from "./settings";
 
 // 记录“3D → 2D”变换矩阵，后续将按组树关系进行累乘展开。
 type TransformTree = Map<number, Matrix4>;
@@ -362,6 +363,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     refreshVertexWorldPositions();
     const faceToEdges = getFaceToEdges();
     const tris: Array<TriangleWithEdgeInfo> = [];
+    const { scale } = getSettings();
     faces.forEach((fid) => {
       const tri = faceTo2D(groupId, fid);
       if (!tri) return;
@@ -378,9 +380,9 @@ export function createUnfold2dManager(opts: ManagerDeps) {
       });
       tris.push({
         tri: [
-          [a.x, a.y],
-          [b.x, b.y],
-          [c.x, c.y],
+          [a.x * scale, a.y * scale],
+          [b.x * scale, b.y * scale],
+          [c.x * scale, c.y * scale],
         ],
         faceId: fid,
         edges,

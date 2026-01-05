@@ -1,4 +1,5 @@
 import { TriangleWithEdgeInfo } from "../types/triangles";
+import { getSettings } from "./settings";
 import {
   BufferGeometry,
   Float32BufferAttribute,
@@ -22,9 +23,9 @@ type WorkerResponse =
   | { id: number; ok: false; error: string };
 
 type WorkerRequest =
-  | { id: number; type: "step"; triangles: TriangleWithEdgeInfo[] }
-  | { id: number; type: "stl"; triangles: TriangleWithEdgeInfo[] }
-  | { id: number; type: "mesh"; triangles: TriangleWithEdgeInfo[] };
+  | { id: number; type: "step"; triangles: TriangleWithEdgeInfo[]; settings: ReturnType<typeof getSettings> }
+  | { id: number; type: "stl"; triangles: TriangleWithEdgeInfo[]; settings: ReturnType<typeof getSettings> }
+  | { id: number; type: "mesh"; triangles: TriangleWithEdgeInfo[]; settings: ReturnType<typeof getSettings> };
 
 let worker: Worker | null = null;
 const blocker = () => document.querySelector<HTMLElement>("#menu-blocker");
@@ -89,7 +90,7 @@ export const onWorkerBusyChange = (cb: (busy: boolean) => void) => {
 };
 
 export async function buildStepInWorker(trisWithAngles: TriangleWithEdgeInfo[], onProgress?: (msg: number) => void) {
-  const res = (await callWorker({ type: "step", triangles: trisWithAngles }, onProgress)) as Extract<
+  const res = (await callWorker({ type: "step", triangles: trisWithAngles, settings: getSettings() }, onProgress)) as Extract<
     WorkerResponse,
     { type: "step"; ok: true }
   >;
@@ -97,7 +98,7 @@ export async function buildStepInWorker(trisWithAngles: TriangleWithEdgeInfo[], 
 }
 
 export async function buildStlInWorker(trisWithAngles: TriangleWithEdgeInfo[], onProgress?: (msg: number) => void) {
-  const res = (await callWorker({ type: "stl", triangles: trisWithAngles }, onProgress)) as Extract<
+  const res = (await callWorker({ type: "stl", triangles: trisWithAngles, settings: getSettings() }, onProgress)) as Extract<
     WorkerResponse,
     { type: "stl"; ok: true }
   >;
@@ -123,7 +124,7 @@ const reconstructMesh = (payload: MeshPayload) => {
 };
 
 export async function buildMeshInWorker(trisWithAngles: TriangleWithEdgeInfo[], onProgress?: (msg: number) => void) {
-  const res = (await callWorker({ type: "mesh", triangles: trisWithAngles }, onProgress)) as Extract<
+  const res = (await callWorker({ type: "mesh", triangles: trisWithAngles, settings: getSettings() }, onProgress)) as Extract<
     WorkerResponse,
     { type: "mesh"; ok: true }
   >;

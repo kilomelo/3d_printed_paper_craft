@@ -4,11 +4,12 @@ import {
   buildGroupStlFromTriangles,
 } from "../modules/replicadModeling";
 import type { TriangleWithEdgeInfo } from "../types/triangles";
+import { applySettings, type Settings } from "../modules/settings";
 
 type WorkerRequest =
-  | { id: number; type: "step"; triangles: TriangleWithEdgeInfo[] }
-  | { id: number; type: "stl"; triangles: TriangleWithEdgeInfo[] }
-  | { id: number; type: "mesh"; triangles: TriangleWithEdgeInfo[] };
+  | { id: number; type: "step"; triangles: TriangleWithEdgeInfo[]; settings: Settings }
+  | { id: number; type: "stl"; triangles: TriangleWithEdgeInfo[]; settings: Settings }
+  | { id: number; type: "mesh"; triangles: TriangleWithEdgeInfo[]; settings: Settings };
 
 type MeshPayload = {
   positions: ArrayBuffer;
@@ -54,8 +55,9 @@ const serializeMesh = async (
 };
 
 ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
-  const { id, type } = event.data;
+  const { id, type, settings } = event.data;
   try {
+    applySettings(settings);
     const report = (message: string) => ctx.postMessage({ id, ok: true, type: "progress", message } as WorkerResponse);
     if (type === "step") {
       const buffer = await (await buildGroupStepFromTriangles(event.data.triangles, report)).arrayBuffer();

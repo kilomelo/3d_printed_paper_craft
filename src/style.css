@@ -361,7 +361,7 @@ body {
 
 .settings-modal {
   width: 500px;
-  height: 200px;
+  height: 450px;
   background: #0b1020;
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
@@ -403,22 +403,37 @@ body {
 
 .setting-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.setting-label-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
 }
 
 .setting-field {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.setting-counter-group {
   flex: 1;
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
 }
 
 .settings-inline-btn {
   white-space: nowrap;
+  min-width: 100px;
 }
 
 .setting-row label {
-  min-width: 80px;
+  min-width: 75px;
   color: var(--text);
 }
 
@@ -429,6 +444,18 @@ body {
   border-radius: 6px;
   background: #0f1628;
   color: var(--text);
+}
+.setting-desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.setting-range-value {
+  min-width: 100px;
+  display: inline-block;
+  /* padding: 0 6px; */
+  text-align: center;
 }
 .overlay-btn {
   position: absolute;

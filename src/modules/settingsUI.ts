@@ -8,6 +8,16 @@ type SettingsUIRefs = {
   confirmBtn: HTMLButtonElement;
   scaleInput: HTMLInputElement;
   scaleResetBtn: HTMLButtonElement;
+  layerHeightInput: HTMLInputElement;
+  layerHeightResetBtn: HTMLButtonElement;
+  connectionLayersDecBtn: HTMLButtonElement;
+  connectionLayersIncBtn: HTMLButtonElement;
+  connectionLayersValue: HTMLSpanElement;
+  connectionLayersResetBtn: HTMLButtonElement;
+  bodyLayersDecBtn: HTMLButtonElement;
+  bodyLayersIncBtn: HTMLButtonElement;
+  bodyLayersValue: HTMLSpanElement;
+  bodyLayersResetBtn: HTMLButtonElement;
 };
 
 type SettingsUIDeps = {
@@ -31,8 +41,15 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     settingsSnapshot = null;
   };
 
-  const updateInputColor = (valid: boolean) => {
-    refs.scaleInput.style.color = valid ? "" : "red";
+  const updateInputColor = (el: HTMLInputElement, valid: boolean) => {
+    el.style.color = valid ? "" : "red";
+  };
+
+  const validators = {
+    scale: (val: number) => !Number.isNaN(val) && val > 0,
+    layerHeight: (val: number) => !Number.isNaN(val) && val > 0 && val <= 0.5,
+    connectionLayers: (val: number) => Number.isInteger(val) && val >= 1 && val <= 5,
+    bodyLayers: (val: number) => Number.isInteger(val) && val >= 2 && val <= 10,
   };
 
   const blockKeysWhenSettingsOpen = (e: KeyboardEvent) => {
@@ -50,50 +67,98 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     settingsSnapshot = getSettings();
     settingsDraft = { ...settingsSnapshot };
     refs.scaleInput.value = String(settingsDraft.scale);
-    updateInputColor(true);
+    refs.layerHeightInput.value = String(settingsDraft.layerHeight);
+    refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
+    refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
+    [refs.scaleInput, refs.layerHeightInput].forEach((el) => updateInputColor(el, true));
     refs.overlay.classList.remove("hidden");
   });
 
-  refs.scaleInput.addEventListener("input", (e) => {
-    const target = e.target as HTMLInputElement;
-    const valid = /^\d*\.?\d*$/.test(target.value) && target.value !== "";
-    const val = valid ? parseFloat(target.value) : NaN;
-    updateInputColor(!Number.isNaN(val) && val > 0);
-  });
+  const bindNumericInput = (
+    input: HTMLInputElement,
+    resetBtn: HTMLButtonElement,
+    parse: (raw: string) => number,
+    getDraft: () => number,
+    setDraft: (v: number) => void,
+    validate: (v: number) => boolean,
+    getDefault: () => number,
+  ) => {
+    input.addEventListener("input", (e) => {
+      const raw = (e.target as HTMLInputElement).value;
+      const val = parse(raw);
+      updateInputColor(input, validate(val));
+    });
 
-  refs.scaleInput.addEventListener("blur", (e) => {
-    const raw = (e.target as HTMLInputElement).value;
-    if (!/^\d*\.?\d*$/.test(raw) || raw === "") {
-      refs.scaleInput.value = String(settingsDraft.scale);
-      updateInputColor(true);
-      return;
-    }
-    const val = parseFloat(raw);
-    if (Number.isNaN(val) || val < 0) {
-      refs.scaleInput.value = String(settingsDraft.scale);
-      updateInputColor(true);
-      return;
-    }
-    settingsDraft.scale = val;
-    updateInputColor(true);
-  });
+    input.addEventListener("blur", (e) => {
+      const raw = (e.target as HTMLInputElement).value;
+      const val = parse(raw);
+      if (!validate(val)) {
+        input.value = String(getDraft());
+        updateInputColor(input, true);
+        return;
+      }
+      setDraft(val);
+      updateInputColor(input, true);
+    });
 
-  refs.scaleInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === "Escape") {
-      (e.target as HTMLInputElement).blur();
-    }
-  });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === "Escape") {
+        (e.target as HTMLInputElement).blur();
+      }
+    });
 
-  refs.scaleResetBtn.addEventListener("click", () => {
-    settingsDraft.scale = getDefaultSettings().scale;
-    refs.scaleInput.value = String(settingsDraft.scale);
-    updateInputColor(true);
-  });
+    resetBtn.addEventListener("click", () => {
+      const def = getDefault();
+      setDraft(def);
+      input.value = String(def);
+      updateInputColor(input, true);
+    });
+  };
+
+  bindNumericInput(
+    refs.scaleInput,
+    refs.scaleResetBtn,
+    (raw) => parseFloat(raw),
+    () => settingsDraft.scale,
+    (v) => (settingsDraft.scale = v),
+    validators.scale,
+    () => getDefaultSettings().scale,
+  );
+  bindNumericInput(
+    refs.layerHeightInput,
+    refs.layerHeightResetBtn,
+    (raw) => parseFloat(raw),
+    () => settingsDraft.layerHeight,
+    (v) => (settingsDraft.layerHeight = v),
+    validators.layerHeight,
+    () => getDefaultSettings().layerHeight,
+  );
+
+  const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
+  const updateConnectionValue = (val: number) => {
+    settingsDraft.connectionLayers = clamp(val, 1, 5);
+    refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
+  };
+  const updateBodyValue = (val: number) => {
+    settingsDraft.bodyLayers = clamp(val, 2, 10);
+    refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
+  };
+
+  refs.connectionLayersDecBtn.addEventListener("click", () => updateConnectionValue(settingsDraft.connectionLayers - 1));
+  refs.connectionLayersIncBtn.addEventListener("click", () => updateConnectionValue(settingsDraft.connectionLayers + 1));
+  refs.connectionLayersResetBtn.addEventListener("click", () => updateConnectionValue(getDefaultSettings().connectionLayers));
+  refs.bodyLayersDecBtn.addEventListener("click", () => updateBodyValue(settingsDraft.bodyLayers - 1));
+  refs.bodyLayersIncBtn.addEventListener("click", () => updateBodyValue(settingsDraft.bodyLayers + 1));
+  refs.bodyLayersResetBtn.addEventListener("click", () => updateBodyValue(getDefaultSettings().bodyLayers));
 
   refs.cancelBtn.addEventListener("click", () => {
     closeSettings();
     settingsDraft = getSettings();
-    updateInputColor(true);
+    refs.scaleInput.value = String(settingsDraft.scale);
+    refs.layerHeightInput.value = String(settingsDraft.layerHeight);
+    refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
+    refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
+    [refs.scaleInput, refs.layerHeightInput].forEach((el) => updateInputColor(el, true));
   });
 
   refs.confirmBtn.addEventListener("click", () => {
@@ -104,6 +169,15 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     const changes: string[] = [];
     if (settingsDraft.scale !== settingsSnapshot.scale) {
       changes.push(`设置值 [缩放比例] 已修改为 ${settingsDraft.scale}`);
+    }
+    if (settingsDraft.layerHeight !== settingsSnapshot.layerHeight) {
+      changes.push(`设置值 [打印层高] 已修改为 ${settingsDraft.layerHeight}`);
+    }
+    if (settingsDraft.connectionLayers !== settingsSnapshot.connectionLayers) {
+      changes.push(`设置值 [连接层数] 已修改为 ${settingsDraft.connectionLayers}`);
+    }
+    if (settingsDraft.bodyLayers !== settingsSnapshot.bodyLayers) {
+      changes.push(`设置值 [主体层数] 已修改为 ${settingsDraft.bodyLayers}`);
     }
     applySettings(settingsDraft);
     closeSettings();

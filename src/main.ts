@@ -98,10 +98,51 @@ app.innerHTML = `
       </div>
       <div class="settings-body">
         <div class="setting-row">
-          <label for="setting-scale">缩放比例</label>
+          <div class="setting-label-row">
+            <label for="setting-scale">缩放比例</label>
+            <span class="setting-desc">模型整体缩放比例，太小会导致打印文件生成失败</span>
+          </div>
           <div class="setting-field">
             <input id="setting-scale" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
             <button id="setting-scale-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-label-row">
+            <label for="setting-layer-height">打印层高</label>
+            <span class="setting-desc">实际打印时的层高设置，单位mm，最大0.5，默认0.2</span>
+          </div>
+          <div class="setting-field">
+            <input id="setting-layer-height" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+            <button id="setting-layer-height-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-label-row">
+            <label for="setting-connection-layers">连接层数</label>
+            <span class="setting-desc">面之间连接处的层数，1-5，默认2</span>
+          </div>
+          <div class="setting-field">
+            <div class="setting-counter-group">
+              <button id="setting-connection-layers-dec" class="btn ghost settings-inline-btn">-</button>
+              <span id="setting-connection-layers-value" class="setting-range-value"></span>
+              <button id="setting-connection-layers-inc" class="btn ghost settings-inline-btn">+</button>
+            </div>
+            <button id="setting-connection-layers-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-label-row">
+            <label for="setting-body-layers">主体层数</label>
+            <span class="setting-desc">面主体的层数，2-10，默认4</span>
+          </div>
+          <div class="setting-field">
+            <div class="setting-counter-group">
+              <button id="setting-body-layers-dec" class="btn ghost settings-inline-btn">-</button>
+              <span id="setting-body-layers-value" class="setting-range-value"></span>
+              <button id="setting-body-layers-inc" class="btn ghost settings-inline-btn">+</button>
+            </div>
+            <button id="setting-body-layers-reset" class="btn ghost settings-inline-btn">恢复默认</button>
           </div>
         </div>
       </div>
@@ -140,6 +181,16 @@ const settingsCancelBtn = document.querySelector<HTMLButtonElement>("#settings-c
 const settingsConfirmBtn = document.querySelector<HTMLButtonElement>("#settings-confirm-btn");
 const settingScaleInput = document.querySelector<HTMLInputElement>("#setting-scale");
 const settingScaleResetBtn = document.querySelector<HTMLButtonElement>("#setting-scale-reset");
+const settingLayerHeightInput = document.querySelector<HTMLInputElement>("#setting-layer-height");
+const settingLayerHeightResetBtn = document.querySelector<HTMLButtonElement>("#setting-layer-height-reset");
+const settingConnectionLayersDecBtn = document.querySelector<HTMLButtonElement>("#setting-connection-layers-dec");
+const settingConnectionLayersIncBtn = document.querySelector<HTMLButtonElement>("#setting-connection-layers-inc");
+const settingConnectionLayersValue = document.querySelector<HTMLSpanElement>("#setting-connection-layers-value");
+const settingConnectionLayersResetBtn = document.querySelector<HTMLButtonElement>("#setting-connection-layers-reset");
+const settingBodyLayersDecBtn = document.querySelector<HTMLButtonElement>("#setting-body-layers-dec");
+const settingBodyLayersIncBtn = document.querySelector<HTMLButtonElement>("#setting-body-layers-inc");
+const settingBodyLayersValue = document.querySelector<HTMLSpanElement>("#setting-body-layers-value");
+const settingBodyLayersResetBtn = document.querySelector<HTMLButtonElement>("#setting-body-layers-reset");
 const groupPreviewPanel = groupPreview?.closest(".preview-panel") as HTMLDivElement | null;
 const groupFacesCountLabel = document.querySelector<HTMLSpanElement>("#group-faces-count");
 const groupColorBtn = document.querySelector<HTMLButtonElement>("#group-color-btn");
@@ -184,6 +235,16 @@ if (
   !settingsConfirmBtn ||
   !settingScaleInput ||
   !settingScaleResetBtn ||
+  !settingLayerHeightInput ||
+  !settingLayerHeightResetBtn ||
+  !settingConnectionLayersDecBtn ||
+  !settingConnectionLayersIncBtn ||
+  !settingConnectionLayersValue ||
+  !settingConnectionLayersResetBtn ||
+  !settingBodyLayersDecBtn ||
+  !settingBodyLayersIncBtn ||
+  !settingBodyLayersValue ||
+  !settingBodyLayersResetBtn ||
   !settingsOpenBtn
 ) {
   throw new Error("初始化界面失败，缺少必要的元素");
@@ -208,6 +269,16 @@ createSettingsUI(
     confirmBtn: settingsConfirmBtn,
     scaleInput: settingScaleInput,
     scaleResetBtn: settingScaleResetBtn,
+    layerHeightInput: settingLayerHeightInput,
+    layerHeightResetBtn: settingLayerHeightResetBtn,
+    connectionLayersDecBtn: settingConnectionLayersDecBtn,
+    connectionLayersIncBtn: settingConnectionLayersIncBtn,
+    connectionLayersValue: settingConnectionLayersValue,
+    connectionLayersResetBtn: settingConnectionLayersResetBtn,
+    bodyLayersDecBtn: settingBodyLayersDecBtn,
+    bodyLayersIncBtn: settingBodyLayersIncBtn,
+    bodyLayersValue: settingBodyLayersValue,
+    bodyLayersResetBtn: settingBodyLayersResetBtn,
   },
   { log },
 );
