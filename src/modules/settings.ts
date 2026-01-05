@@ -7,11 +7,18 @@ export type Settings = {
   bodyLayers: number;
 };
 
+export const SETTINGS_LIMITS = {
+  scale: { min: 0 },
+  layerHeight: { min: 0, max: 0.5 },
+  connectionLayers: { min: 1, max: 4 },
+  bodyLayers: { min: 1, max: 8 },
+} as const;
+
 const defaultSettings: Settings = {
   scale: 1,
   layerHeight: 0.2,
-  connectionLayers: 2,
-  bodyLayers: 4,
+  connectionLayers: 1,
+  bodyLayers: 3,
 };
 
 let current: Settings = { ...defaultSettings };
@@ -21,22 +28,37 @@ export function getSettings(): Settings {
 }
 
 export function setScale(scale: number) {
-  if (Number.isNaN(scale) || scale < 0) return;
+  if (Number.isNaN(scale) || scale < SETTINGS_LIMITS.scale.min) return;
   current = { ...current, scale };
 }
 
 export function setLayerHeight(val: number) {
-  if (Number.isNaN(val) || val <= 0 || val > 0.5) return;
+  if (
+    Number.isNaN(val) ||
+    val <= SETTINGS_LIMITS.layerHeight.min ||
+    val > SETTINGS_LIMITS.layerHeight.max
+  )
+    return;
   current = { ...current, layerHeight: val };
 }
 
 export function setConnectionLayers(val: number) {
-  if (!Number.isInteger(val) || val < 1 || val > 5) return;
+  if (
+    !Number.isInteger(val) ||
+    val < SETTINGS_LIMITS.connectionLayers.min ||
+    val > SETTINGS_LIMITS.connectionLayers.max
+  )
+    return;
   current = { ...current, connectionLayers: val };
 }
 
 export function setBodyLayers(val: number) {
-  if (!Number.isInteger(val) || val < 2 || val > 10) return;
+  if (
+    !Number.isInteger(val) ||
+    val < SETTINGS_LIMITS.bodyLayers.min ||
+    val > SETTINGS_LIMITS.bodyLayers.max
+  )
+    return;
   current = { ...current, bodyLayers: val };
 }
 
@@ -46,7 +68,6 @@ export function resetSettings() {
 
 export function applySettings(next: Partial<Settings>) {
   current = { ...current, ...next };
-  console.debug("[Settings] applied settings:", current);
 }
 
 export function getDefaultSettings(): Settings {

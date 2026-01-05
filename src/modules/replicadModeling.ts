@@ -128,15 +128,14 @@ const intersectLines = (p1: Point2D, p2: Point2D, p3: Point2D, p4: Point2D): Poi
 export function offsetTriangleWithAngles(
   triData: TriangleWithEdgeInfo,
   shrinkFactor: number,
-  nonSeamShrinkFactor: number,
-  obsoluteExtraOffsets: number[],
+  absoluteExtraOffsets: number[],
 ): {offsettedTri: Triangle2D, extraOffsetValue: number[]} {
-  if (shrinkFactor < 0 || nonSeamShrinkFactor < 0) {
-    console.warn('offsetTriangleWithAngles: invalid shrinkFactor or nonSeamShrinkFactor, skip offsetting');
+  if (shrinkFactor < 0) {
+    console.warn('offsetTriangleWithAngles: invalid shrinkFactor, skip offsetting');
     return {offsettedTri: triData.tri, extraOffsetValue: [0, 0, 0]};
   }
-  if (obsoluteExtraOffsets.length !== 3) {
-    console.warn('offsetTriangleWithAngles: invalid obsoluteExtraOffsets length, skip offsetting');
+  if (absoluteExtraOffsets.length !== 3) {
+    console.warn('offsetTriangleWithAngles: invalid absoluteExtraOffsets length, skip offsetting');
     return {offsettedTri: triData.tri, extraOffsetValue: [0, 0, 0]};
   }
   const { tri, edges } = triData;
@@ -170,14 +169,15 @@ export function offsetTriangleWithAngles(
     const raw = 90 - term; // >=0
     let offset = shrinkFactor * Math.tan(degToRad(raw));
     if (!Number.isFinite(offset)) offset = 0;
-    const heightCap = edgeHeights[i] * 0.5;
+    const heightCap = edgeHeights[i] * 0.33;
     if (Math.abs(offset) > heightCap) {
       offset = Math.sign(offset) * heightCap;
       console.warn('offsetTriangleWithAngles: offset exceeds height cap, adjusted', offset);
     }
-    const bendingOffset = (Math.abs(angleRad - Math.PI) < 0.001 || edges[i]?.isOuter? 0 : obsoluteExtraOffsets[i] + offset * nonSeamShrinkFactor);
-    extraOffsetValue.push(bendingOffset);
-    if (!edges[i]?.isOuter) offset += bendingOffset;
+    // 对于非拼接边，需要额外内收幅度以防止折叠凹线被切片软件忽略或打印后融合。切片软甲中的“切片间隙闭合半径”需要设置得尽量小以减少该问题，但仍然建议保留一部分额外内收。
+    const gapExtraOffset = edges[i]?.isOuter ? 0 : absoluteExtraOffsets[i] * (Math.max(0, term - 45) / 45); // 二面角越大，额外内收越多，二面角小于90度则无额外内收
+    extraOffsetValue.push(gapExtraOffset);
+    if (!edges[i]?.isOuter) offset += gapExtraOffset;
     offsets.push(offset);
   }
 
@@ -215,11 +215,14 @@ const buildSolidFromTrianglesWithAngles = async (
   onProgress?: (progress: number) => void,
 ) => {
     const { layerHeight, connectionLayers, bodyLayers } = getSettings();
-    const bodyThickness = (bodyLayers - connectionLayers) * layerHeight;
+    const bodyThickness = bodyLayers * layerHeight;
     const connectionThickness = connectionLayers * layerHeight;
-    const nonSeamShrinkFactor = 0.2;
-    const topSketchObsoluteExtraOffsets = [0.05, 0.05, 0.05];
-    const chamferSize = 0.5;
+    // const nonSeamShrinkFactor = 0.000;
+    const absoluteExtraOffsets = [0.1, 0.1, 0.1];
+
+    // const topSketchObsoluteExtraOffsets = [0.0, 0.0, 0.0];
+
+    const chamferSize = 0.25;
     onProgress?.(1);
     await ensureReplicadOC();
     const outer = triangles2Outer(trianglesWithAngles);
@@ -236,9 +239,11 @@ const buildSolidFromTrianglesWithAngles = async (
     const progressPerTriangle = 98 / trianglesWithAngles.length;
     let i = 0;
     trianglesWithAngles.forEach((triData) => {
-      const offsetResult = offsetTriangleWithAngles(triData, bodyThickness, nonSeamShrinkFactor, topSketchObsoluteExtraOffsets);
+      console.log(`Building triangle triData / ${triData}`);
+      const offsetResult = offsetTriangleWithAngles(triData, bodyThickness, absoluteExtraOffsets);
       const bodyTopTriangle = offsetResult.offsettedTri;
-      const bodyBottomTriangle = offsetTriangleWithAngles(triData, 0, 0, offsetResult.extraOffsetValue).offsettedTri;
+      console.log(`offsetResult.extraOffsetValue: ${offsetResult.extraOffsetValue}`);
+      const bodyBottomTriangle = offsetTriangleWithAngles(triData, 0, offsetResult.extraOffsetValue).offsettedTri;
       const bodyTopSketch = new Sketcher("XY", bodyThickness)
         .movePointerTo(bodyTopTriangle[0])
         .lineTo(bodyTopTriangle[1])
@@ -257,12 +262,13 @@ const buildSolidFromTrianglesWithAngles = async (
             (ff: EdgeFinder) => ff.inPlane("XY", bodyThickness),
           ])
         );
-      const bodyFilleted = bodySolid.chamfer(chamferSize, onlySideEdges);
-      connectionSolid = connectionSolid.fuse(bodyFilleted, { optimisation: "commonFace" });
+      // const bodyFilleted = bodySolid.chamfer(chamferSize, onlySideEdges);
+      // connectionSolid = connectionSolid.fuse(bodyFilleted, { optimisation: "commonFace" });
+      connectionSolid = connectionSolid.fuse(bodySolid, { optimisation: "commonFace" });
       onProgress?.(Math.floor(2 + progressPerTriangle * (i + 1)));
       i++;
     });
-    return connectionSolid;
+    return connectionSolid.mirror("XY").rotate(180, [0, 0, 0], [0, 1, 0]);
   }
 
 export async function buildGroupStepFromTriangles(

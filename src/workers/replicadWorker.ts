@@ -58,7 +58,7 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const { id, type, settings } = event.data;
   try {
     applySettings(settings);
-    const report = (message: string) => ctx.postMessage({ id, ok: true, type: "progress", message } as WorkerResponse);
+    const report = (message: number) => ctx.postMessage({ id, ok: true, type: "progress", message } as WorkerResponse);
     if (type === "step") {
       const buffer = await (await buildGroupStepFromTriangles(event.data.triangles, report)).arrayBuffer();
       const resp: WorkerResponse = { id, ok: true, type: "step", buffer, mime: "application/step" };

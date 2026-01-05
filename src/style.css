@@ -57,6 +57,15 @@ body {
   height: 100%;
 }
 
+.page.preloaded {
+  display: flex;
+  flex-direction: column;
+  visibility: hidden;
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+}
+
 .page.home {
   align-items: center;
   justify-content: center;
@@ -432,8 +441,8 @@ body {
   min-width: 100px;
 }
 
-.setting-row label {
-  min-width: 75px;
+.setting-label {
+  min-width: 65px;
   color: var(--text);
 }
 
@@ -447,6 +456,7 @@ body {
 }
 .setting-desc {
   font-size: 12px;
+  padding-left: 10px;
   color: var(--muted);
   line-height: 1.4;
 }

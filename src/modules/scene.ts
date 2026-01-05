@@ -32,7 +32,6 @@ export type SceneContext = {
 };
 
 export function createScene(width: number, height: number): SceneContext {
-  console.log("createScene with size:", width, height);
   const scene = new Scene();
   scene.background = clearColor.clone();
 
@@ -69,7 +68,6 @@ export type Scene2DContext = {
 
 // 创建 2D 正交场景，用于展开预览
 export function createScene2D(width: number, height: number): Scene2DContext {
-  console.log("createScene2D with size:", width, height);
   const halfW = width / 2;
   const halfH = height / 2;
 
@@ -102,7 +100,7 @@ export function fitCameraToObject(object: Object3D, camera: PerspectiveCamera, c
   const maxDim = Math.max(size.x, size.y, size.z);
   const fov = (camera.fov * Math.PI) / 180;
   const distance = maxDim / (2 * Math.tan(fov / 2));
-  const offset = 1.8;
+  const offset = 1.5;
   controls.target.set(center.x, center.y, center.z);
   camera.position.set(-distance * offset * 0.75 + center.x, -distance * offset + center.y, distance * offset * 0.75 + center.z);
   camera.near = Math.max(0.1, distance / 100);

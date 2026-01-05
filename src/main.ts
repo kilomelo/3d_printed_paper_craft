@@ -1,7 +1,8 @@
 // 应用入口与编排层：负责初始化页面结构、事件总线订阅、组/拼缝控制器与渲染器的装配，并绑定 UI 交互。
 import "./style.css";
 import packageJson from "../package.json";
-import { Color } from "three";
+import { Color, Mesh } from "three";
+import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
 import { type WorkspaceState } from "./types/workspaceState.js";
 import { createLog } from "./modules/log";
 import { createRenderer3D } from "./modules/renderer3d";
@@ -13,6 +14,7 @@ import { createUnfold2dManager } from "./modules/unfold2dManager";
 import { createGeometryContext } from "./modules/geometry";
 import { build3dppcData, download3dppc, load3dppc, type PPCFile } from "./modules/ppc";
 import { createSettingsUI } from "./modules/settingsUI";
+import { getDefaultSettings, SETTINGS_LIMITS } from "./modules/settings";
 import { getModel } from "./modules/model";
 import {
   buildStepInWorker,
@@ -23,6 +25,9 @@ import {
 } from "./modules/replicadWorkerClient";
 
 const VERSION = packageJson.version ?? "0.0.0.0";
+const previewMeshCache = new Map<number, Mesh>();
+const defaultSettings = getDefaultSettings();
+const limits = SETTINGS_LIMITS;
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) {
   throw new Error("未找到应用容器 #app");
@@ -99,7 +104,7 @@ app.innerHTML = `
       <div class="settings-body">
         <div class="setting-row">
           <div class="setting-label-row">
-            <label for="setting-scale">缩放比例</label>
+            <label for="setting-scale" class="setting-label">缩放比例</label>
             <span class="setting-desc">模型整体缩放比例，太小会导致打印文件生成失败</span>
           </div>
           <div class="setting-field">
@@ -109,8 +114,8 @@ app.innerHTML = `
         </div>
         <div class="setting-row">
           <div class="setting-label-row">
-            <label for="setting-layer-height">打印层高</label>
-            <span class="setting-desc">实际打印时的层高设置，单位mm，最大0.5，默认0.2</span>
+            <label for="setting-layer-height" class="setting-label">打印层高</label>
+            <span class="setting-desc">实际打印时的层高设置，单位mm，最大${limits.layerHeight.max}，默认${defaultSettings.layerHeight}</span>
           </div>
           <div class="setting-field">
             <input id="setting-layer-height" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
@@ -119,8 +124,8 @@ app.innerHTML = `
         </div>
         <div class="setting-row">
           <div class="setting-label-row">
-            <label for="setting-connection-layers">连接层数</label>
-            <span class="setting-desc">面之间连接处的层数，1-5，默认2</span>
+            <span class="setting-label">连接层数</span>
+            <span class="setting-desc">面之间连接处的层数，${limits.connectionLayers.min}-${limits.connectionLayers.max}，默认${defaultSettings.connectionLayers}</span>
           </div>
           <div class="setting-field">
             <div class="setting-counter-group">
@@ -133,8 +138,8 @@ app.innerHTML = `
         </div>
         <div class="setting-row">
           <div class="setting-label-row">
-            <label for="setting-body-layers">主体层数</label>
-            <span class="setting-desc">面主体的层数，2-10，默认4</span>
+            <span class="setting-label">主体额外层数</span>
+            <span class="setting-desc">面主体的额外层数，${limits.bodyLayers.min}-${limits.bodyLayers.max}，默认${defaultSettings.bodyLayers}</span>
           </div>
           <div class="setting-field">
             <div class="setting-counter-group">
@@ -249,6 +254,8 @@ if (
 ) {
   throw new Error("初始化界面失败，缺少必要的元素");
 }
+// 预加载 workspace 布局，方便渲染器在首帧前完成尺寸初始化
+layoutWorkspace.classList.add("preloaded");
 
 let workspaceState: WorkspaceState = "normal" as WorkspaceState;
 const setWorkspaceState = (state: WorkspaceState) => {
@@ -392,7 +399,7 @@ const unfold2d = createUnfold2dManager({
   getVertexKeyToPos: () => geometryContext.geometryIndex.getVertexKeyToPos(),
   getFaceIndexMap: () => geometryContext.geometryIndex.getFaceIndexMap(),
 });
-const menuButtons = [menuOpenBtn, exportBtn, exportGroupStepBtn, exportGroupStlBtn, previewGroupModelBtn, settingsOpenBtn];
+const menuButtons = [menuOpenBtn, exportBtn, exportGroupStepBtn, previewGroupModelBtn, settingsOpenBtn];
 const updateMenuState = () => {
   const isPreview = workspaceState === "previewGroupModel" as WorkspaceState;
   menuButtons.forEach((btn) => btn.classList.toggle("hidden", isPreview));
@@ -400,7 +407,6 @@ const updateMenuState = () => {
   groupPreviewPanel.classList.toggle("hidden", isPreview);
   settingsOpenBtn.classList.toggle("hidden", isPreview);
   editorPreviewEl.classList.toggle("single-col", isPreview);
-  requestAnimationFrame(() => {renderer3d.resizeRenderer3D(); renderer2d.resizeRenderer2D(); });
 };
 
 const buildGroupUIState = () => {
@@ -451,6 +457,7 @@ appEventBus.on("modelLoaded", () => {
   logPanelEl?.classList.remove("hidden");
   layoutEmpty.classList.toggle("active", false);
   layoutWorkspace.classList.toggle("active", true);
+  layoutWorkspace.classList.remove("preloaded");
   updateMenuState();
   groupUI.render(buildGroupUIState());
 });
@@ -460,11 +467,18 @@ appEventBus.on("modelCleared", () => {
   layoutEmpty.classList.toggle("active", true);
   layoutWorkspace.classList.toggle("active", false);
   setWorkspaceState("normal" as WorkspaceState);
+  previewMeshCache.clear();
+  layoutWorkspace.classList.add("preloaded");
 });
 appEventBus.on("groupAdded", (groupId: number) => groupUI.render(buildGroupUIState()));
-appEventBus.on("groupRemoved", ({ groupId, faces }) => groupUI.render(buildGroupUIState()));
+appEventBus.on("groupRemoved", ({ groupId, faces }) => {
+  previewMeshCache.delete(groupId);
+  groupUI.render(buildGroupUIState());
+});
 appEventBus.on("groupCurrentChanged", (groupId: number) => groupUI.render(buildGroupUIState()));
 appEventBus.on("groupColorChanged", ({ groupId, color }) => groupUI.render(buildGroupUIState()));
+appEventBus.on("groupFaceAdded", ({ groupId }) => previewMeshCache.delete(groupId));
+appEventBus.on("groupFaceRemoved", ({ groupId }) => previewMeshCache.delete(groupId));
 appEventBus.on("workspaceStateChanged", ({previous, current}) => groupUI.render(buildGroupUIState()));
 appEventBus.on("workspaceStateChanged", ({previous, current}) => updateGroupEditToggle());
 appEventBus.on("workspaceStateChanged", ({previous, current}) => updateMenuState());
@@ -486,7 +500,6 @@ groupAddBtn.addEventListener("click", () => {
 groupEditToggle.addEventListener("click", () => {
   const currentGroupId = groupController.getPreviewGroupId();
   if (workspaceState === "editingGroup") {
-    // groupController.setEditGroup(null, currentEdit, getPreviewGroupId());
     setWorkspaceState("normal" as WorkspaceState);
   } else {
     if (isWorkerBusy()) {
@@ -548,23 +561,50 @@ exportGroupStlBtn.addEventListener("click", async () => {
   exportGroupStlBtn.disabled = true;
   try {
     const targetGroupId = groupController.getPreviewGroupId();
-    const trisWithAngles = unfold2d.getGroupTrianglesWithEdgeInfo(targetGroupId);
-    if (!trisWithAngles.length) {
-      log("当前展开组没有三角面，无法导出。", "error");
-      return;
+    const cached = previewMeshCache.get(targetGroupId);
+    if (cached) {
+      log("使用缓存 mesh 导出展开组 STL...", "info");
+      const exporter = new STLExporter();
+      const meshForExport = cached.clone();
+      meshForExport.updateMatrixWorld(true);
+      const stlResult = exporter.parse(meshForExport, { binary: true });
+      const stlArray =
+        stlResult instanceof ArrayBuffer
+          ? new Uint8Array(stlResult)
+          : stlResult instanceof DataView
+            ? new Uint8Array(stlResult.buffer)
+            : new Uint8Array();
+      const stlCopy = new Uint8Array(stlArray); // force into ArrayBuffer-backed copy
+      const blob = new Blob([stlCopy.buffer], { type: "model/stl" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `group-${targetGroupId}.stl`;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      log("展开组 STL 已导出", "success");
+    } else {
+      const trisWithAngles = unfold2d.getGroupTrianglesWithEdgeInfo(targetGroupId);
+      if (!trisWithAngles.length) {
+        log("当前展开组没有三角面，无法导出。", "error");
+        return;
+      }
+      log("正在导出展开组 STL...", "info");
+      const blob = await buildStlInWorker(trisWithAngles, (progress) => log(progress, "progress"));
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `group-${targetGroupId}.stl`;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      log("展开组 STL 已导出", "success");
     }
-    log("正在导出展开组 STL...", "info");
-    const blob = await buildStlInWorker(trisWithAngles, (progress) => log(progress, "progress"));
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `group-${targetGroupId}.stl`;
-    a.style.display = "none";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    log("展开组 STL 已导出", "success");
   } catch (error) {
     console.error("展开组 STL 导出失败", error);
     log("展开组 STL 导出失败，请查看控制台日志。", "error");
@@ -576,17 +616,22 @@ previewGroupModelBtn.addEventListener("click", async () => {
   previewGroupModelBtn.disabled = true;
   try {
     const targetGroupId = groupController.getPreviewGroupId();
-    const trisWithAngles = unfold2d.getGroupTrianglesWithEdgeInfo(targetGroupId);
-    if (!trisWithAngles.length) {
-      log("当前展开组没有三角面，无法导出。", "error");
-      return;
+    const cached = previewMeshCache.get(targetGroupId);
+    if (cached) {
+      renderer3d.loadPreviewModel(cached.clone());
+    } else {
+      const trisWithAngles = unfold2d.getGroupTrianglesWithEdgeInfo(targetGroupId);
+      if (!trisWithAngles.length) {
+        log("当前展开组没有三角面，无法导出。", "error");
+        return;
+      }
+      log("正在用 Replicad 生成 mesh...", "info");
+      const mesh = await buildMeshInWorker(trisWithAngles, (progress) => log(progress, "progress"));
+      previewMeshCache.set(targetGroupId, mesh.clone());
+      renderer3d.loadPreviewModel(mesh);
     }
-    log("正在用 Replicad 生成 mesh...", "info");
-    const mesh = await buildMeshInWorker(trisWithAngles, (progress) => log(progress, "progress"));
-    renderer3d.loadPreviewModel(mesh);
     setWorkspaceState("previewGroupModel" as WorkspaceState);
     log("展开组模型预览已加载", "success");
-    // updateMenuState();
   } catch (error) {
     console.error("Replicad mesh 生成失败", error);
     log("Replicad mesh 生成失败，请检查控制台日志。", "error");

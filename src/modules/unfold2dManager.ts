@@ -256,12 +256,10 @@ export function createUnfold2dManager(opts: ManagerDeps) {
       const back = new Matrix4().makeTranslation(anchor.x, anchor.y, anchor.z);
       const rootMat = new Matrix4().multiplyMatrices(back, new Matrix4().multiplyMatrices(rot, toOrigin));
       setRootTransform(groupId, faceId, rootMat);
-      console.debug("[unfold2d] root transform set", { groupId, faceId, normal: normal.toArray(), matrix: rootMat.elements });
     });
   };
 
   const rebuildGroup2D = (groupId: number) => {
-    console.debug("[unfold2d] rebuilding group", { groupId });
     const faces = getGroupFaces(groupId);
     clearScene();
     if (!faces || faces.size === 0) return;
@@ -320,16 +318,6 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     const zoomY = viewH / (spanY * pad);
     renderer2d.camera.zoom = Math.min(zoomX, zoomY);
     renderer2d.camera.updateProjectionMatrix();
-    console.debug("[unfold2d] rebuild group", {
-      groupId,
-      faces: Array.from(faces),
-      camera: {
-        position: renderer2d.camera.position.clone(),
-        lookAt: { x: renderer2d.camera.getWorldDirection(new Vector3()).x, y: renderer2d.camera.getWorldDirection(new Vector3()).y, z: renderer2d.camera.getWorldDirection(new Vector3()).z },
-      },
-      bounds: { minX, minY, maxX, maxY },
-      sampleTri: positions.slice(0, 9),
-    });
   };
 
   const getGroupTriangles2D = (groupId: number): Triangle2D[] => {
@@ -392,19 +380,16 @@ export function createUnfold2dManager(opts: ManagerDeps) {
   };
 
   appEventBus.on("modelCleared", () => {
-    console.debug("[unfold2d] reset manager");
     modelLoaded = false;
     clearScene();
     clearTransforms();
   });
 
   appEventBus.on("groupFaceAdded", ({ groupId, faceId }: { groupId: number; faceId: number }) => {
-    console.debug("[unfold2d] face added event", { groupId, faceId });
     if (!modelLoaded) return;
     rebuildGroup2D(groupId);
   });
   appEventBus.on("groupFaceRemoved", ({ groupId, faceId }: { groupId: number; faceId: number }) => {
-    console.debug("[unfold2d] face removed event", { groupId, faceId });
     if (!modelLoaded) return;
     rebuildGroup2D(groupId);
   });
@@ -415,17 +400,14 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     groups.forEach((gid) => rebuildGroup2D(gid));
   });
   appEventBus.on("groupAdded", (groupId: number) => {
-    console.debug("[unfold2d] group data changed, rebuilding preview group");
     clearScene();
   });
   appEventBus.on("groupRemoved", ({ groupId, faces }) => {
-    console.debug("[unfold2d] group removed, clearing cache", { groupId });
     const gid = getPreviewGroupId();
     rebuildGroup2D(gid);
   });
 
   appEventBus.on("groupCurrentChanged", (groupId: number) => {
-    console.debug("[unfold2d] current group changed, rebuilding preview group");
     rebuildGroup2D(groupId);
   });
 

@@ -115,7 +115,6 @@ export function createGroupController(
   }
 
   function applyImportedGroups(groups: PPCFile["groups"], groupColorCursor?: number) {
-    console.log("[groupController] applyImportedGroups called with groups:", groups, "groupColorCursor:", groupColorCursor);
     if (!groups || !groups.length) return;
     applyImportedGroupsData(groups as NonNullable<PPCFile["groups"]>, getFaceAdjacency());
     setGroupColorCursor(groupColorCursor ?? 0);
