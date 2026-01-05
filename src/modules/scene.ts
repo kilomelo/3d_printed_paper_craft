@@ -10,6 +10,9 @@ import {
   SRGBColorSpace,
   Color,
   OrthographicCamera,
+  Object3D,
+  Vector3,
+  Box3,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
@@ -28,9 +31,8 @@ export type SceneContext = {
   previewModelGroup: Group;
 };
 
-export function createScene(viewer: HTMLDivElement): SceneContext {
-  const width = Math.max(1, viewer.clientWidth || viewer.offsetWidth || 0);
-  const height = Math.max(1, viewer.clientHeight || viewer.offsetHeight || 0);
+export function createScene(width: number, height: number): SceneContext {
+  console.log("createScene with size:", width, height);
   const scene = new Scene();
   scene.background = clearColor.clone();
 
@@ -42,9 +44,7 @@ export function createScene(viewer: HTMLDivElement): SceneContext {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(width, height);
   renderer.toneMapping = NoToneMapping;
-  // @ts-expect-error three typings may differ by version
   renderer.outputColorSpace = SRGBColorSpace;
-  viewer.appendChild(renderer.domElement);
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(0, 0, 0);
@@ -68,9 +68,8 @@ export type Scene2DContext = {
 };
 
 // 创建 2D 正交场景，用于展开预览
-export function createScene2D(viewer: HTMLElement): Scene2DContext {
-  const width = Math.max(1, viewer.clientWidth || viewer.offsetWidth || 1);
-  const height = Math.max(1, viewer.clientHeight || viewer.offsetHeight || 1);
+export function createScene2D(width: number, height: number): Scene2DContext {
+  console.log("createScene2D with size:", width, height);
   const halfW = width / 2;
   const halfH = height / 2;
 
@@ -85,7 +84,6 @@ export function createScene2D(viewer: HTMLElement): Scene2DContext {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(width, height);
   renderer.toneMapping = NoToneMapping;
-  // @ts-expect-error three typings may differ by version
   renderer.outputColorSpace = SRGBColorSpace;
   const canvasStyle = renderer.domElement.style;
   canvasStyle.position = "absolute";
@@ -93,7 +91,23 @@ export function createScene2D(viewer: HTMLElement): Scene2DContext {
   canvasStyle.display = "block";
   canvasStyle.zIndex = "0";
   canvasStyle.backgroundColor = typeof clearColor === "string" ? (clearColor as string) : `#${Number(clearColor).toString(16)}`;
-  viewer.appendChild(renderer.domElement);
-
   return { scene, camera, renderer };
+}
+
+export function fitCameraToObject(object: Object3D, camera: PerspectiveCamera, controls: any) {
+  const box = new Box3().setFromObject(object);
+  const size = box.getSize(new Vector3());
+  const center = box.getCenter(new Vector3());
+
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const fov = (camera.fov * Math.PI) / 180;
+  const distance = maxDim / (2 * Math.tan(fov / 2));
+  const offset = 1.8;
+  controls.target.set(center.x, center.y, center.z);
+  camera.position.set(-distance * offset * 0.75 + center.x, -distance * offset + center.y, distance * offset * 0.75 + center.z);
+  camera.near = Math.max(0.1, distance / 100);
+  camera.far = distance * 100;
+  camera.updateProjectionMatrix();
+
+  controls.update();
 }

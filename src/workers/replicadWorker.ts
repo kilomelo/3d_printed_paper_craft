@@ -4,11 +4,12 @@ import {
   buildGroupStlFromTriangles,
 } from "../modules/replicadModeling";
 import type { TriangleWithEdgeInfo } from "../types/triangles";
+import { applySettings, type Settings } from "../modules/settings";
 
 type WorkerRequest =
-  | { id: number; type: "step"; triangles: TriangleWithEdgeInfo[] }
-  | { id: number; type: "stl"; triangles: TriangleWithEdgeInfo[] }
-  | { id: number; type: "mesh"; triangles: TriangleWithEdgeInfo[] };
+  | { id: number; type: "step"; triangles: TriangleWithEdgeInfo[]; settings: Settings }
+  | { id: number; type: "stl"; triangles: TriangleWithEdgeInfo[]; settings: Settings }
+  | { id: number; type: "mesh"; triangles: TriangleWithEdgeInfo[]; settings: Settings };
 
 type MeshPayload = {
   positions: ArrayBuffer;
@@ -24,9 +25,13 @@ type WorkerResponse =
   | { id: number; ok: true; type: "progress"; message: number }
   | { id: number; ok: false; error: string };
 
+/// <reference lib="webworker" />
 const ctx: DedicatedWorkerGlobalScope = self as any;
 
-const serializeMesh = async (triangles: TriangleWithEdgeInfo[], onProgress?: (msg: number) => void): Promise<MeshPayload> => {
+const serializeMesh = async (
+  triangles: TriangleWithEdgeInfo[],
+  onProgress?: (msg: number) => void,
+): Promise<MeshPayload> => {
   const mesh = await buildGroupMeshFromTriangles(triangles, onProgress);
   const geom = mesh.geometry;
   const posAttr = geom.getAttribute("position");
@@ -50,8 +55,9 @@ const serializeMesh = async (triangles: TriangleWithEdgeInfo[], onProgress?: (ms
 };
 
 ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
-  const { id, type } = event.data;
+  const { id, type, settings } = event.data;
   try {
+    applySettings(settings);
     const report = (message: string) => ctx.postMessage({ id, ok: true, type: "progress", message } as WorkerResponse);
     if (type === "step") {
       const buffer = await (await buildGroupStepFromTriangles(event.data.triangles, report)).arrayBuffer();

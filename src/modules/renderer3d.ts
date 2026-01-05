@@ -20,101 +20,43 @@ import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { getModel, setModel, setLastFileName } from "./model";
-import {
-  resetGroups,
-  ensureGroup,
-  getFaceGroupMap,
-  getGroupFaces,
-  getGroupTreeParent,
-  getPreviewGroupId,
-  setPreviewGroupId,
-  getEditGroupId,
-  setEditGroupId,
-  setGroupColorCursor,
-  getGroupColor,
-} from "./groups";
-import { build3dppcData, download3dppc, load3dppc, type PPCFile } from "./ppc";
-import { createScene } from "./scene";
+import { load3dppc, type PPCFile } from "./ppc";
+import { applySettings, resetSettings } from "./settings";
+import { createScene, fitCameraToObject } from "./scene";
 import { FACE_DEFAULT_COLOR, createFrontMaterial, createPreviewMaterial, createEdgeMaterial } from "./materials";
-import { createHoverLines, disposeHoverLines, hideHoverLines, updateHoverResolution, createRaycaster, type HoverState } from "./interactions";
-import { initInteractionController } from "./interactionController";
 import {
-  EdgeRecord,
-  fitCameraToObject,
-  generateFunctionalMaterials,
-} from "./modelLoader";
+  createHoverLines,
+  disposeHoverLines,
+  hideHoverLines,
+  updateHoverResolution,
+  createRaycaster,
+  initInteractionController,
+  type HoverState,
+} from "./interactions";
+import { type EdgeRecord, generateFunctionalMaterials } from "./model";
 import { createFaceColorService } from "./faceColorService";
-import { type SeamManagerApi, type SeamManagerDeps } from "./seamManager";
-import { initUIController } from "./uiController";
+import { createSeamManager } from "./seamManager";
 import { appEventBus } from "./eventBus";
-import { type GeometryContext } from "./geometryContext";
-// group UI 渲染与交互由外部注入，renderer3d 只调用回调
-
-export type UIRefs = {
-  viewer: HTMLDivElement;
-  fileInput: HTMLInputElement;
-  homeStartBtn: HTMLButtonElement;
-  menuOpenBtn: HTMLButtonElement;
-  resetViewBtn: HTMLButtonElement;
-  lightToggle: HTMLButtonElement;
-  edgesToggle: HTMLButtonElement;
-  seamsToggle: HTMLButtonElement;
-  facesToggle: HTMLButtonElement;
-  exportBtn: HTMLButtonElement;
-  triCounter: HTMLDivElement;
-  layoutEmpty: HTMLElement;
-  layoutWorkspace: HTMLElement;
-};
-
-export type GroupUIRenderState = {
-  groupIds: number[];
-  previewGroupId: number;
-  editGroupId: number | null;
-  deletable: boolean;
-  getGroupColor: (id: number) => Color;
-  getGroupCount: (id: number) => number;
-};
-
-export type GroupUIHooks = {
-  renderGroupUI?: (state: GroupUIRenderState) => void;
-  confirmDeleteGroup?: (id: number) => boolean;
-};
+import { type GeometryContext } from "./geometry";
+import { WorkspaceState } from "@/types/workspaceState";
 
 export type GroupApi = {
-  applyGroupColor: (groupId: number, color: Color) => void;
-  handleRemoveFace: (faceId: number, editGroupId: number | null) => void;
-  handleAddFace: (faceId: number, editGroupId: number | null) => void;
-  setEditGroup: (groupId: number | null, currentEdit: number | null, previewGroupId: number) => {
-    editGroupId: number | null;
-    previewGroupId: number;
-  };
-  deleteGroup: (groupId: number, editGroupId: number | null) => { editGroupId: number | null; previewGroupId: number };
-  applyImportedGroups: (groups: PPCFile["groups"]) => void;
-  createGroup: (currentEditGroupId: number | null) => { groupId: number; previewGroupId: number; editGroupId: number | null };
+  handleRemoveFace: (faceId: number) => void;
+  handleAddFace: (faceId: number) => void;
+  getGroupFaces: (groupId: number) => Set<number> | undefined;
+  getGroupColor: (groupId: number) => Color | undefined;
+  getFaceGroupMap: () => Map<number, number | null>;
+  applyImportedGroups: (groups: PPCFile["groups"], groupColorCursor?: number) => void;
 };
 
-export function initRenderer3D(
-  ui: UIRefs,
+export function createRenderer3D(
   log: (msg: string, tone?: "info" | "error" | "success") => void,
+  getWorkspaceState: () => WorkspaceState,
+  groupApi: GroupApi,
   geometryContext: GeometryContext,
-  _groupUiHooks?: GroupUIHooks,
+  getViewport: () => { width: number; height: number },
+  mountRenderer: (canvas: HTMLElement) => void,
 ) {
-  const {
-    viewer,
-    fileInput,
-    homeStartBtn,
-    menuOpenBtn,
-    resetViewBtn,
-    lightToggle,
-    edgesToggle,
-    seamsToggle,
-    facesToggle,
-    exportBtn,
-    triCounter,
-    layoutEmpty,
-    layoutWorkspace,
-  } = ui;
-
   const BREATH_PERIOD = 300; // ms
   const BREATH_CYCLES = 3; // 呼吸循环次数
   const BREATH_DURATION = BREATH_PERIOD * BREATH_CYCLES;
@@ -130,11 +72,7 @@ export function initRenderer3D(
   let faceToEdges = geometryIndex.getFaceToEdges();
   let edges: EdgeRecord[] = geometryIndex.getEdgesArray();
   let edgeKeyToId = geometryIndex.getEdgeKeyToId();
-  let groupTreeParent = getGroupTreeParent();
   let vertexKeyToPos = geometryIndex.getVertexKeyToPos();
-  let vertexPositionsDirty = false;
-  let editGroupId: number | null = null;
-  let previewGroupId = 1;
   const { raycaster, pointer } = createRaycaster();
   const hoverLines: LineSegments2[] = [];
   const hoverState: HoverState = { hoverLines, hoveredFaceId: null };
@@ -142,46 +80,33 @@ export function initRenderer3D(
   let breathGroupId: number | null = null;
   let breathStart = 0;
   let breathRaf: number | null = null;
-  let seamManager: SeamManagerApi | null = null;
-  let groupApi: GroupApi | null = null;
+  
+  const { scene, camera, renderer, controls, ambient, dir, modelGroup, previewModelGroup } = createScene((getViewport().width), getViewport().height);
+  mountRenderer(renderer.domElement);
 
-  let faceGroupMap = getFaceGroupMap();
-  let groupFaces = getGroupFaces();
-  let lastEditGroupId: number | null = editGroupId;
+  const seamManager = createSeamManager(
+    modelGroup,
+    getViewport,
+    () => edges,
+    () => groupApi.getFaceGroupMap(),
+    () => vertexKeyToPos,
+    (edgeId: number) => geometryIndex.getEdgeWorldPositions(edgeId),
+    () => seamsVisible,
+  )
 
-  function refreshGroupRefs() {
-    faceGroupMap = getFaceGroupMap();
-    groupFaces = getGroupFaces();
-    groupTreeParent = getGroupTreeParent();
-    previewGroupId = getPreviewGroupId();
-    editGroupId = getEditGroupId();
-  }
-
-  function syncGroupStateFromData() {
-    const prevEdit = editGroupId;
-    refreshGroupRefs();
-    if (prevEdit !== editGroupId) {
-      interactionController?.endBrush();
-      stopGroupBreath();
-      if (editGroupId !== null) {
-        startGroupBreath(editGroupId);
-      }
-    }
-    lastEditGroupId = editGroupId;
-  }
-
-  function markVertexPositionsDirty() {
-    vertexPositionsDirty = true;
+  function syncGroupStateFromData(groupId: number) {
+    interactionController?.endBrush();
+    stopGroupBreath();
+    startGroupBreath(groupId);
   }
 
   const faceColorService = createFaceColorService({
     getFaceIndexMap: () => faceIndexMap,
-    getFaceGroupMap: () => faceGroupMap,
-    getGroupColor,
+    getFaceGroupMap: () => groupApi.getFaceGroupMap(),
+    getGroupColor: groupApi.getGroupColor,
     defaultColor: FACE_DEFAULT_COLOR,
   });
 
-  const { scene, camera, renderer, controls, ambient, dir, modelGroup, previewModelGroup } = createScene(viewer);
   const axesScene = new Scene();
   const axesCamera = new PerspectiveCamera(50, 1, 0.1, 10);
   const axesHelper = new AxesHelper(1.2);
@@ -192,19 +117,8 @@ export function initRenderer3D(
   const el = renderer.domElement;
   previewModelGroup.visible = false;
 
-  type WorkspaceState = "normal" | "editingGroup" | "previewGroupModel";
-  let workspaceState: WorkspaceState = "normal";
-  let lastNonPreviewState: WorkspaceState = "normal";
+  
   let previewCameraState: { position: Vector3; target: Vector3 } | null = null;
-
-  const setWorkspaceState = (state: WorkspaceState) => {
-    workspaceState = state;
-    if (state !== "previewGroupModel") {
-      lastNonPreviewState = state;
-    }
-  };
-
-  const getWorkspaceState = () => workspaceState;
 
   function applyFrontMaterialToMeshes(root: Object3D) {
     const mat = createFrontMaterial();
@@ -216,7 +130,7 @@ export function initRenderer3D(
     });
   }
 
-  function buildRenderableRoot(object: Object3D, name: string) {
+  function buildRenderableRoot(object: Object3D, name: string): Group {
     const root = new Group();
     root.name = name;
     root.add(object);
@@ -237,13 +151,12 @@ export function initRenderer3D(
     const isPrimaryButton = event.button === 0 || event.button === 2;
     if (!isPrimaryButton) return false;
     // 编辑展开组时，若当前 hover 到可刷的面，优先进入刷子逻辑，避免误触发相机控制
-    if (editGroupId !== null && hoverState.hoveredFaceId !== null) return false;
+    if (getWorkspaceState() === "editingGroup" && hoverState.hoveredFaceId !== null) return false;
     return true;
   };
   const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
   const orbitRotate = (dTheta: number, dPhi: number) => {
     const cam = controls.object;
-
     // 1) offset = position - target
     offset.copy(cam.position).sub(controls.target);
 
@@ -348,7 +261,7 @@ export function initRenderer3D(
     controls.update();
   };
   const onCanvasPointerDown = (event: PointerEvent) => {
-    console.debug("[pointer] down", { id: event.pointerId, button: event.button });
+    // console.debug("[pointer] down", { id: event.pointerId, button: event.button });
     if (!shouldLockPointer(event)) return;
     lockedButton = event.button;
     if (document.pointerLockElement !== el) {
@@ -366,7 +279,7 @@ export function initRenderer3D(
   };
   const onPointerLockChange = () => {
     pointerLocked = document.pointerLockElement === el;
-    console.debug("[pointer] lock change", pointerLocked);
+    // console.debug("[pointer] lock change", pointerLocked);
     if (pointerLocked) {
       hideHoverLines(hoverState);
     }
@@ -396,127 +309,19 @@ export function initRenderer3D(
   const objLoader = new OBJLoader();
   const fbxLoader = new FBXLoader();
   const stlLoader = new STLLoader();
-  const allowedExtensions = ["obj", "fbx", "stl", "3dppc"];
-
-  const uiController = initUIController(
-    {
-      fileInput,
-      homeStartBtn,
-      menuOpenBtn,
-      resetViewBtn,
-      lightToggle,
-      edgesToggle,
-      seamsToggle,
-      facesToggle,
-      exportBtn,
-      layoutEmpty,
-      layoutWorkspace,
-      versionBadgeGlobal: document.querySelector<HTMLDivElement>(".version-badge-global"),
-    },
-    {
-      onFileSelected: async (file) => {
-        const ext = getExtension(file.name);
-        if (!allowedExtensions.includes(ext)) {
-          log("不支持的格式，请选择 OBJ / FBX / STL。", "error");
-          fileInput.value = "";
-          return;
-        }
-        await applyLoadedModel(file, ext);
-      },
-      onHomeStart: () => fileInput.click(),
-      onMenuOpen: () => fileInput.click(),
-      onResetView: () => {
-        const model = workspaceState === "previewGroupModel" ? previewModelGroup : modelGroup;
-        if (!model) return;
-        fitCameraToObject(model, camera, controls);
-        refreshVertexWorldPositions();
-      },
-      onLightToggle: () => {
-        const enabled = !dir.visible;
-        dir.visible = enabled;
-        ambient.intensity = enabled ? 0.8 : 5;
-        lightToggle.classList.toggle("active", enabled);
-        lightToggle.textContent = `光源：${enabled ? "开" : "关"}`;
-      },
-      onEdgesToggle: () => {
-        edgesVisible = !edgesVisible;
-        edgesToggle.classList.toggle("active", edgesVisible);
-        edgesToggle.textContent = `线框：${edgesVisible ? "开" : "关"}`;
-        applyEdgeVisibility();
-      },
-      onSeamsToggle: () => {
-        seamsVisible = !seamsVisible;
-        seamsToggle.classList.toggle("active", seamsVisible);
-        seamsToggle.textContent = `拼接边：${seamsVisible ? "开" : "关"}`;
-        applySeamsVisibility();
-      },
-      onFacesToggle: () => {
-        facesVisible = !facesVisible;
-        facesToggle.classList.toggle("active", facesVisible);
-        facesToggle.textContent = `面渲染：${facesVisible ? "开" : "关"}`;
-        applyFaceVisibility();
-      },
-      onExport: async () => {
-        const model = getModel();
-        if (!model) {
-          log("没有可导出的模型", "error");
-          return;
-        }
-        try {
-          log("正在导出 .3dppc ...", "info");
-          const data = await build3dppcData(model as Group);
-          await download3dppc(data);
-          log("导出成功", "success");
-        } catch (error) {
-          console.error("导出失败", error);
-          log("导出失败，请重试。", "error");
-        }
-      },
-      onKeyDown: (event) => {
-        if (!getModel()) return;
-        if (event.key === "Escape") {
-          if (editGroupId !== null) {
-            setEditGroup(null);
-          }
-          return;
-        }
-        const num = Number(event.key);
-        if (!Number.isInteger(num) || num <= 0) return;
-        if (groupFaces.has(num)) {
-          setEditGroup(num);
-        }
-      },
-    },
-  );
-
-  edgesToggle.classList.toggle("active", edgesVisible);
-  edgesToggle.textContent = `线框：${edgesVisible ? "开" : "关"}`;
-  seamsToggle.classList.toggle("active", seamsVisible);
-  seamsToggle.textContent = `拼接边：${seamsVisible ? "开" : "关"}`;
-  facesToggle.classList.toggle("active", facesVisible);
-  facesToggle.textContent = `面渲染：${facesVisible ? "开" : "关"}`;
-  showWorkspace(false);
-
-  function showWorkspace(loaded: boolean) {
-    uiController.setWorkspaceLoaded(loaded);
-  }
-
+  
   function clearModel() {
     stopGroupBreath();
     interactionController?.endBrush();
     modelGroup.clear();
     previewModelGroup.clear();
     previewModelGroup.visible = false;
-    disposeSeams();
     disposeHoverLinesLocal();
     setModel(null);
-    exportBtn.disabled = true;
-    showWorkspace(false);
+    
     faceAdjacency.clear();
     faceIndexMap.clear();
     meshFaceIdMap.clear();
-    resetGroups();
-    refreshGroupRefs();
     geometryContext.reset();
     faceAdjacency = geometryIndex.getFaceAdjacency();
     faceIndexMap = geometryIndex.getFaceIndexMap();
@@ -524,17 +329,9 @@ export function initRenderer3D(
     faceToEdges = geometryIndex.getFaceToEdges();
     edges = geometryIndex.getEdgesArray();
     edgeKeyToId = geometryIndex.getEdgeKeyToId();
-    groupTreeParent = getGroupTreeParent();
     vertexKeyToPos = geometryIndex.getVertexKeyToPos();
-    markVertexPositionsDirty();
-    ensureGroup(1);
-    refreshGroupRefs();
-    setPreviewGroupId(1);
     seamManager?.dispose();
     hideHoverLines(hoverState);
-    setEditGroupId(null);
-    editGroupId = null;
-    setWorkspaceState("normal");
     appEventBus.emit("modelCleared", undefined);
   }
 
@@ -542,12 +339,8 @@ export function initRenderer3D(
     return geometryIndex.getFaceId(mesh, localFace);
   }
 
-  function updateFaceColorById(faceId: number) {
-    faceColorService.updateFaceColorById(faceId);
-  }
-
   function pickFace(event: PointerEvent): number | null {
-    if (workspaceState === "previewGroupModel") return null;
+    if (previewModelGroup.visible) return null;
     const model = getModel();
     if (!model || !facesVisible) return null;
     const rect = el.getBoundingClientRect();
@@ -565,62 +358,8 @@ export function initRenderer3D(
     return getFaceIdFromIntersection(hit.object as Mesh, faceIndex);
   }
 
-  const handleRemoveFace = (faceId: number) => groupApi?.handleRemoveFace(faceId, editGroupId);
-
-  const handleAddFace = (faceId: number) => groupApi?.handleAddFace(faceId, editGroupId);
-
-  function setEditGroup(groupId: number | null) {
-    if (workspaceState === "previewGroupModel" && groupId !== null) return;
-    interactionController?.endBrush();
-    if (!groupApi) return;
-    const result = groupApi.setEditGroup(groupId, editGroupId, previewGroupId);
-    editGroupId = result.editGroupId;
-    previewGroupId = result.previewGroupId;
-    if (workspaceState !== "previewGroupModel") {
-      setWorkspaceState(editGroupId === null ? "normal" : "editingGroup");
-    }
-  }
-
-  function getGroupDeps() {
-    return {
-      getFaceAdjacency: () => faceAdjacency,
-      refreshGroupRefs,
-      repaintAllFaces: () => repaintAllFaces(),
-      log,
-      startGroupBreath: (gid: number) => startGroupBreath(gid),
-      stopGroupBreath: () => stopGroupBreath(),
-      faceColorService,
-    };
-  }
-
-  function setPreviewGroup(groupId: number) {
-    if (editGroupId !== null) return;
-    if (!groupFaces.has(groupId)) return;
-    setPreviewGroupId(groupId);
-    refreshGroupRefs();
-    previewGroupId = groupId;
-    log(`预览展开组 ${groupId}`, "info");
-    startGroupBreath(groupId);
-  }
-
-  function changePreviewGroupColor(color: Color) {
-    groupApi?.applyGroupColor(previewGroupId, color);
-  }
-
-  function applyImportedGroups(groups: PPCFile["groups"]) {
-    if (!groups || !groups.length) return;
-    if (!groupApi) return;
-    groupApi.applyImportedGroups(groups);
-    refreshGroupRefs();
-    previewGroupId = getPreviewGroupId();
-  }
-
-  function repaintAllFaces() {
-    faceColorService.repaintAllFaces();
-  }
-
   function applyFaceVisibility() {
-    const model = workspaceState === "previewGroupModel" ? previewModelGroup : modelGroup;
+    const model = getWorkspaceState() === "previewGroupModel" ? previewModelGroup : modelGroup;
     if (!model) return;
     model.traverse((child) => {
       if (!(child as Mesh).isMesh) return;
@@ -631,25 +370,24 @@ export function initRenderer3D(
       }
     });
   }
-  function resizeRenderer() {
-    const { clientWidth, clientHeight } = viewer;
-    renderer.setSize(clientWidth, clientHeight);
-    camera.aspect = clientWidth / clientHeight;
+  function resizeRenderer3D() {
+    const { width, height } = getViewport();
+    const w = Math.max(1, width);
+    const h = Math.max(1, height);
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
     camera.updateProjectionMatrix();
     axesCamera.aspect = 1;
     axesCamera.updateProjectionMatrix();
-    refreshSeamResolution();
-    updateHoverResolution(viewer, hoverLines);
+    seamManager.updateSeamResolution();
+
+    updateHoverResolution(getViewport(), hoverLines);
   }
 
-  window.addEventListener("resize", resizeRenderer);
-
-  function disposeSeams() {
-    seamManager?.dispose();
-  }
+  window.addEventListener("resize", resizeRenderer3D);
 
   function applyEdgeVisibility() {
-    const model = workspaceState === "previewGroupModel" ? previewModelGroup : modelGroup;
+    const model = getWorkspaceState() === "previewGroupModel" ? previewModelGroup : modelGroup;
     if (!model) return;
     model.traverse((child) => {
       if (!(child as Mesh).isMesh) return;
@@ -660,24 +398,13 @@ export function initRenderer3D(
     });
   }
 
-  function applySeamsVisibility() {
+  function setSeamsVisibility(seamsVisible: boolean) {
     if (!getModel()) return;
-    seamManager?.applyVisibility();
-  }
-
-  function refreshSeamResolution() {
-    seamManager?.refreshResolution();
-  }
-
-  function refreshVertexWorldPositions() {
-    if (!vertexPositionsDirty) return;
-    geometryIndex.refreshVertexWorldPositions(getModel());
-    vertexKeyToPos = geometryIndex.getVertexKeyToPos();
-    vertexPositionsDirty = false;
+    seamManager.setVisibility(seamsVisible);
   }
 
   function initHoverLinesLocal() {
-    createHoverLines(viewer, scene, hoverLines);
+    createHoverLines(getViewport(), scene, hoverLines);
   }
 
   function disposeHoverLinesLocal() {
@@ -691,22 +418,69 @@ export function initRenderer3D(
     });
   }
 
-  appEventBus.on("groupDataChanged", () => syncGroupStateFromData());
+  const resetView = () => {
+    console.debug("[renderer3d] resetView");
+    const model = getWorkspaceState() === "previewGroupModel" ? previewModelGroup : modelGroup;
+    if (!model) return;
+    fitCameraToObject(model, camera, controls);
+  };
+
+  const toggleLight = () => {
+    const enabled = !dir.visible;
+    dir.visible = enabled;
+    ambient.intensity = enabled ? 0.8 : 5;
+    return enabled;
+  };
+
+  const toggleEdges = () => {
+    edgesVisible = !edgesVisible;
+    applyEdgeVisibility();
+    updateHoverResolution(getViewport(), hoverLines);
+    return edgesVisible;
+  };
+
+  const toggleSeams = () => {
+    seamsVisible = !seamsVisible;
+    setSeamsVisibility(seamsVisible);
+    seamManager.updateSeamResolution();
+    return seamsVisible;
+  };
+
+  const toggleFaces = () => {
+    facesVisible = !facesVisible;
+    applyFaceVisibility();
+    return facesVisible;
+  };
+
+  let lastTriCount = 0;
+  const getTriCount = () => lastTriCount;
+
+  appEventBus.on("workspaceStateChanged", ({previous, current}) => {
+    if (current === "normal" && previous === "previewGroupModel") {
+      previewModelGroup.visible = false;
+      modelGroup.visible = true;
+      // fitCameraToObject(modelGroup, camera, controls);
+      camera.position.copy(previewCameraState!.position);
+      controls.target.copy(previewCameraState!.target);
+      controls.update();
+      previewCameraState = null;
+    }
+  });
+  appEventBus.on("groupCurrentChanged", (groupId: number) => syncGroupStateFromData(groupId));
 
   interactionController = initInteractionController({
     renderer,
-    viewer,
     camera,
     controls,
     raycaster,
     pointer,
     getModel,
     facesVisible: () => facesVisible,
-    canEdit: () => editGroupId !== null,
+    canEdit: () => getWorkspaceState() === "editingGroup",
     isPointerLocked: () => pointerLocked,
     pickFace,
-    onAddFace: handleAddFace,
-    onRemoveFace: handleRemoveFace,
+    onAddFace: groupApi.handleAddFace,
+    onRemoveFace: groupApi.handleRemoveFace,
     hoverState,
   });
 
@@ -718,8 +492,8 @@ export function initRenderer3D(
     const gid = breathGroupId;
     breathGroupId = null;
     if (gid !== null) {
-      const faces = groupFaces.get(gid);
-      faces?.forEach((faceId) => updateFaceColorById(faceId));
+      const faces = groupApi.getGroupFaces(gid);
+      faces?.forEach((faceId) => faceColorService.updateFaceColorById(faceId));
     }
   }
 
@@ -727,7 +501,7 @@ export function initRenderer3D(
     stopGroupBreath();
     breathGroupId = groupId;
     breathStart = performance.now();
-    const faces = groupFaces.get(groupId);
+    const faces = groupApi.getGroupFaces(groupId);
     if (!faces || faces.size === 0) {
       breathGroupId = null;
       return;
@@ -739,12 +513,12 @@ export function initRenderer3D(
       const elapsed = now - breathStart;
       const progress = Math.min(1, elapsed / BREATH_DURATION);
       if (progress >= 1) {
-        faces.forEach((faceId) => updateFaceColorById(faceId));
+        faces.forEach((faceId) => faceColorService.updateFaceColorById(faceId));
         stopGroupBreath();
         return;
       }
       const factor = (1 + BREATH_SCALE) + BREATH_SCALE * Math.sin((progress + 0.25) * Math.PI * 2 * BREATH_CYCLES);
-      const baseColor = getGroupColor(groupId);
+      const baseColor = groupApi.getGroupColor(groupId)??FACE_DEFAULT_COLOR;
       const scaled = baseColor.clone().multiplyScalar(factor);
       faces.forEach((faceId) => {
         const mapping = faceIndexMap.get(faceId);
@@ -771,6 +545,7 @@ export function initRenderer3D(
           }
         });
         object = loaded;
+        resetSettings();
       } else if (ext === "fbx") {
         const loaded = await fbxLoader.loadAsync(url);
         const mat = createFrontMaterial();
@@ -780,45 +555,28 @@ export function initRenderer3D(
           }
         });
         object = loaded;
+        resetSettings();
       } else if (ext === "stl") {
         const geometry = await stlLoader.loadAsync(url);
         const material = createFrontMaterial();
         object = new Mesh(geometry, material);
+        resetSettings();
       } else {
         const loaded = await load3dppc(url, createFrontMaterial());
         object = loaded.object;
         importedGroups = loaded.groups;
         importedColorCursor = loaded.colorCursor;
+        if (loaded.annotations && typeof loaded.annotations.settings === "object") {
+          applySettings(loaded.annotations.settings as Record<string, number>);
+        } else {
+          resetSettings();
+        }
       }
+      appEventBus.emit("loadMeshStarted", undefined);
       return { object, importedGroups, importedColorCursor };
     } finally {
       URL.revokeObjectURL(url);
     }
-  }
-
-  function attachGroupApi(api: GroupApi) {
-    groupApi = api;
-  }
-
-  function getSeamManagerDeps(): SeamManagerDeps {
-    return {
-      viewer,
-      scene,
-      getModelRoot: () => getModel(),
-      getEdges: () => edges,
-      getFaceAdjacency: () => faceAdjacency,
-      getFaceGroupMap: () => faceGroupMap,
-      getGroupTreeParent: () => groupTreeParent,
-      getVertexKeyToPos: () => vertexKeyToPos,
-      getGroupFaces: () => groupFaces,
-      getEdgeWorldPositions: (edgeId) => geometryIndex.getEdgeWorldPositions(edgeId),
-      isSeamsVisible: () => seamsVisible,
-      refreshVertexWorldPositions: () => refreshVertexWorldPositions(),
-    };
-  }
-
-  function attachSeamManager(manager: SeamManagerApi) {
-    seamManager = manager;
   }
 
   async function applyObject(object: Object3D, name: string, importedGroups?: PPCFile["groups"], importedColorCursor?: number) {
@@ -835,32 +593,21 @@ export function initRenderer3D(
     edges = geometryIndex.getEdgesArray();
     edgeKeyToId = geometryIndex.getEdgeKeyToId();
     vertexKeyToPos = geometryIndex.getVertexKeyToPos();
-    groupTreeParent = getGroupTreeParent();
-    refreshGroupRefs();
-    markVertexPositionsDirty();
-    if (typeof importedColorCursor === "number") {
-      setGroupColorCursor(importedColorCursor);
-    }
     if (importedGroups && importedGroups.length) {
-      applyImportedGroups(importedGroups);
+      groupApi.applyImportedGroups(importedGroups, importedColorCursor);
     }
     applyFaceVisibility();
     applyEdgeVisibility();
     modelGroup.add(model);
     initHoverLinesLocal();
     fitCameraToObject(model, camera, controls);
-    refreshVertexWorldPositions();
-    showWorkspace(true);
-    setWorkspaceState("normal");
-    resizeRenderer(); // 确保从隐藏切换到可见后尺寸正确
     log(`已加载：${name} · 三角面 ${geometryIndex.getTriangleCount()}`, "success");
-    exportBtn.disabled = false;
     appEventBus.emit("modelLoaded", undefined);
   }
 
   async function applyLoadedModel(file: File, ext: string) {
     log("加载中...", "info");
-
+    console.log("[renderer3d] loading file", file.name);
     try {
       const { object, importedGroups, importedColorCursor } = await loadRawObject(file, ext);
       await applyObject(object, file.name, importedGroups, importedColorCursor);
@@ -891,7 +638,6 @@ export function initRenderer3D(
       target: controls.target.clone(),
     };
     fitCameraToObject(previewModelGroup, camera, controls);
-    setWorkspaceState("previewGroupModel");
   }
 
   function clearPreviewModel() {
@@ -905,12 +651,6 @@ export function initRenderer3D(
       controls.update();
       previewCameraState = null;
     }
-    setWorkspaceState(lastNonPreviewState);
-  }
-
-  function getExtension(name: string) {
-    const parts = name.split(".");
-    return parts.length > 1 ? parts.pop()!.toLowerCase() : "";
   }
 
   function renderAxesInset() {
@@ -944,35 +684,28 @@ export function initRenderer3D(
     renderer.render(scene, camera);
     const tris = renderer.info.render.triangles;
     renderAxesInset();
-    triCounter.textContent = `渲染三角形：${tris}`;
+    lastTriCount = tris;
   }
 
-  resizeRenderer();
   animate();
 
   return {
     loadPreviewModel,
-    clearPreviewModel,
-    getWorkspaceState,
-    resizeRenderer,
-    clearModel,
-    applyFaceVisibility,
-    applyEdgeVisibility,
+    resizeRenderer3D,
+    resetView,
+    toggleLight,
+    toggleEdges,
+    toggleSeams,
+    toggleFaces,
+    applyLoadedModel,
+    getTriCount,
     dispose: () => {
       interactionController?.dispose();
-      uiController.dispose();
       el.removeEventListener("pointerdown", onCanvasPointerDown);
       window.removeEventListener("pointerup", onWindowPointerUp);
       window.removeEventListener("pointercancel", onWindowPointerUp);
       window.removeEventListener("pointermove", onGlobalPointerMove);
       document.removeEventListener("pointerlockchange", onPointerLockChange);
     },
-    setPreviewGroup,
-    setEditGroup,
-    changePreviewGroupColor,
-    attachGroupApi,
-    getGroupDeps,
-    getSeamManagerDeps,
-    attachSeamManager,
   };
 }

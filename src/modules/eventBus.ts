@@ -1,4 +1,5 @@
 // 全局事件总线：为模型加载、拼缝重建、组数据变更等提供订阅/发布机制，解耦模块间调用。
+import { type WorkspaceState } from "../types/workspaceState.js";
 type Handler<T> = (payload: T) => void;
 
 export type EventBus<Events extends Record<string, unknown>> = {
@@ -11,6 +12,7 @@ export function createEventBus<Events extends Record<string, unknown>>(): EventB
 
   return {
     on(event, handler) {
+      // console.trace(`[eventBus] register handler for event: ${String(event)}`);
       if (!listeners.has(event)) {
         listeners.set(event, new Set());
       }
@@ -18,6 +20,7 @@ export function createEventBus<Events extends Record<string, unknown>>(): EventB
       return () => listeners.get(event)?.delete(handler as Handler<Events[keyof Events]>);
     },
     emit(event, payload) {
+      // console.trace(`[eventBus] emit event: ${String(event)}`, payload);
       const handlers = listeners.get(event);
       if (!handlers) return;
       handlers.forEach((h) => h(payload));
@@ -26,14 +29,17 @@ export function createEventBus<Events extends Record<string, unknown>>(): EventB
 }
 
 export type AppEvents = {
+  loadMeshStarted: void;
+  workspaceStateChanged: {previous: WorkspaceState, current: WorkspaceState};
   modelLoaded: void;
   modelCleared: void;
-  seamsRebuildFull: void;
-  seamsRebuildGroups: Set<number>;
-  seamsRebuildFaces: Set<number>;
-  groupDataChanged: void;
-  group2dFaceAdded: { groupId: number; faceId: number };
-  group2dFaceRemoved: { groupId: number; faceId: number };
+  groupRemoved: { groupId: number; faces: Set<number> };
+  groupAdded: number;
+  groupColorChanged: { groupId: number; color: THREE.Color };
+  groupCurrentChanged: number;
+  groupFaceAdded: { groupId: number; faceId: number };
+  groupFaceRemoved: { groupId: number; faceId: number };
+  workerBusyChange: boolean;
 };
 
 export const appEventBus = createEventBus<AppEvents>();

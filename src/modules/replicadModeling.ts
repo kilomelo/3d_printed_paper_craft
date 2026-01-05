@@ -4,6 +4,7 @@ import type { OpenCascadeInstance } from "replicad-opencascadejs";
 import initOC from "replicad-opencascadejs/src/replicad_single.js";
 import ocWasmUrl from "replicad-opencascadejs/src/replicad_single.wasm?url";
 import type { Point2D, Triangle2D, TriangleWithEdgeInfo } from "../types/triangles";
+import { getSettings } from "./settings";
 
 type OcFactory = (opts?: { locateFile?: (path: string) => string }) => Promise<OpenCascadeInstance>;
 
@@ -213,11 +214,12 @@ const buildSolidFromTrianglesWithAngles = async (
   trianglesWithAngles: TriangleWithEdgeInfo[],
   onProgress?: (progress: number) => void,
 ) => {
-    const bodyThickness = 0.4;
-    const connectionThickness = 0.2;
+    const { layerHeight, connectionLayers, bodyLayers } = getSettings();
+    const bodyThickness = (bodyLayers - connectionLayers) * layerHeight;
+    const connectionThickness = connectionLayers * layerHeight;
     const nonSeamShrinkFactor = 0.2;
     const topSketchObsoluteExtraOffsets = [0.05, 0.05, 0.05];
-    const chamferSize = 0.2;
+    const chamferSize = 0.5;
     onProgress?.(1);
     await ensureReplicadOC();
     const outer = triangles2Outer(trianglesWithAngles);
@@ -265,7 +267,7 @@ const buildSolidFromTrianglesWithAngles = async (
 
 export async function buildGroupStepFromTriangles(
   trisWithAngles: TriangleWithEdgeInfo[],
-  onProgress?: (msg: string) => void,
+  onProgress?: (msg: number) => void,
 ) {
   if (!trisWithAngles.length) {
     throw new Error("没有可用于建模的展开三角形");
@@ -277,7 +279,7 @@ export async function buildGroupStepFromTriangles(
 
 export async function buildGroupStlFromTriangles(
   trisWithAngles: TriangleWithEdgeInfo[],
-  onProgress?: (msg: string) => void,
+  onProgress?: (msg: number) => void,
 ) {
   if (!trisWithAngles.length) {
     throw new Error("没有可用于建模的展开三角形");
@@ -286,7 +288,7 @@ export async function buildGroupStlFromTriangles(
   return fused.blobSTL({ binary: true, tolerance: 0.2, angularTolerance: 0.1 });
 }
 
-export async function buildGroupMeshFromTriangles(trisWithAngles: TriangleWithEdgeInfo[], onProgress?: (msg: string) => void) {
+export async function buildGroupMeshFromTriangles(trisWithAngles: TriangleWithEdgeInfo[], onProgress?: (msg: number) => void) {
   if (!trisWithAngles.length) {
     throw new Error("没有可用于建模的展开三角形");
   }

@@ -1,191 +1,161 @@
 // 展开组业务控制器：封装面增删、组颜色、编辑模式切换、导入/删除组等逻辑，依赖 groups 数据层与事件总线驱动拼缝/界面刷新。
 import { Color } from "three";
 import {
-  setEditGroupId,
-  setPreviewGroupId,
-  setGroupColor,
   getGroupColor as getGroupColorData,
+  setGroupColor as setGroupColorData,
   setFaceGroup as assignFaceToGroup,
   shareEdgeWithGroup as shareEdgeWithGroupData,
   canRemoveFace as canRemoveFaceData,
   rebuildGroupTree as rebuildGroupTreeData,
   deleteGroup as deleteGroupData,
   applyImportedGroups as applyImportedGroupsData,
-  getGroupFaces,
-  getFaceGroupMap,
-  ensureGroup,
-  nextGroupId,
-  setEditGroupId,
-  getEditGroupId,
-  getPreviewGroupId,
+  getGroupIds as getGroupIdsData,
+  getGroupFaces as getGroupFacesData,
+  getFaceGroupMap as getFaceGroupMapData,
+  addGroup as addGroupData,
+  getGroupsCount as getGroupsCountData,
+  getGroupTreeParent as getGroupTreeParentData,
+  resetGroups,
+  setGroupColorCursor,
 } from "./groups";
-import { type FaceColorService } from "./faceColorService";
 import { type PPCFile } from "./ppc";
 import { appEventBus } from "./eventBus";
 
-export type GroupControllerDeps = {
-  getFaceAdjacency: () => Map<number, Set<number>>;
-  refreshGroupRefs: () => void;
-  repaintAllFaces: () => void;
-  log: (msg: string, tone?: "info" | "error" | "success") => void;
-  startGroupBreath: (groupId: number) => void;
-  stopGroupBreath: () => void;
-  faceColorService: FaceColorService;
-};
-
 export type GroupControllerApi = ReturnType<typeof createGroupController>;
 
-export function createGroupController(deps: GroupControllerDeps) {
-  const faceGroupMap = () => getFaceGroupMap();
-  const groupFaces = () => getGroupFaces();
-  const faceAdjacency = () => deps.getFaceAdjacency();
-  const notifyGroupChange = () => appEventBus.emit("groupDataChanged", undefined);
+export function createGroupController(
+  log: (msg: string, tone?: "info" | "error" | "success") => void,
+  getFaceAdjacency: () => Map<number, Set<number>>,
+) {
+  let previewGroupId = 1;
+  resetGroups();
 
-  function applyGroupColor(groupId: number, color: Color) {
-    setGroupColor(groupId, color);
-    const faces = groupFaces().get(groupId);
-    if (faces) {
-      faces.forEach((faceId) => deps.faceColorService.updateFaceColorById(faceId));
+  appEventBus.on("modelCleared", () => {
+    previewGroupId = 1;
+    resetGroups();
+  });
+  
+  function setGroupColor(groupId: number, color: Color) {
+    if (setGroupColorData(groupId, color))
+    {
+      appEventBus.emit("groupColorChanged", { groupId, color });
     }
-    notifyGroupChange();
   }
 
-  function rebuildGroupTree(groupId: number) {
-    rebuildGroupTreeData(groupId, faceAdjacency());
-    deps.refreshGroupRefs();
-  }
-
-  function rebuildGroupTrees(groupIds: Set<number>) {
-    groupIds.forEach((gid) => rebuildGroupTree(gid));
-  }
-
-  function canRemoveFace(groupId: number, faceId: number): boolean {
-    return canRemoveFaceData(groupId, faceId, faceAdjacency());
-  }
-
-  function shareEdgeWithGroup(faceId: number, groupId: number): boolean {
-    return shareEdgeWithGroupData(faceId, groupId, faceAdjacency());
-  }
-
-  function handleRemoveFace(faceId: number, editGroupId: number | null) {
-    if (editGroupId === null) return;
-    const currentGroup = faceGroupMap().get(faceId);
-    if (currentGroup !== editGroupId) return;
-    const groupSet = groupFaces().get(editGroupId) ?? new Set<number>();
+  function removeFace(faceId: number, groupId: number | null): boolean {
+    if (groupId === null) return false;
+    const currentGroup = getFaceGroupMapData().get(faceId);
+    if (currentGroup !== groupId) return false;
+    const groupSet = getGroupFacesData(groupId) ?? new Set<number>();
     const size = groupSet.size;
-    if (size <= 2 || canRemoveFace(editGroupId, faceId)) {
-      assignFaceToGroup(faceId, null);
-      deps.faceColorService.updateFaceColorById(faceId);
-      rebuildGroupTree(editGroupId);
-      const facesToUpdate = new Set<number>([faceId]);
-      (groupFaces().get(editGroupId) ?? new Set<number>()).forEach((f) => facesToUpdate.add(f));
-      appEventBus.emit("seamsRebuildFaces", facesToUpdate);
-      appEventBus.emit("group2dFaceRemoved", { groupId: editGroupId, faceId });
-      notifyGroupChange();
-      deps.log(`已从组${editGroupId}移除（面数量 ${groupFaces().get(editGroupId)?.size ?? 0}）`, "success");
-    } else {
-      deps.log("移除会导致展开组不连通，已取消", "error");
-    }
-  }
-
-  function handleAddFace(faceId: number, editGroupId: number | null) {
-    if (editGroupId === null) return;
-    const targetGroup = editGroupId;
-    const currentGroup = faceGroupMap().get(faceId) ?? null;
-    if (currentGroup === targetGroup) return;
-
-    const targetSet = groupFaces().get(targetGroup) ?? new Set<number>();
-
-    if (currentGroup !== null && !canRemoveFace(currentGroup, faceId)) {
-      deps.log("该面所在的组移出后会断开，未加入当前组", "error");
-      return;
-    }
-
-    if (targetSet.size > 0 && !shareEdgeWithGroup(faceId, targetGroup)) {
-      deps.log("该面与当前组无共边，未加入", "error");
-      return;
-    }
-
-    if (currentGroup !== null) assignFaceToGroup(faceId, null);
-    assignFaceToGroup(faceId, targetGroup);
-    deps.faceColorService.updateFaceColorById(faceId);
-    const affectedGroups = new Set<number>([targetGroup]);
-    if (currentGroup !== null) affectedGroups.add(currentGroup);
-    rebuildGroupTrees(affectedGroups);
-    deps.log(`已加入组${targetGroup}`, "success");
-    const groups = new Set<number>([targetGroup]);
-    if (currentGroup !== null) groups.add(currentGroup);
-    appEventBus.emit("seamsRebuildGroups", groups);
-    appEventBus.emit("group2dFaceAdded", { groupId: targetGroup, faceId });
-    if (currentGroup !== null) {
-      appEventBus.emit("group2dFaceRemoved", { groupId: currentGroup, faceId });
-    }
-    notifyGroupChange();
-  }
-
-  function setEditGroup(groupId: number | null, currentEdit: number | null, previewGroupId: number) {
-    if (currentEdit !== null && groupId === currentEdit) return { editGroupId: currentEdit, previewGroupId };
-    setEditGroupId(groupId);
-    deps.refreshGroupRefs();
-    if (groupId === null) {
-      deps.log("已退出展开组编辑模式");
-      deps.stopGroupBreath();
-      return { editGroupId: null, previewGroupId };
-    }
-    if (!groupFaces().has(groupId)) {
-      groupFaces().set(groupId, new Set<number>());
-    }
-    setPreviewGroupId(groupId);
-    deps.refreshGroupRefs();
-    deps.log(`展开组 ${groupId} 编辑模式：左键加入，右键移出`, "info");
-    deps.startGroupBreath(groupId);
-    notifyGroupChange();
-    return { editGroupId: groupId, previewGroupId: groupId };
-  }
-
-  function deleteGroup(groupId: number, editGroupId: number | null) {
-    if (groupFaces().size <= 1) return { editGroupId, previewGroupId: getPreviewGroupId() };
-    const ids = Array.from(groupFaces().keys());
-    if (!ids.includes(groupId)) return { editGroupId, previewGroupId: getPreviewGroupId() };
-    deleteGroupData(groupId, faceAdjacency(), (gid) => {
-      deps.refreshGroupRefs();
-      setPreviewGroupId(gid);
-      if (editGroupId !== null) {
-        setEditGroupId(gid);
+    if (size <= 2 || canRemoveFaceData(groupId, faceId, getFaceAdjacency())) {
+      if (assignFaceToGroup(faceId, null)) {
+        rebuildGroupTreeData(groupId, getFaceAdjacency());
+        appEventBus.emit("groupFaceRemoved", { groupId: groupId, faceId });
+        log(`已从组 ${getGroupIdsData().indexOf(groupId) + 1} 移除`, "success");
+          return true;
       }
-    });
-    deps.refreshGroupRefs();
-    deps.repaintAllFaces();
-    appEventBus.emit("seamsRebuildFull", undefined);
-    deps.log(`已删除展开组 ${groupId}`, "success");
-    notifyGroupChange();
-    return { editGroupId: getEditGroupId(), previewGroupId: getPreviewGroupId() };
+      else{
+        log(`移除失败`, "error");
+        return false;
+      }
+    } else {
+      log("移除会导致展开组不连通，已取消", "error");
+      return false;
+    }
   }
 
-  function applyImportedGroups(groups: PPCFile["groups"]) {
+  function addFace(faceId: number, groupId: number | null): boolean {
+    // console.log('[GroupController] addFace called with faceId:', faceId, 'groupId:', groupId, 'getFaceAdjacency', getFaceAdjacency);
+    if (groupId === null) return false;
+    const currentGroup = getFaceGroupMapData().get(faceId) ?? null;
+    if (currentGroup === groupId) return false;
+    const targetSet = getGroupFacesData(groupId) ?? new Set<number>();
+
+    if (currentGroup !== null && !canRemoveFaceData(currentGroup, faceId, getFaceAdjacency())) {
+      log("该面所在的组移出后会断开，未加入当前组", "error");
+      return false;
+    }
+
+    if (targetSet.size > 0 && !shareEdgeWithGroupData(faceId, groupId, getFaceAdjacency())) {
+      log("该面与当前组无共边，未加入当前组", "error");
+      return false;
+    }
+
+    if (!assignFaceToGroup(faceId, groupId)) return false;
+    rebuildGroupTreeData(groupId, getFaceAdjacency());
+    if (currentGroup) rebuildGroupTreeData(currentGroup, getFaceAdjacency());
+
+    log(`已加入组 ${getGroupIdsData().indexOf(groupId) + 1}`, "success");
+    appEventBus.emit("groupFaceAdded", { groupId: groupId, faceId });
+    if (currentGroup !== null) {
+      appEventBus.emit("groupFaceRemoved", { groupId: currentGroup, faceId });
+    }
+    return true;
+  }
+
+  function deleteGroup(groupId: number) {
+    const deletedGroupFaces = getGroupFacesData(groupId);
+    const ids = getGroupIdsData();
+    const indexOfGroup = ids.indexOf(groupId);
+    if (!ids.includes(groupId)) {
+      console.error(`展开组 ${groupId} 不存在，删除取消`);
+      return;
+    }
+    if (ids.length <= 1) {
+      log("至少保留一个展开组，删除取消", "error");
+      return;
+    }
+    const nextPreviewId = indexOfGroup === ids.length - 1 ? ids[indexOfGroup - 1] : ids[indexOfGroup + 1];
+    if (deleteGroupData(groupId)) {
+      previewGroupId = nextPreviewId;
+      appEventBus.emit("groupRemoved", { groupId: groupId, faces: deletedGroupFaces ?? new Set<number>() });
+      log(`已删除展开组 ${indexOfGroup + 1}`, "success");
+    }
+  }
+
+  function applyImportedGroups(groups: PPCFile["groups"], groupColorCursor?: number) {
+    console.log("[groupController] applyImportedGroups called with groups:", groups, "groupColorCursor:", groupColorCursor);
     if (!groups || !groups.length) return;
-    applyImportedGroupsData(groups as NonNullable<PPCFile["groups"]>, faceAdjacency());
-    deps.refreshGroupRefs();
-    groupFaces().forEach((_, gid) => rebuildGroupTree(gid));
-    deps.refreshGroupRefs();
-    const pid = Math.min(...Array.from(groupFaces().keys()));
-    setPreviewGroupId(pid);
-    deps.refreshGroupRefs();
-    deps.repaintAllFaces();
-    notifyGroupChange();
+    applyImportedGroupsData(groups as NonNullable<PPCFile["groups"]>, getFaceAdjacency());
+    setGroupColorCursor(groupColorCursor ?? 0);
+    const groupIds = getGroupIdsData();
+    setPreviewGroupId(groupIds[0]);
   }
 
-  function createGroup(currentEditGroupId: number | null): { groupId: number; previewGroupId: number; editGroupId: number | null } {
-    const id = nextGroupId();
-    ensureGroup(id);
-    setPreviewGroupId(id);
-    const nextEdit = currentEditGroupId !== null ? id : null;
-    setEditGroupId(nextEdit);
-    deps.refreshGroupRefs();
-    notifyGroupChange();
-    deps.log(`已创建展开组 ${id}`, "success");
-    return { groupId: id, previewGroupId: id, editGroupId: nextEdit };
+  function addGroup() {
+    const newGroupId = addGroupData();
+    if (newGroupId) {
+      previewGroupId = newGroupId;
+      appEventBus.emit("groupAdded", newGroupId);
+      log(`已创建展开组 ${getGroupsCountData()}`, "success");
+      appEventBus.emit("groupCurrentChanged", previewGroupId);
+    }
   }
 
-  return { applyGroupColor, handleRemoveFace, handleAddFace, setEditGroup, deleteGroup, applyImportedGroups, createGroup };
+  function getPreviewGroupId() {
+    return previewGroupId;
+  }
+
+  function setPreviewGroupId(groupId: number) {
+    if (previewGroupId === groupId) return;
+    previewGroupId = groupId;
+    appEventBus.emit("groupCurrentChanged", previewGroupId);
+  }
+
+  return {
+    getGroupsCount: getGroupsCountData,
+    getGroupColor: getGroupColorData,
+    getGroupIds: getGroupIdsData,
+    getGroupFaces: getGroupFacesData,
+    getFaceGroupMap: getFaceGroupMapData,
+    getGroupTreeParent: getGroupTreeParentData,
+    setGroupColor,
+    removeFace,
+    addFace,
+    deleteGroup,
+    applyImportedGroups,
+    addGroup,
+    getPreviewGroupId,
+    setPreviewGroupId };
 }

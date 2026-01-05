@@ -2,7 +2,8 @@
 import { BufferGeometry, Float32BufferAttribute, Group, Mesh } from "three";
 import { collectGeometry, filterLargestComponent } from "./geometry";
 import { getLastFileName } from "./model";
-import { getGroupColorCursor, getGroupFaces, getGroupColor } from "./groups";
+import { getGroupIds, getGroupColorCursor, getGroupFaces, getGroupColor } from "./groups";
+import { getSettings } from "./settings";
 
 export type PPCFile = {
   version: string;
@@ -46,7 +47,7 @@ async function computeChecksum(payload: unknown): Promise<string> {
   return hash.toString(16);
 }
 
-export async function build3dppcData(object: Mesh | Group): Promise<PPCFile> {
+export async function build3dppcData(object: Group): Promise<PPCFile> {
   const collected = collectGeometry(object);
   const filtered = filterLargestComponent(collected);
   const exportVertices = filtered.vertices;
@@ -59,14 +60,17 @@ export async function build3dppcData(object: Mesh | Group): Promise<PPCFile> {
   });
 
   const groupsData: NonNullable<PPCFile["groups"]> = [];
-  getGroupFaces().forEach((faces, groupId) => {
-    const facesSet = faces ?? new Set<number>();
+  const groupIds = getGroupIds();
+  groupIds.forEach((groupId) => {
+    const faces = getGroupFaces(groupId);
+    const color = getGroupColor(groupId);
+    if (!faces || !color) return;
     const filteredFaces: number[] = [];
-    facesSet.forEach((faceId) => {
+    faces.forEach((faceId) => {
       const mapped = mapping[faceId];
       if (mapped !== undefined && mapped >= 0) filteredFaces.push(mapped);
     });
-    const colorHex = `#${getGroupColor(groupId).getHexString()}`;
+    const colorHex = `#${color.getHexString()}`;
     groupsData.push({
       id: groupId,
       color: colorHex,
@@ -91,7 +95,9 @@ export async function build3dppcData(object: Mesh | Group): Promise<PPCFile> {
     triangles: exportTriangles,
     groupColorCursor: getGroupColorCursor(),
     groups: groupsData,
-    annotations: {},
+    annotations: {
+      settings: getSettings(),
+    },
   };
 }
 
@@ -147,5 +153,5 @@ export async function load3dppc(url: string, frontMaterial: Mesh["material"]) {
       ? json.groupColorCursor
       : undefined;
 
-  return { object: group, groups: json.groups, colorCursor };
+  return { object: group, groups: json.groups, colorCursor, annotations: json.annotations };
 }
