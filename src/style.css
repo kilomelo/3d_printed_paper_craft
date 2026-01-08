@@ -370,7 +370,7 @@ body {
 
 .settings-modal {
   width: 500px;
-  height: 450px;
+  height: 600px;
   background: #0b1020;
   border: 1px solid var(--border);
   box-shadow: var(--shadow);

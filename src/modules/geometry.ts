@@ -38,7 +38,7 @@ export class AngleIndex {
   }
 
   private computeAngle(edgeId: number): number {
-    const fallbackAngle = 180;
+    const fallbackAngle = Math.PI;
     if (!this.geometryIndex) return fallbackAngle;
     const edges = this.geometryIndex.getEdgesArray();
     const edge = edges[edgeId];
@@ -76,24 +76,34 @@ export class AngleIndex {
     }
     const normalAngle = Math.acos(cos);
     const faceAngle = Math.PI - normalAngle;
-    const sign = sin >= 0 ? 1 : -1;
-    const angle = faceAngle * sign;
+    const angle = sin > 0 ? faceAngle : 2 * Math.PI - faceAngle;
+
     this.updateVertexMinAngles(edge.vertices, angle);
     return angle;
   }
 
   private updateVertexMinAngles(vertexKeys: [string, string], angleRad: number) {
     const mag = Math.abs(angleRad);
-    vertexKeys.forEach((vk) => {
+    for (const vk of vertexKeys) {
       const prev = this.vertexMinAngle.get(vk);
-      if (prev === undefined || mag < prev) {
-        this.vertexMinAngle.set(vk, mag);
-      }
-    });
+      const next = prev === undefined ? mag : Math.min(prev, mag);
+      this.vertexMinAngle.set(vk, next);
+    }
   }
 
   getVertexMinAngle(key: string): number | undefined {
     return this.vertexMinAngle.get(key);
+  }
+
+  // 预计算指定顶点关联边的二面角，确保最小角度已就绪
+  precomputeVertexMinAngle(vertexKey: string) {
+    if (!this.geometryIndex) return;
+    const edges = this.geometryIndex.getEdgesArray();
+    edges.forEach((edge, idx) => {
+      if (edge.vertices[0] === vertexKey || edge.vertices[1] === vertexKey) {
+        this.getAngle(idx);
+      }
+    });
   }
 
   private applyWorld(src: Vector3, mesh: Mesh, out: Vector3) {

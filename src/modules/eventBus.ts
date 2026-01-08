@@ -40,6 +40,7 @@ export type AppEvents = {
   groupFaceAdded: { groupId: number; faceId: number };
   groupFaceRemoved: { groupId: number; faceId: number };
   workerBusyChange: boolean;
+  settingsChanged: Partial<import("./settings.js").Settings>;
 };
 
 export const appEventBus = createEventBus<AppEvents>();

@@ -22,7 +22,7 @@ import {
   buildMeshInWorker,
   onWorkerBusyChange,
   isWorkerBusy,
-} from "./modules/replicadWorkerClient";
+} from "./modules/replicad/replicadWorkerClient";
 
 const VERSION = packageJson.version ?? "0.0.0.0";
 const previewMeshCache = new Map<number, Mesh>();
@@ -115,7 +115,7 @@ app.innerHTML = `
         <div class="setting-row">
           <div class="setting-label-row">
             <label for="setting-layer-height" class="setting-label">打印层高</label>
-            <span class="setting-desc">实际打印时的层高设置，单位mm，最大${limits.layerHeight.max}，默认${defaultSettings.layerHeight}</span>
+            <span class="setting-desc">实际打印时的层高设置，最大${limits.layerHeight.max}，默认${defaultSettings.layerHeight}，单位mm</span>
           </div>
           <div class="setting-field">
             <input id="setting-layer-height" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
@@ -148,6 +148,26 @@ app.innerHTML = `
               <button id="setting-body-layers-inc" class="btn ghost settings-inline-btn">+</button>
             </div>
             <button id="setting-body-layers-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-label-row">
+            <label for="setting-ear-width" class="setting-label">拼接边耳朵宽度</label>
+            <span class="setting-desc">用于拼接边粘接的耳朵宽度，${limits.earWidth.min}-${limits.earWidth.max}，默认${defaultSettings.earWidth}，单位mm</span>
+          </div>
+          <div class="setting-field">
+            <input id="setting-ear-width" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+            <button id="setting-ear-width-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-label-row">
+            <label for="setting-ear-thickness" class="setting-label">拼接边耳朵厚度</label>
+            <span class="setting-desc">用于拼接边粘接的耳朵厚度，${limits.earThickness.min}-${limits.earThickness.max}，默认${defaultSettings.earThickness}，单位mm</span>
+          </div>
+          <div class="setting-field">
+            <input id="setting-ear-thickness" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+            <button id="setting-ear-thickness-reset" class="btn ghost settings-inline-btn">恢复默认</button>
           </div>
         </div>
       </div>
@@ -196,6 +216,10 @@ const settingBodyLayersDecBtn = document.querySelector<HTMLButtonElement>("#sett
 const settingBodyLayersIncBtn = document.querySelector<HTMLButtonElement>("#setting-body-layers-inc");
 const settingBodyLayersValue = document.querySelector<HTMLSpanElement>("#setting-body-layers-value");
 const settingBodyLayersResetBtn = document.querySelector<HTMLButtonElement>("#setting-body-layers-reset");
+const settingEarWidthInput = document.querySelector<HTMLInputElement>("#setting-ear-width");
+const settingEarWidthResetBtn = document.querySelector<HTMLButtonElement>("#setting-ear-width-reset");
+const settingEarThicknessInput = document.querySelector<HTMLInputElement>("#setting-ear-thickness");
+const settingEarThicknessResetBtn = document.querySelector<HTMLButtonElement>("#setting-ear-thickness-reset");
 const groupPreviewPanel = groupPreview?.closest(".preview-panel") as HTMLDivElement | null;
 const groupFacesCountLabel = document.querySelector<HTMLSpanElement>("#group-faces-count");
 const groupColorBtn = document.querySelector<HTMLButtonElement>("#group-color-btn");
@@ -240,6 +264,8 @@ if (
   !settingsConfirmBtn ||
   !settingScaleInput ||
   !settingScaleResetBtn ||
+  !settingEarWidthInput ||
+  !settingEarWidthResetBtn ||
   !settingLayerHeightInput ||
   !settingLayerHeightResetBtn ||
   !settingConnectionLayersDecBtn ||
@@ -250,6 +276,8 @@ if (
   !settingBodyLayersIncBtn ||
   !settingBodyLayersValue ||
   !settingBodyLayersResetBtn ||
+  !settingEarThicknessInput ||
+  !settingEarThicknessResetBtn ||
   !settingsOpenBtn
 ) {
   throw new Error("初始化界面失败，缺少必要的元素");
@@ -259,8 +287,14 @@ layoutWorkspace.classList.add("preloaded");
 
 let workspaceState: WorkspaceState = "normal" as WorkspaceState;
 const setWorkspaceState = (state: WorkspaceState) => {
+  if (workspaceState === state) return;
   const previousState = workspaceState;
   workspaceState = state;
+  if (previousState === "editingGroup") log("已退出展开组编辑模式", "info");      
+  if (state === "editingGroup") log("已进入展开组编辑模式", "info");
+  if (previousState === "previewGroupModel") log("已退出组模型预览", "info");
+  if (state === "previewGroupModel") log("展开组预览模型已加载", "info");
+
   appEventBus.emit("workspaceStateChanged", {previous: previousState, current: workspaceState});
 }
 // 确保文件选择框只允许支持的模型/3dppc 后缀
@@ -276,6 +310,10 @@ createSettingsUI(
     confirmBtn: settingsConfirmBtn,
     scaleInput: settingScaleInput,
     scaleResetBtn: settingScaleResetBtn,
+    earWidthInput: settingEarWidthInput,
+    earWidthResetBtn: settingEarWidthResetBtn,
+    earThicknessInput: settingEarThicknessInput,
+    earThicknessResetBtn: settingEarThicknessResetBtn,
     layerHeightInput: settingLayerHeightInput,
     layerHeightResetBtn: settingLayerHeightResetBtn,
     connectionLayersDecBtn: settingConnectionLayersDecBtn,
@@ -407,6 +445,7 @@ const updateMenuState = () => {
   groupPreviewPanel.classList.toggle("hidden", isPreview);
   settingsOpenBtn.classList.toggle("hidden", isPreview);
   editorPreviewEl.classList.toggle("single-col", isPreview);
+  requestAnimationFrame(() => renderer3d.resizeRenderer3D());
 };
 
 const buildGroupUIState = () => {
@@ -482,6 +521,7 @@ appEventBus.on("groupFaceRemoved", ({ groupId }) => previewMeshCache.delete(grou
 appEventBus.on("workspaceStateChanged", ({previous, current}) => groupUI.render(buildGroupUIState()));
 appEventBus.on("workspaceStateChanged", ({previous, current}) => updateGroupEditToggle());
 appEventBus.on("workspaceStateChanged", ({previous, current}) => updateMenuState());
+appEventBus.on("settingsChanged", (changed) => {previewMeshCache.clear();});
 
 groupUI.render(buildGroupUIState());
 updateGroupEditToggle();
@@ -496,6 +536,9 @@ onWorkerBusyChange((busy) => {
 
 groupAddBtn.addEventListener("click", () => {
   groupController.addGroup();
+  if (workspaceState !== "editingGroup") {
+    setWorkspaceState("editingGroup" as WorkspaceState);
+  }
 });
 groupEditToggle.addEventListener("click", () => {
   const currentGroupId = groupController.getPreviewGroupId();
@@ -631,7 +674,6 @@ previewGroupModelBtn.addEventListener("click", async () => {
       renderer3d.loadPreviewModel(mesh);
     }
     setWorkspaceState("previewGroupModel" as WorkspaceState);
-    log("展开组模型预览已加载", "success");
   } catch (error) {
     console.error("Replicad mesh 生成失败", error);
     log("Replicad mesh 生成失败，请检查控制台日志。", "error");
@@ -641,5 +683,4 @@ previewGroupModelBtn.addEventListener("click", async () => {
 });
 exitPreviewBtn.addEventListener("click", () => {
   setWorkspaceState("normal" as WorkspaceState);
-  log("已退出展开组模型预览", "info");
 });

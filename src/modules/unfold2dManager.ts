@@ -16,7 +16,7 @@ import { AngleIndex } from "./geometry";
 import { appEventBus } from "./eventBus";
 import type { Renderer2DContext } from "./renderer2d";
 import { createUnfoldEdgeMaterial, createUnfoldFaceMaterial } from "./materials";
-import type { Triangle2D, TriangleWithEdgeInfo as TriangleData } from "../types/triangles";
+import type { Point2D, TriangleWithEdgeInfo as TriangleData } from "../types/triangles";
 import { getSettings } from "./settings";
 
 // 记录“3D → 2D”变换矩阵，后续将按组树关系进行累乘展开。
@@ -124,7 +124,6 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     }
     const sharedEdgeId = findSharedEdge(parentId, childId);
     if (sharedEdgeId === null) {
-      console.warn("[unfold2d] no shared edge", { parentId, childId });
       return;
     }
     const edgesArray = getEdgesArray();
@@ -269,6 +268,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
   };
 
   const rebuildGroup2D = (groupId: number) => {
+    console.log(`[Unfold2DManager] rebuildGroup2D called for group ${groupId}`);
     const faces = getGroupFaces(groupId);
     clearScene();
     if (!faces || faces.size === 0) return;
@@ -337,6 +337,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     refreshVertexWorldPositions();
     const faceToEdges = getFaceToEdges();
     const faceIndexMap = getFaceIndexMap();
+    const vertexKeyToPos = getVertexKeyToPos();
     const tris: Array<TriangleData> = [];
     const { scale } = getSettings();
     const makeVertexKey = (pos: BufferAttribute | InterleavedBufferAttribute, idx: number) =>
@@ -346,22 +347,113 @@ export function createUnfold2dManager(opts: ManagerDeps) {
       if (!tri) return;
       const [a, b, c] = tri;
       const edgeIds = faceToEdges.get(fid) ?? [];
-      const edges = edgeIds.map((eid) => {
+      const keyTo2D = new Map<string, Point2D>();
+      const mapping = faceIndexMap.get(fid);
+      if (mapping) {
+        const geom = mapping.mesh.geometry;
+        const pos = geom.getAttribute("position");
+        if (pos) {
+          const [ia, ib, ic] = getFaceVertexIndices(geom, mapping.localFace);
+          keyTo2D.set(makeVertexKey(pos, ia), [a.x, a.y]);
+          keyTo2D.set(makeVertexKey(pos, ib), [b.x, b.y]);
+          keyTo2D.set(makeVertexKey(pos, ic), [c.x, c.y]);
+        }
+      }
+      const edges = edgeIds.map((eid, edgeIdx) => {
         const edgeRec = getEdgesArray()[eid];
         const isSeam = edgeRec?.faces && edgeRec.faces.size === 2 && sharedEdgeIsSeam([...edgeRec.faces][0], [...edgeRec.faces][1]);
         const isOuter = isSeam || (edgeRec?.faces.size ?? 0) === 1;
+        let seamIncenter: Point2D | undefined;
+        if (isSeam && edgeRec?.faces) {
+          const [k1, k2] = edgeRec.vertices;
+          const p1 = keyTo2D.get(k1);
+          const p2 = keyTo2D.get(k2);
+          const v1 = vertexKeyToPos.get(k1);
+          const v2 = vertexKeyToPos.get(k2);
+          const otherFace = Array.from(edgeRec.faces).find((f) => f !== fid);
+          if (p1 && p2 && v1 && v2 && otherFace !== undefined) {
+            const otherMapping = faceIndexMap.get(otherFace);
+            if (otherMapping) {
+              const geom = otherMapping.mesh.geometry;
+              const posAttr = geom.getAttribute("position");
+              if (posAttr) {
+                const [ia, ib, ic] = getFaceVertexIndices(geom, otherMapping.localFace);
+                const keyForOther = (idx: number) => `${posAttr.getX(idx)},${posAttr.getY(idx)},${posAttr.getZ(idx)}`;
+                const keys = [keyForOther(ia), keyForOther(ib), keyForOther(ic)];
+                const thirdKey = keys.find((k) => k !== k1 && k !== k2);
+                if (thirdKey) {
+                  const v3 = vertexKeyToPos.get(thirdKey);
+                  if (v3) {
+                    const d1 = v1.distanceTo(v3);
+                    const d2 = v2.distanceTo(v3);
+                    const base2d = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+                    if (base2d > 1e-8) {
+                      const ex: Point2D = [(p2[0] - p1[0]) / base2d, (p2[1] - p1[1]) / base2d];
+                      const ey: Point2D = [-ex[1], ex[0]];
+                      const x = (d1 * d1 - d2 * d2 + base2d * base2d) / (2 * base2d);
+                      const ySq = d1 * d1 - x * x;
+                      if (ySq >= 0) {
+                        const y = Math.sqrt(ySq);
+                        const cand = (sgn: number): Point2D => [
+                          p1[0] + ex[0] * x + ey[0] * y * sgn,
+                          p1[1] + ex[1] * x + ey[1] * y * sgn,
+                        ];
+                        const c1 = cand(1);
+                        const c2 = cand(-1);
+                        const triThird =
+                          edgeIdx === 0 ? c :
+                          edgeIdx === 1 ? a :
+                          b;
+                        const edgeVec: Point2D = [p2[0] - p1[0], p2[1] - p1[1]];
+                        const side = (pt: Point2D) =>
+                          Math.sign(edgeVec[0] * (pt[1] - p1[1]) - edgeVec[1] * (pt[0] - p1[0]));
+                        const triSide = side([triThird.x, triThird.y]);
+                        const s1 = side(c1);
+                        const s2 = side(c2);
+                        let flatV3 = c1;
+                        if (triSide !== 0) {
+                          if (s1 === -triSide) flatV3 = c1;
+                          else if (s2 === -triSide) flatV3 = c2;
+                          else if (s1 === 0) flatV3 = c2;
+                          else flatV3 = c1;
+                        } else {
+                          flatV3 = s1 !== 0 ? c1 : c2;
+                        }
+                        const lenA = Math.hypot(p2[0] - flatV3[0], p2[1] - flatV3[1]);
+                        const lenB = Math.hypot(p1[0] - flatV3[0], p1[1] - flatV3[1]);
+                        const lenC = base2d;
+                        const per = lenA + lenB + lenC;
+                        if (per > 1e-8) {
+                          seamIncenter = [
+                            scale * (lenA * p1[0] + lenB * p2[0] + lenC * flatV3[0]) / per,
+                            scale * (lenA * p1[1] + lenB * p2[1] + lenC * flatV3[1]) / per,
+                          ];
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
         return {
           isOuter,
           angle: angleIndex.getAngle(eid),
+          isSeam,
+          incenter: seamIncenter,
         };
       });
-      const mapping = faceIndexMap.get(fid);
       const pointAngleData: TriangleData["pointAngleData"] = [];
       if (mapping) {
         const geom = mapping.mesh.geometry;
         const pos = geom.getAttribute("position");
         if (pos) {
           const [ia, ib, ic] = getFaceVertexIndices(geom, mapping.localFace);
+          // 预计算与该三角顶点相关的最小二面角
+          angleIndex.precomputeVertexMinAngle(makeVertexKey(pos, ia));
+          angleIndex.precomputeVertexMinAngle(makeVertexKey(pos, ib));
+          angleIndex.precomputeVertexMinAngle(makeVertexKey(pos, ic));
           const keys = [
             { key: makeVertexKey(pos, ia), pos: a },
             { key: makeVertexKey(pos, ib), pos: b },
@@ -382,7 +474,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
           [c.x * scale, c.y * scale],
         ],
         faceId: fid,
-        edges,
+        edges: edges,
         pointAngleData,
       });
     });
@@ -407,7 +499,8 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     modelLoaded = true;
     const groups = getGroupIds();
     if (groups.length === 0) return;
-    groups.forEach((gid) => rebuildGroup2D(gid));
+    const gid = getPreviewGroupId();
+    rebuildGroup2D(gid);
   });
   appEventBus.on("groupAdded", (groupId: number) => {
     clearScene();

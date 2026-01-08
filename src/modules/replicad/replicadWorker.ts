@@ -2,9 +2,9 @@ import {
   buildGroupMeshFromTriangles,
   buildGroupStepFromTriangles,
   buildGroupStlFromTriangles,
-} from "../modules/replicadModeling";
-import type { TriangleWithEdgeInfo } from "../types/triangles";
-import { applySettings, type Settings } from "../modules/settings";
+} from "./replicadModeling";
+import type { TriangleWithEdgeInfo } from "../../types/triangles";
+import { applySettings, type Settings } from "../settings";
 
 type WorkerRequest =
   | { id: number; type: "step"; triangles: TriangleWithEdgeInfo[]; settings: Settings }

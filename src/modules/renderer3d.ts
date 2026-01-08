@@ -683,6 +683,7 @@ export function createRenderer3D(
     toggleFaces,
     applyLoadedModel,
     getTriCount,
+    resizeRenderer3D,
     dispose: () => {
       interactionController?.dispose();
       el.removeEventListener("pointerdown", onCanvasPointerDown);

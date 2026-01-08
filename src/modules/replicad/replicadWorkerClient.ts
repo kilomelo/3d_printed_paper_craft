@@ -1,5 +1,5 @@
-import { TriangleWithEdgeInfo } from "../types/triangles";
-import { getSettings } from "./settings";
+import { TriangleWithEdgeInfo } from "../../types/triangles";
+import { getSettings } from "../settings";
 import {
   BufferGeometry,
   Float32BufferAttribute,
@@ -48,7 +48,7 @@ const setBusy = (next: boolean) => {
 
 const ensureWorker = () => {
   if (worker) return worker;
-  worker = new Worker(new URL("../workers/replicadWorker.ts", import.meta.url), { type: "module" });
+  worker = new Worker(new URL("./replicadWorker.ts", import.meta.url), { type: "module" });
   worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
     const msg = event.data;
     const entry = pending.get(msg.id);

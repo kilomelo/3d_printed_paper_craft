@@ -1,5 +1,5 @@
 // 设置面板 UI：负责设置窗口的打开/关闭、输入校验、草稿值管理以及日志输出。
-import { getSettings, applySettings, getDefaultSettings } from "./settings";
+import { getSettings, applySettings, getDefaultSettings, SETTINGS_LIMITS } from "./settings";
 
 type SettingsUIRefs = {
   overlay: HTMLDivElement;
@@ -8,6 +8,10 @@ type SettingsUIRefs = {
   confirmBtn: HTMLButtonElement;
   scaleInput: HTMLInputElement;
   scaleResetBtn: HTMLButtonElement;
+  earWidthInput: HTMLInputElement;
+  earWidthResetBtn: HTMLButtonElement;
+  earThicknessInput: HTMLInputElement;
+  earThicknessResetBtn: HTMLButtonElement;
   layerHeightInput: HTMLInputElement;
   layerHeightResetBtn: HTMLButtonElement;
   connectionLayersDecBtn: HTMLButtonElement;
@@ -46,10 +50,19 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
   };
 
   const validators = {
-    scale: (val: number) => !Number.isNaN(val) && val > 0,
-    layerHeight: (val: number) => !Number.isNaN(val) && val > 0 && val <= 0.5,
-    connectionLayers: (val: number) => Number.isInteger(val) && val >= 1 && val <= 5,
-    bodyLayers: (val: number) => Number.isInteger(val) && val >= 2 && val <= 10,
+    scale: (val: number) => !Number.isNaN(val) && val > SETTINGS_LIMITS.scale.min,
+    earThickness: (val: number) =>
+      !Number.isNaN(val) && val >= SETTINGS_LIMITS.earThickness.min && val <= SETTINGS_LIMITS.earThickness.max,
+    layerHeight: (val: number) =>
+      !Number.isNaN(val) && val > SETTINGS_LIMITS.layerHeight.min && val <= SETTINGS_LIMITS.layerHeight.max,
+    connectionLayers: (val: number) =>
+      Number.isInteger(val) &&
+      val >= SETTINGS_LIMITS.connectionLayers.min &&
+      val <= SETTINGS_LIMITS.connectionLayers.max,
+    bodyLayers: (val: number) =>
+      Number.isInteger(val) && val >= SETTINGS_LIMITS.bodyLayers.min && val <= SETTINGS_LIMITS.bodyLayers.max,
+    earWidth: (val: number) =>
+      !Number.isNaN(val) && val >= SETTINGS_LIMITS.earWidth.min && val < SETTINGS_LIMITS.earWidth.max,
   };
 
   const blockKeysWhenSettingsOpen = (e: KeyboardEvent) => {
@@ -67,10 +80,15 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     settingsSnapshot = getSettings();
     settingsDraft = { ...settingsSnapshot };
     refs.scaleInput.value = String(settingsDraft.scale);
+    refs.earThicknessInput.value = String(settingsDraft.earThickness);
     refs.layerHeightInput.value = String(settingsDraft.layerHeight);
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
     refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
-    [refs.scaleInput, refs.layerHeightInput].forEach((el) => updateInputColor(el, true));
+    refs.earWidthInput.value = String(settingsDraft.earWidth);
+    refs.earThicknessInput.value = String(settingsDraft.earThickness);
+    [refs.scaleInput, refs.layerHeightInput, refs.earWidthInput, refs.earThicknessInput].forEach((el) =>
+      updateInputColor(el, true),
+    );
     refs.overlay.classList.remove("hidden");
   });
 
@@ -133,14 +151,36 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     validators.layerHeight,
     () => getDefaultSettings().layerHeight,
   );
+  bindNumericInput(
+    refs.earWidthInput,
+    refs.earWidthResetBtn,
+    (raw) => parseFloat(raw),
+    () => settingsDraft.earWidth,
+    (v) => (settingsDraft.earWidth = v),
+    validators.earWidth,
+    () => getDefaultSettings().earWidth,
+  );
+  bindNumericInput(
+    refs.earThicknessInput,
+    refs.earThicknessResetBtn,
+    (raw) => parseFloat(raw),
+    () => settingsDraft.earThickness,
+    (v) => (settingsDraft.earThickness = v),
+    validators.earThickness,
+    () => getDefaultSettings().earThickness,
+  );
 
   const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
   const updateConnectionValue = (val: number) => {
-    settingsDraft.connectionLayers = clamp(val, 1, 5);
+    settingsDraft.connectionLayers = clamp(
+      val,
+      SETTINGS_LIMITS.connectionLayers.min,
+      SETTINGS_LIMITS.connectionLayers.max,
+    );
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
   };
   const updateBodyValue = (val: number) => {
-    settingsDraft.bodyLayers = clamp(val, 2, 10);
+    settingsDraft.bodyLayers = clamp(val, SETTINGS_LIMITS.bodyLayers.min, SETTINGS_LIMITS.bodyLayers.max);
     refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
   };
 
@@ -158,7 +198,11 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.layerHeightInput.value = String(settingsDraft.layerHeight);
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
     refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
-    [refs.scaleInput, refs.layerHeightInput].forEach((el) => updateInputColor(el, true));
+    refs.earWidthInput.value = String(settingsDraft.earWidth);
+    refs.earThicknessInput.value = String(settingsDraft.earThickness);
+    [refs.scaleInput, refs.layerHeightInput, refs.earWidthInput, refs.earThicknessInput].forEach((el) =>
+      updateInputColor(el, true),
+    );
   });
 
   refs.confirmBtn.addEventListener("click", () => {
@@ -170,6 +214,9 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     if (settingsDraft.scale !== settingsSnapshot.scale) {
       changes.push(`设置值 [缩放比例] 已修改为 ${settingsDraft.scale}`);
     }
+    if (settingsDraft.earWidth !== settingsSnapshot.earWidth) {
+      changes.push(`设置值 [拼接边耳朵宽度] 已修改为 ${settingsDraft.earWidth}`);
+    }
     if (settingsDraft.layerHeight !== settingsSnapshot.layerHeight) {
       changes.push(`设置值 [打印层高] 已修改为 ${settingsDraft.layerHeight}`);
     }
@@ -178,6 +225,12 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     }
     if (settingsDraft.bodyLayers !== settingsSnapshot.bodyLayers) {
       changes.push(`设置值 [主体层数] 已修改为 ${settingsDraft.bodyLayers}`);
+    }
+    if (settingsDraft.earWidth !== settingsSnapshot.earWidth) {
+      changes.push(`设置值 [拼接边耳朵宽度] 已修改为 ${settingsDraft.earWidth}`);
+    }
+    if (settingsDraft.earThickness !== settingsSnapshot.earThickness) {
+      changes.push(`设置值 [拼接边耳朵厚度] 已修改为 ${settingsDraft.earThickness}`);
     }
     applySettings(settingsDraft);
     closeSettings();
