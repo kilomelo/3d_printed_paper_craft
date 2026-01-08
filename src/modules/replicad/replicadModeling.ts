@@ -435,68 +435,79 @@ const buildSolidFromTrianglesWithAngles = async (
   }
   onProgress?.(2);
   const progressPerTriangle = 90 / trianglesWithAngles.length;
-  const cutToolMarginMin = earWidth * 1.5;
+  const earCutToolMarginMin = earWidth * 1.5;
   trianglesWithAngles.forEach((triData, i) => {
-    // 第二步：生成耳朵
     console.log('[ReplicadModeling] processing triangle for ears', triData);
+    const isDefined = <T,>(v: T | undefined | null): v is T => v != null;
     const [p0, p1, p2] = triData.tri;
+    // 基准顺序：AC, CB, BA 对应 [p0->p2, p2->p1, p1->p0]
+    const planes = [makeVerticalPlaneNormalAB(p0, p2), makeVerticalPlaneNormalAB(p2, p1), makeVerticalPlaneNormalAB(p1, p0)];
+    if (!planes.every(isDefined)) {
+      console.warn('[ReplicadModeling] failed to create cutting planes for triangle, skip this triangle', triData);
+      return;
+    }
+    const dists  = [Math.hypot(p2[0] - p0[0], p2[1] - p0[1]), Math.hypot(p2[0] - p1[0], p2[1] - p1[1]), Math.hypot(p1[0] - p0[0], p1[1] - p0[1])];
+    const earExtendMargin = Math.max(...dists);
+    const cutToolMargin = Math.max(earCutToolMarginMin, earExtendMargin);
+    const earCutToolSketches = [
+      sketchFromContourPoints(
+        [[0,-cutToolMargin], [0,cutToolMargin], [cutToolMargin,cutToolMargin], [cutToolMargin,-cutToolMargin]],
+        planes[0].clone(),
+        -cutToolMargin),
+      sketchFromContourPoints(
+        [[0,-cutToolMargin], [0,cutToolMargin], [cutToolMargin,cutToolMargin], [cutToolMargin,-cutToolMargin]],
+        planes[1].clone(),
+        -cutToolMargin),
+      sketchFromContourPoints(
+        [[0,-cutToolMargin], [0,cutToolMargin], [cutToolMargin,cutToolMargin], [cutToolMargin,-cutToolMargin]],
+        planes[2].clone(),
+        -cutToolMargin),
+    ];
+    if (!earCutToolSketches.every(isDefined)) {
+      console.warn('[ReplicadModeling] failed to create ear cutting tools for triangle, skip this triangle', triData);
+      return;
+    }
+    const earCutTools = [
+      earCutToolSketches[0].extrude(dists[0] + 2 * cutToolMargin),
+      earCutToolSketches[1].extrude(dists[1] + 2 * cutToolMargin),
+      earCutToolSketches[2].extrude(dists[2] + 2 * cutToolMargin),
+    ];
     triData.edges.forEach((edge, idx) => {
+      const pick = (k: 0 | 1 | 2): 0 | 1 | 2 => ((k - (idx % 3) + 3) % 3) as 0 | 1 | 2;
+      const [pointA, pointB, pointC] = [triData.tri[pick(0)], triData.tri[pick(1)], triData.tri[pick(2)]];
+      // const distanceAC = dists[pick(0)];
+      // const distanceCB = dists[pick(1)];
       if (!edge.incenter) return;
-      const [pointA, pointB, pointC] =
-        idx === 0 ? [p0, p1, p2] :
-        idx === 1 ? [p1, p2, p0] : [p2, p0, p1];
-      const distanceAB = Math.hypot(pointB[0] - pointA[0], pointB[1] - pointA[1]);
-      const distanceAC = Math.hypot(pointC[0] - pointA[0], pointC[1] - pointA[1]);
-      const distanceCB = Math.hypot(pointC[0] - pointB[0], pointC[1] - pointB[1]);
+      // 第二步：生成耳朵
       const distanceAIncenter = Math.hypot(edge.incenter[0] - pointA[0], edge.incenter[1] - pointA[1]);
       const distanceBIncenter = Math.hypot(edge.incenter[0] - pointB[0], edge.incenter[1] - pointB[1]);
-      const cutToolPlaneAC = makeVerticalPlaneNormalAB(pointA, pointC);
-      const cutToolPlaneCB = makeVerticalPlaneNormalAB(pointC, pointB);
-      const cutToolPlaneBA = makeVerticalPlaneNormalAB(pointB, pointA);
-      if (!cutToolPlaneAC || !cutToolPlaneCB || !cutToolPlaneBA) return;
 
-      const earExtendMargin = Math.max(distanceAC, distanceCB);
-      const cutToolMargin = Math.max(cutToolMarginMin, earExtendMargin);
-      // const cutToolAC = makeBoxInPlaneCS(cutToolPlaneAC, [distanceAC + cutToolMargin, -cutToolMargin], [0 - cutToolMargin, cutToolMargin], -cutToolMargin, 0);
-      // const cutToolBC = makeBoxInPlaneCS(cutToolPlaneBC, [distanceBC + cutToolMargin, -cutToolMargin], [0 - cutToolMargin, cutToolMargin], 0, cutToolMargin);
-      const cutToolSketchAC = sketchFromContourPoints(
-        [[0,-cutToolMargin], [0,cutToolMargin], [cutToolMargin,cutToolMargin], [cutToolMargin,-cutToolMargin]],
-        cutToolPlaneAC.clone(),
-        -cutToolMargin);
-      const cutToolSketchCB = sketchFromContourPoints(
-        [[0,-cutToolMargin], [0,cutToolMargin], [cutToolMargin,cutToolMargin], [cutToolMargin,-cutToolMargin]],
-        cutToolPlaneCB.clone(),
-        -cutToolMargin);
-      const cutToolSketchBA = sketchFromContourPoints(
-        [[0,-cutToolMargin], [0,cutToolMargin], [cutToolMargin,cutToolMargin], [cutToolMargin,-cutToolMargin]],
-        cutToolPlaneBA.clone(),
-        -cutToolMargin);
-      // const cutToolAC = makeBoxInPlaneCS(cutToolPlaneAC, [distanceAC + cutToolMargin, -cutToolMargin], [0 - cutToolMargin, cutToolMargin], -cutToolMargin, 0);
-      // const cutToolBC = makeBoxInPlaneCS(cutToolPlaneBC, [distanceBC + cutToolMargin, -cutToolMargin], [0 - cutToolMargin, cutToolMargin], 0, cutToolMargin);
-      if (!cutToolSketchAC || !cutToolSketchCB || !cutToolSketchBA) return;
       const pointA_Incenter_extend: Point2D = [
         edge.incenter[0] + (pointA[0] - edge.incenter[0]) * (earExtendMargin + distanceAIncenter) / distanceAIncenter,
         edge.incenter[1] + (pointA[1] - edge.incenter[1]) * (earExtendMargin + distanceAIncenter) / distanceAIncenter];
       const pointB_Incenter_extend: Point2D = [
         edge.incenter[0] + (pointB[0] - edge.incenter[0]) * (earExtendMargin + distanceBIncenter) / distanceBIncenter,
         edge.incenter[1] + (pointB[1] - edge.incenter[1]) * (earExtendMargin + distanceBIncenter) / distanceBIncenter];
-      const earTrapezoid = trapezoid(pointA, pointB, edge.incenter, earWidth);
-      earTrapezoid[0] = pointA_Incenter_extend;
-      earTrapezoid[1] = pointB_Incenter_extend;
+      // const earTrapezoid = trapezoid(pointA, pointB, edge.incenter, earWidth);
+      const earTrapezoid = [pointA, pointB, edge.incenter];
+
+      // earTrapezoid[0] = pointA_Incenter_extend;
+      // earTrapezoid[1] = pointB_Incenter_extend;
       console.log(`[ReplicadModeling] adding ear for edge`, {pointA, pointB, incenter: edge.incenter, angle: radToDeg(edge.angle / 2)});
       const earSolidSketch = sketchFromContourPoints(earTrapezoid, "XY");
-      // const earSolidExtendSketch = sketchFromContourPoints([[0,0], [-earExtendMargin,0], [-earExtendMargin,earThickness], [0,earThickness]], cutToolPlaneBA.clone(), -earExtendMargin);
-      // if (!earSolidSketch || !earSolidExtendSketch) return;
-      if (!earSolidSketch) return;
-
-      const earSolid = earSolidSketch.extrude(earThickness)
-        // .fuse(earSolidExtendSketch.extrude(distanceAB + 2 * earExtendMargin))
-        .rotate(180 - radToDeg(edge.angle / 2), [pointA[0], pointA[1]], [pointA[0] - pointB[0], pointA[1] - pointB[1], 0]);
-      connectionSolid = connectionSolid.fuse(earSolid.cut(cutToolSketchAC.extrude(distanceAC + 2 * cutToolMargin)).cut(cutToolSketchCB.extrude(distanceCB + 2 * cutToolMargin))).simplify();
-      // connectionSolid = connectionSolid.fuse(earSolid).simplify();
+      if (!earSolidSketch) {
+        console.warn('[ReplicadModeling] failed to create ear sketch for edge, skip this edge', edge);
+        return;
+      }
+      const earSolid = earSolidSketch.extrude(earThickness);//.rotate(180 - radToDeg(edge.angle / 2), [pointA[0], pointA[1], 0], [pointA[0] - pointB[0], pointA[1] - pointB[1], 0]);
+      // connectionSolid = connectionSolid.fuse(earSolid.cut(earCutTools[pick(1)].clone()).cut(earCutTools[pick(2)].clone())).simplify();
+      connectionSolid = connectionSolid.fuse(earSolid).simplify();
     });
 
     // 第三步：生成弯折、拼接坡度刀具
+
+    earCutTools.forEach((tool) => tool.delete());
+    planes.forEach((plane) => plane.delete());
 
     onProgress?.(Math.floor(2 + progressPerTriangle * (i + 1)));
   });
@@ -541,11 +552,11 @@ const buildSolidFromTrianglesWithAngles = async (
   // });
   // 第四步，削平底部
   const margin = earWidth + 1;
-  const tool = makeBox(
-    [outerResult.min[0] - margin, outerResult.min[1] - margin, toolHeight] as Point,
-    [outerResult.max[0] + margin, outerResult.max[1] + margin, 0] as Point
-  );
-  connectionSolid = connectionSolid.intersect(tool) as Shape3D;
+  // const tool = makeBox(
+  //   [outerResult.min[0] - margin, outerResult.min[1] - margin, toolHeight] as Point,
+  //   [outerResult.max[0] + margin, outerResult.max[1] + margin, 0] as Point
+  // );
+  // connectionSolid = connectionSolid.intersect(tool) as Shape3D;
   onProgress?.(100);
   return connectionSolid.simplify().mirror("XY").rotate(180, [0, 0, 0], [0, 1, 0]);
 };
