@@ -88,6 +88,9 @@ app.innerHTML = `
             <button class="overlay-btn color-swatch" id="group-color-btn" title="选择组颜色"></button>
             <span class="overlay-label group-faces-count" id="group-faces-count">面数量 0</span>
             <button class="overlay-btn tab-delete" id="group-delete" title="删除展开组">删除组</button>
+            <div id="group-preview-empty" class="preview-2d-empty hidden">
+              点击【编辑展开组】按钮可进行编辑，左键加入三角面，右键移出三角面
+            </div>
             <input type="color" id="group-color-input" class="color-input" autocomplete="off" />
           </div>
         </div>
@@ -218,6 +221,7 @@ const triCounter = document.querySelector<HTMLDivElement>("#tri-counter");
 const groupTabsEl = document.querySelector<HTMLDivElement>("#group-tabs");
 const groupAddBtn = document.querySelector<HTMLButtonElement>("#group-add");
 const groupPreview = document.querySelector<HTMLDivElement>("#group-preview");
+const groupPreviewEmpty = document.querySelector<HTMLDivElement>("#group-preview-empty");
 const settingsOverlay = document.querySelector<HTMLDivElement>("#settings-overlay");
 const renameOverlay = document.querySelector<HTMLDivElement>("#rename-overlay");
 const renameModal = document.querySelector<HTMLDivElement>("#rename-modal");
@@ -274,6 +278,7 @@ if (
   !groupAddBtn ||
   !groupPreviewPanel ||
   !groupPreview ||
+  !groupPreviewEmpty ||
   !groupFacesCountLabel ||
   !groupColorBtn ||
   !groupColorInput ||
@@ -511,6 +516,8 @@ const updateMenuState = () => {
 const buildGroupUIState = () => {
   const groupCount = groupController.getGroupsCount();
   const previewGroupId = groupController.getPreviewGroupId();
+  const faces = groupController.getGroupFaces(previewGroupId)?.size ?? 0;
+  groupPreviewEmpty.classList.toggle("hidden", faces > 0);
   return {
     groupCount: groupCount,
     groupIds: groupController.getGroupIds(),

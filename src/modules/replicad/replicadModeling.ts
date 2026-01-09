@@ -194,12 +194,12 @@ const buildSolidFromTrianglesWithAngles = async (
     onProgress?.(Math.floor(2 + progressPerTriangle * (i + 1)));
   });
   
-  onProgress?.(60);
-  const progressPerSlope = 49 / slopeTools.length;
+  onProgress?.(40);
+  const progressPerSlope = 59 / slopeTools.length;
   // 第四步：应用刀具
   slopeTools.forEach((tool, idx) => {
     connectionSolid = connectionSolid.cut(tool).simplify();
-    onProgress?.(Math.floor(80 + progressPerSlope * (idx + 1)));
+    onProgress?.(Math.floor(40 + progressPerSlope * (idx + 1)));
   });
   slopeTools.forEach((tool) => tool.delete());
 
@@ -210,8 +210,9 @@ const buildSolidFromTrianglesWithAngles = async (
     [outerResult.max[0] + margin, outerResult.max[1] + margin, 0] as Point
   );
   connectionSolid = connectionSolid.intersect(tool) as Shape3D;
+  connectionSolid = connectionSolid.simplify().mirror("XY").rotate(180, [0, 0, 0], [0, 1, 0])
   onProgress?.(100);
-  return connectionSolid.simplify().mirror("XY").rotate(180, [0, 0, 0], [0, 1, 0]);
+  return connectionSolid;
 };
 
 export async function buildGroupStepFromTriangles(
