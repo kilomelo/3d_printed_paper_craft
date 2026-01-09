@@ -33,9 +33,10 @@ export type AppEvents = {
   workspaceStateChanged: {previous: WorkspaceState, current: WorkspaceState};
   modelLoaded: void;
   modelCleared: void;
-  groupRemoved: { groupId: number; faces: Set<number> };
-  groupAdded: number;
+  groupRemoved: { groupId: number; groupName: string; faces: Set<number> };
+  groupAdded: { groupId: number; groupName: string };
   groupColorChanged: { groupId: number; color: THREE.Color };
+  groupNameChanged: { groupId: number; name: string };
   groupCurrentChanged: number;
   groupFaceAdded: { groupId: number; faceId: number };
   groupFaceRemoved: { groupId: number; faceId: number };

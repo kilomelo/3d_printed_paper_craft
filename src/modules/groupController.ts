@@ -15,6 +15,8 @@ import {
   addGroup as addGroupData,
   getGroupsCount as getGroupsCountData,
   getGroupTreeParent as getGroupTreeParentData,
+  getGroupName as getGroupNameData,
+  setGroupName as setGroupNameData,
   resetGroups,
   setGroupColorCursor,
 } from "./groups";
@@ -39,6 +41,12 @@ export function createGroupController(
     if (setGroupColorData(groupId, color))
     {
       appEventBus.emit("groupColorChanged", { groupId, color });
+    }
+  }
+
+  function setGroupName(groupId: number, name: string) {
+    if (setGroupNameData(groupId, name)) {
+      appEventBus.emit("groupNameChanged", { groupId, name });
     }
   }
 
@@ -98,6 +106,7 @@ export function createGroupController(
     const deletedGroupFaces = getGroupFacesData(groupId);
     const ids = getGroupIdsData();
     const indexOfGroup = ids.indexOf(groupId);
+    const groupName = getGroupNameData(groupId) ?? `展开组 ${groupId + 1}`;
     if (!ids.includes(groupId)) {
       console.error(`展开组 ${groupId} 不存在，删除取消`);
       return;
@@ -109,8 +118,12 @@ export function createGroupController(
     const nextPreviewId = indexOfGroup === ids.length - 1 ? ids[indexOfGroup - 1] : ids[indexOfGroup + 1];
     if (deleteGroupData(groupId)) {
       previewGroupId = nextPreviewId;
-      appEventBus.emit("groupRemoved", { groupId: groupId, faces: deletedGroupFaces ?? new Set<number>() });
-      log(`已删除展开组 ${indexOfGroup + 1}`, "success");
+      appEventBus.emit("groupRemoved", {
+        groupId: groupId,
+        groupName,
+        faces: deletedGroupFaces ?? new Set<number>(),
+      });
+      log(`已删除 ${groupName}`, "success");
     }
   }
 
@@ -125,9 +138,10 @@ export function createGroupController(
   function addGroup() {
     const newGroupId = addGroupData();
     if (newGroupId) {
+      const groupName = getGroupNameData(newGroupId) ?? `展开组 ${newGroupId + 1}`;
       previewGroupId = newGroupId;
-      appEventBus.emit("groupAdded", newGroupId);
-      log(`已创建展开组 ${getGroupsCountData()}`, "success");
+      appEventBus.emit("groupAdded", { groupId: newGroupId, groupName });
+      log(`已创建 ${groupName}`, "success");
       appEventBus.emit("groupCurrentChanged", previewGroupId);
     }
   }
@@ -149,7 +163,9 @@ export function createGroupController(
     getGroupFaces: getGroupFacesData,
     getFaceGroupMap: getFaceGroupMapData,
     getGroupTreeParent: getGroupTreeParentData,
+    getGroupName: getGroupNameData,
     setGroupColor,
+    setGroupName,
     removeFace,
     addFace,
     deleteGroup,

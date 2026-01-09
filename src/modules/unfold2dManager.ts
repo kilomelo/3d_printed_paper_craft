@@ -268,7 +268,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
   };
 
   const rebuildGroup2D = (groupId: number) => {
-    console.log(`[Unfold2DManager] rebuildGroup2D called for group ${groupId}`);
+    // console.log(`[Unfold2DManager] rebuildGroup2D called for group ${groupId}`);
     const faces = getGroupFaces(groupId);
     clearScene();
     if (!faces || faces.size === 0) return;
@@ -327,6 +327,18 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     const zoomY = viewH / (spanY * pad);
     renderer2d.camera.zoom = Math.min(zoomX, zoomY);
     renderer2d.camera.updateProjectionMatrix();
+  };
+
+  const computeIncenter2D = (p1: Point2D, p2: Point2D, p3: Point2D): Point2D => {
+    const la = Math.hypot(p2[0] - p3[0], p2[1] - p3[1]);
+    const lb = Math.hypot(p1[0] - p3[0], p1[1] - p3[1]);
+    const lc = Math.hypot(p1[0] - p2[0], p1[1] - p2[1]);
+    const sum = la + lb + lc;
+    if (sum < 1e-8) return [p1[0], p1[1]];
+    return [
+      (la * p1[0] + lb * p2[0] + lc * p3[0]) / sum,
+      (la * p1[1] + lb * p2[1] + lc * p3[1]) / sum,
+    ];
   };
 
   const getGroupTrianglesData = (groupId: number): TriangleData[] => {
@@ -419,16 +431,8 @@ export function createUnfold2dManager(opts: ManagerDeps) {
                         } else {
                           flatV3 = s1 !== 0 ? c1 : c2;
                         }
-                        const lenA = Math.hypot(p2[0] - flatV3[0], p2[1] - flatV3[1]);
-                        const lenB = Math.hypot(p1[0] - flatV3[0], p1[1] - flatV3[1]);
-                        const lenC = base2d;
-                        const per = lenA + lenB + lenC;
-                        if (per > 1e-8) {
-                          seamIncenter = [
-                            scale * (lenA * p1[0] + lenB * p2[0] + lenC * flatV3[0]) / per,
-                            scale * (lenA * p1[1] + lenB * p2[1] + lenC * flatV3[1]) / per,
-                          ];
-                        }
+                        const inc = computeIncenter2D(p1, p2, flatV3);
+                        seamIncenter = [inc[0] * scale, inc[1] * scale];
                       }
                     }
                   }
@@ -476,6 +480,11 @@ export function createUnfold2dManager(opts: ManagerDeps) {
         faceId: fid,
         edges: edges,
         pointAngleData,
+        incenter: computeIncenter2D(
+          [a.x * scale, a.y * scale],
+          [b.x * scale, b.y * scale],
+          [c.x * scale, c.y * scale],
+        ),
       });
     });
     return tris;
@@ -502,7 +511,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     const gid = getPreviewGroupId();
     rebuildGroup2D(gid);
   });
-  appEventBus.on("groupAdded", (groupId: number) => {
+  appEventBus.on("groupAdded", ({ groupId }) => {
     clearScene();
   });
   appEventBus.on("groupRemoved", ({ groupId, faces }) => {

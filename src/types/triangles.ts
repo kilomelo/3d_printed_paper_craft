@@ -7,4 +7,5 @@ export type TriangleWithEdgeInfo = {
   faceId: number;
   edges: { isOuter: boolean; angle: number; isSeam?: boolean; incenter?: Point2D }[];
   pointAngleData: { vertexKey: string; unfold2dPos: Point2D; minAngle: number }[];
+  incenter: Point2D;
 };

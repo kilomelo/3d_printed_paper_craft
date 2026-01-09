@@ -40,7 +40,7 @@ app.innerHTML = `
 
     <section id="layout-empty" class="page home active">
       <div class="home-card">
-        <div class="home-title">3D Printed Paper Craft</div>
+        <div class="home-title">3D打印纸艺</div>
         <div class="home-subtitle">选择一个模型文件开始编辑</div>
         <button id="home-start" class="btn primary">打开模型</button>
         <div class="home-meta">支持 OBJ / FBX / STL / 3dppc</div>
@@ -49,7 +49,7 @@ app.innerHTML = `
 
     <section id="layout-workspace" class="page">
       <header class="editor-header">
-        <div class="editor-title">3D Printed Paper Craft</div>
+        <div class="editor-title">3D打印纸艺</div>
         <div class="version-badge">v${VERSION}</div>
       </header>
     <nav class="editor-menu">
@@ -79,12 +79,12 @@ app.innerHTML = `
           <div class="preview-toolbar">
             <button class="btn sm toggle" id="group-edit-toggle">编辑展开组</button>
             <div class="group-tabs" id="group-tabs"></div>
-            <button class="btn sm tab-add" id="group-add">+</button>
             <div class="toolbar-spacer"></div>
-            <span class="toolbar-stat group-faces-count" id="group-faces-count">面数量 0</span>
+            <button class="btn sm tab-add" id="group-add">+</button>
           </div>
           <div class="preview-area" id="group-preview">
             <button class="overlay-btn color-swatch" id="group-color-btn" title="选择组颜色"></button>
+            <span class="overlay-label group-faces-count" id="group-faces-count">面数量 0</span>
             <button class="overlay-btn tab-delete" id="group-delete" title="删除展开组">删除组</button>
             <input type="color" id="group-color-input" class="color-input" autocomplete="off" />
           </div>
@@ -177,6 +177,21 @@ app.innerHTML = `
       </div>
     </div>
   </div>
+
+  <div id="rename-overlay" class="rename-overlay hidden">
+    <div id="rename-modal" class="rename-modal">
+      <div class="settings-header">
+        <div class="settings-title">修改展开组名称</div>
+      </div>
+      <div class="settings-body rename-body">
+        <input id="rename-input" type="text" autocomplete="off" />
+      </div>
+      <div class="settings-footer">
+        <button id="rename-cancel-btn" class="btn ghost settings-action">取消</button>
+        <button id="rename-confirm-btn" class="btn primary settings-action">确定</button>
+      </div>
+    </div>
+  </div>
 `;
 
 const viewer = document.querySelector<HTMLDivElement>("#viewer");
@@ -202,6 +217,11 @@ const groupTabsEl = document.querySelector<HTMLDivElement>("#group-tabs");
 const groupAddBtn = document.querySelector<HTMLButtonElement>("#group-add");
 const groupPreview = document.querySelector<HTMLDivElement>("#group-preview");
 const settingsOverlay = document.querySelector<HTMLDivElement>("#settings-overlay");
+const renameOverlay = document.querySelector<HTMLDivElement>("#rename-overlay");
+const renameModal = document.querySelector<HTMLDivElement>("#rename-modal");
+const renameInput = document.querySelector<HTMLInputElement>("#rename-input");
+const renameCancelBtn = document.querySelector<HTMLButtonElement>("#rename-cancel-btn");
+const renameConfirmBtn = document.querySelector<HTMLButtonElement>("#rename-confirm-btn");
 const settingsCancelBtn = document.querySelector<HTMLButtonElement>("#settings-cancel-btn");
 const settingsConfirmBtn = document.querySelector<HTMLButtonElement>("#settings-confirm-btn");
 const settingScaleInput = document.querySelector<HTMLInputElement>("#setting-scale");
@@ -260,6 +280,11 @@ if (
   !layoutEmpty ||
   !layoutWorkspace ||
   !settingsOverlay ||
+  !renameOverlay ||
+  !renameModal ||
+  !renameInput ||
+  !renameCancelBtn ||
+  !renameConfirmBtn ||
   !settingsCancelBtn ||
   !settingsConfirmBtn ||
   !settingScaleInput ||
@@ -302,7 +327,9 @@ fileInput.setAttribute("accept", ".obj,.fbx,.stl,.3dppc");
 document.querySelectorAll("input").forEach((inp) => inp.setAttribute("autocomplete", "off"));
 
 const { log } = createLog(logListEl);
-createSettingsUI(
+// 全局禁用右键菜单，避免画布交互被系统菜单打断
+document.addEventListener("contextmenu", (e) => e.preventDefault());
+const settingsUI = createSettingsUI(
   {
     overlay: settingsOverlay,
     openBtn: settingsOpenBtn,
@@ -330,6 +357,37 @@ createSettingsUI(
 
 const geometryContext = createGeometryContext();
 const groupController = createGroupController(log, () => geometryContext.geometryIndex.getFaceAdjacency());
+let renameDialogOpen = false;
+const openRenameDialog = () => {
+  if (!renameOverlay || !renameModal || !renameInput) return;
+  if (settingsUI.isOpen()) return;
+  const previewId = groupController.getPreviewGroupId();
+  const currentName = groupController.getGroupName(previewId) ?? `展开组 ${previewId}`;
+  renameInput.value = currentName;
+  renameOverlay.classList.remove("hidden");
+  renameDialogOpen = true;
+  renameInput.focus();
+};
+
+const closeRenameDialog = () => {
+  if (!renameOverlay) return;
+  renameOverlay.classList.add("hidden");
+  renameDialogOpen = false;
+};
+
+renameCancelBtn.addEventListener("click", closeRenameDialog);
+const isValidGroupName = (val: string) => !!val && /\S/.test(val);
+renameConfirmBtn.addEventListener("click", () => {
+  const val = renameInput.value ?? "";
+  if (!isValidGroupName(val)) {
+    log("组名无效，请输入至少一个可见字符", "error");
+    closeRenameDialog();
+    return;
+  }
+  groupController.setGroupName(groupController.getPreviewGroupId(), val.trim());
+  log("展开组名称修改成功", "success");
+  closeRenameDialog();
+});
 const renderer3d = createRenderer3D(
   log,
   () => workspaceState,
@@ -457,6 +515,7 @@ const buildGroupUIState = () => {
     previewGroupId,
     editGroupState: workspaceState === "editingGroup",
     getGroupColor: groupController.getGroupColor,
+    getGroupName: groupController.getGroupName,
     getGroupFacesCount: (id: number) => groupController.getGroupFaces(id)?.size ?? 0,
     deletable: groupCount > 1,
   };
@@ -474,7 +533,8 @@ const groupUI = createGroupUI(
   {
     onPreviewSelect: (id) => {
       groupController.setPreviewGroupId(id);
-      log(`预览展开组 ${groupController.getGroupIds().indexOf(id) + 1}`, "info");
+      const name = groupController.getGroupName(id) ?? `展开组 ${groupController.getGroupIds().indexOf(id) + 1}`;
+      log(`预览 ${name}`, "info");
     },
     onColorChange: (color: Color) => groupController.setGroupColor(groupController.getPreviewGroupId(), color),
     onDelete: () => {
@@ -483,6 +543,7 @@ const groupUI = createGroupUI(
       if (!ok) return;
       groupController.deleteGroup(previewGroupId);
     },
+    onRenameRequest: () => openRenameDialog(),
   },
 );
 
@@ -509,15 +570,22 @@ appEventBus.on("modelCleared", () => {
   previewMeshCache.clear();
   layoutWorkspace.classList.add("preloaded");
 });
-appEventBus.on("groupAdded", (groupId: number) => groupUI.render(buildGroupUIState()));
+appEventBus.on("groupAdded", ({ groupId }) => groupUI.render(buildGroupUIState()));
 appEventBus.on("groupRemoved", ({ groupId, faces }) => {
   previewMeshCache.delete(groupId);
   groupUI.render(buildGroupUIState());
 });
 appEventBus.on("groupCurrentChanged", (groupId: number) => groupUI.render(buildGroupUIState()));
 appEventBus.on("groupColorChanged", ({ groupId, color }) => groupUI.render(buildGroupUIState()));
-appEventBus.on("groupFaceAdded", ({ groupId }) => previewMeshCache.delete(groupId));
-appEventBus.on("groupFaceRemoved", ({ groupId }) => previewMeshCache.delete(groupId));
+appEventBus.on("groupNameChanged", ({ groupId, name }) => groupUI.render(buildGroupUIState()));
+appEventBus.on("groupFaceAdded", ({ groupId }) => {
+  previewMeshCache.delete(groupId);
+  groupUI.render(buildGroupUIState());
+});
+appEventBus.on("groupFaceRemoved", ({ groupId }) => {
+  previewMeshCache.delete(groupId);
+  groupUI.render(buildGroupUIState());
+});
 appEventBus.on("workspaceStateChanged", ({previous, current}) => groupUI.render(buildGroupUIState()));
 appEventBus.on("workspaceStateChanged", ({previous, current}) => updateGroupEditToggle());
 appEventBus.on("workspaceStateChanged", ({previous, current}) => updateMenuState());
