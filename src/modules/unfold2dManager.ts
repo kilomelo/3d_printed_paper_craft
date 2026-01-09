@@ -1,5 +1,14 @@
 // 展开组 2D 管理器：监听面增删事件，按需查询角度索引并维护组内面/边的缓存，后续可用于 2D 重建。
-import { BufferGeometry, Mesh, Vector3, Float32BufferAttribute, Matrix4, Quaternion } from "three";
+import {
+  BufferGeometry,
+  Mesh,
+  Vector3,
+  Float32BufferAttribute,
+  Matrix4,
+  Quaternion,
+  BufferAttribute,
+  InterleavedBufferAttribute,
+} from "three";
 import type { GeometryIndex } from "./geometry";
 import { sharedEdgeIsSeam } from "./groups";
 import { getFaceVertexIndices } from "./model";
@@ -7,7 +16,7 @@ import { AngleIndex } from "./geometry";
 import { appEventBus } from "./eventBus";
 import type { Renderer2DContext } from "./renderer2d";
 import { createUnfoldEdgeMaterial, createUnfoldFaceMaterial } from "./materials";
-import type { Triangle2D, TriangleWithEdgeInfo } from "../types/triangles";
+import type { Point2D, TriangleWithEdgeInfo as TriangleData } from "../types/triangles";
 import { getSettings } from "./settings";
 
 // 记录“3D → 2D”变换矩阵，后续将按组树关系进行累乘展开。
@@ -115,7 +124,6 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     }
     const sharedEdgeId = findSharedEdge(parentId, childId);
     if (sharedEdgeId === null) {
-      console.warn("[unfold2d] no shared edge", { parentId, childId });
       return;
     }
     const edgesArray = getEdgesArray();
@@ -256,12 +264,11 @@ export function createUnfold2dManager(opts: ManagerDeps) {
       const back = new Matrix4().makeTranslation(anchor.x, anchor.y, anchor.z);
       const rootMat = new Matrix4().multiplyMatrices(back, new Matrix4().multiplyMatrices(rot, toOrigin));
       setRootTransform(groupId, faceId, rootMat);
-      console.debug("[unfold2d] root transform set", { groupId, faceId, normal: normal.toArray(), matrix: rootMat.elements });
     });
   };
 
   const rebuildGroup2D = (groupId: number) => {
-    console.debug("[unfold2d] rebuilding group", { groupId });
+    // console.log(`[Unfold2DManager] rebuildGroup2D called for group ${groupId}`);
     const faces = getGroupFaces(groupId);
     clearScene();
     if (!faces || faces.size === 0) return;
@@ -320,64 +327,150 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     const zoomY = viewH / (spanY * pad);
     renderer2d.camera.zoom = Math.min(zoomX, zoomY);
     renderer2d.camera.updateProjectionMatrix();
-    console.debug("[unfold2d] rebuild group", {
-      groupId,
-      faces: Array.from(faces),
-      camera: {
-        position: renderer2d.camera.position.clone(),
-        lookAt: { x: renderer2d.camera.getWorldDirection(new Vector3()).x, y: renderer2d.camera.getWorldDirection(new Vector3()).y, z: renderer2d.camera.getWorldDirection(new Vector3()).z },
-      },
-      bounds: { minX, minY, maxX, maxY },
-      sampleTri: positions.slice(0, 9),
-    });
   };
 
-  const getGroupTriangles2D = (groupId: number): Triangle2D[] => {
-    const faces = getGroupFaces(groupId);
-    if (!faces || faces.size === 0) return [] as Triangle2D[];
-    // 确保有可用的变换矩阵
-    buildRootTransforms(groupId);
-    buildTransformsForGroup(groupId);
-    refreshVertexWorldPositions();
-    const tris: Array<[[number, number], [number, number], [number, number]]> = [];
-    faces.forEach((fid) => {
-      const tri = faceTo2D(groupId, fid);
-      if (!tri) return;
-      const [a, b, c] = tri;
-      tris.push(
-        [
-          [a.x, a.y],
-          [b.x, b.y],
-          [c.x, c.y],
-        ],
-      );
-    });
-    return tris;
+  const computeIncenter2D = (p1: Point2D, p2: Point2D, p3: Point2D): Point2D => {
+    const la = Math.hypot(p2[0] - p3[0], p2[1] - p3[1]);
+    const lb = Math.hypot(p1[0] - p3[0], p1[1] - p3[1]);
+    const lc = Math.hypot(p1[0] - p2[0], p1[1] - p2[1]);
+    const sum = la + lb + lc;
+    if (sum < 1e-8) return [p1[0], p1[1]];
+    return [
+      (la * p1[0] + lb * p2[0] + lc * p3[0]) / sum,
+      (la * p1[1] + lb * p2[1] + lc * p3[1]) / sum,
+    ];
   };
 
-  const getGroupTrianglesWithEdgeInfo = (groupId: number): TriangleWithEdgeInfo[] => {
+  const getGroupTrianglesData = (groupId: number): TriangleData[] => {
     const faces = getGroupFaces(groupId);
     if (!faces || faces.size === 0) return [];
     buildRootTransforms(groupId);
     buildTransformsForGroup(groupId);
     refreshVertexWorldPositions();
     const faceToEdges = getFaceToEdges();
-    const tris: Array<TriangleWithEdgeInfo> = [];
+    const faceIndexMap = getFaceIndexMap();
+    const vertexKeyToPos = getVertexKeyToPos();
+    const tris: Array<TriangleData> = [];
     const { scale } = getSettings();
+    const makeVertexKey = (pos: BufferAttribute | InterleavedBufferAttribute, idx: number) =>
+      `${pos.getX(idx)},${pos.getY(idx)},${pos.getZ(idx)}`;
     faces.forEach((fid) => {
       const tri = faceTo2D(groupId, fid);
       if (!tri) return;
       const [a, b, c] = tri;
       const edgeIds = faceToEdges.get(fid) ?? [];
-      const edges = edgeIds.map((eid) => {
+      const keyTo2D = new Map<string, Point2D>();
+      const mapping = faceIndexMap.get(fid);
+      if (mapping) {
+        const geom = mapping.mesh.geometry;
+        const pos = geom.getAttribute("position");
+        if (pos) {
+          const [ia, ib, ic] = getFaceVertexIndices(geom, mapping.localFace);
+          keyTo2D.set(makeVertexKey(pos, ia), [a.x, a.y]);
+          keyTo2D.set(makeVertexKey(pos, ib), [b.x, b.y]);
+          keyTo2D.set(makeVertexKey(pos, ic), [c.x, c.y]);
+        }
+      }
+      const edges = edgeIds.map((eid, edgeIdx) => {
         const edgeRec = getEdgesArray()[eid];
         const isSeam = edgeRec?.faces && edgeRec.faces.size === 2 && sharedEdgeIsSeam([...edgeRec.faces][0], [...edgeRec.faces][1]);
         const isOuter = isSeam || (edgeRec?.faces.size ?? 0) === 1;
+        let seamIncenter: Point2D | undefined;
+        if (isSeam && edgeRec?.faces) {
+          const [k1, k2] = edgeRec.vertices;
+          const p1 = keyTo2D.get(k1);
+          const p2 = keyTo2D.get(k2);
+          const v1 = vertexKeyToPos.get(k1);
+          const v2 = vertexKeyToPos.get(k2);
+          const otherFace = Array.from(edgeRec.faces).find((f) => f !== fid);
+          if (p1 && p2 && v1 && v2 && otherFace !== undefined) {
+            const otherMapping = faceIndexMap.get(otherFace);
+            if (otherMapping) {
+              const geom = otherMapping.mesh.geometry;
+              const posAttr = geom.getAttribute("position");
+              if (posAttr) {
+                const [ia, ib, ic] = getFaceVertexIndices(geom, otherMapping.localFace);
+                const keyForOther = (idx: number) => `${posAttr.getX(idx)},${posAttr.getY(idx)},${posAttr.getZ(idx)}`;
+                const keys = [keyForOther(ia), keyForOther(ib), keyForOther(ic)];
+                const thirdKey = keys.find((k) => k !== k1 && k !== k2);
+                if (thirdKey) {
+                  const v3 = vertexKeyToPos.get(thirdKey);
+                  if (v3) {
+                    const d1 = v1.distanceTo(v3);
+                    const d2 = v2.distanceTo(v3);
+                    const base2d = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+                    if (base2d > 1e-8) {
+                      const ex: Point2D = [(p2[0] - p1[0]) / base2d, (p2[1] - p1[1]) / base2d];
+                      const ey: Point2D = [-ex[1], ex[0]];
+                      const x = (d1 * d1 - d2 * d2 + base2d * base2d) / (2 * base2d);
+                      const ySq = d1 * d1 - x * x;
+                      if (ySq >= 0) {
+                        const y = Math.sqrt(ySq);
+                        const cand = (sgn: number): Point2D => [
+                          p1[0] + ex[0] * x + ey[0] * y * sgn,
+                          p1[1] + ex[1] * x + ey[1] * y * sgn,
+                        ];
+                        const c1 = cand(1);
+                        const c2 = cand(-1);
+                        const triThird =
+                          edgeIdx === 0 ? c :
+                          edgeIdx === 1 ? a :
+                          b;
+                        const edgeVec: Point2D = [p2[0] - p1[0], p2[1] - p1[1]];
+                        const side = (pt: Point2D) =>
+                          Math.sign(edgeVec[0] * (pt[1] - p1[1]) - edgeVec[1] * (pt[0] - p1[0]));
+                        const triSide = side([triThird.x, triThird.y]);
+                        const s1 = side(c1);
+                        const s2 = side(c2);
+                        let flatV3 = c1;
+                        if (triSide !== 0) {
+                          if (s1 === -triSide) flatV3 = c1;
+                          else if (s2 === -triSide) flatV3 = c2;
+                          else if (s1 === 0) flatV3 = c2;
+                          else flatV3 = c1;
+                        } else {
+                          flatV3 = s1 !== 0 ? c1 : c2;
+                        }
+                        const inc = computeIncenter2D(p1, p2, flatV3);
+                        seamIncenter = [inc[0] * scale, inc[1] * scale];
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
         return {
           isOuter,
           angle: angleIndex.getAngle(eid),
+          isSeam,
+          incenter: seamIncenter,
         };
       });
+      const pointAngleData: TriangleData["pointAngleData"] = [];
+      if (mapping) {
+        const geom = mapping.mesh.geometry;
+        const pos = geom.getAttribute("position");
+        if (pos) {
+          const [ia, ib, ic] = getFaceVertexIndices(geom, mapping.localFace);
+          // 预计算与该三角顶点相关的最小二面角
+          angleIndex.precomputeVertexMinAngle(makeVertexKey(pos, ia));
+          angleIndex.precomputeVertexMinAngle(makeVertexKey(pos, ib));
+          angleIndex.precomputeVertexMinAngle(makeVertexKey(pos, ic));
+          const keys = [
+            { key: makeVertexKey(pos, ia), pos: a },
+            { key: makeVertexKey(pos, ib), pos: b },
+            { key: makeVertexKey(pos, ic), pos: c },
+          ];
+          keys.forEach(({ key, pos }) => {
+            const minAngle = angleIndex.getVertexMinAngle(key);
+            if (minAngle !== undefined) {
+              pointAngleData.push({ vertexKey: key, unfold2dPos: [pos.x * scale, pos.y * scale], minAngle });
+            }
+          });
+        }
+      }
       tris.push({
         tri: [
           [a.x * scale, a.y * scale],
@@ -385,26 +478,29 @@ export function createUnfold2dManager(opts: ManagerDeps) {
           [c.x * scale, c.y * scale],
         ],
         faceId: fid,
-        edges,
+        edges: edges,
+        pointAngleData,
+        incenter: computeIncenter2D(
+          [a.x * scale, a.y * scale],
+          [b.x * scale, b.y * scale],
+          [c.x * scale, c.y * scale],
+        ),
       });
     });
     return tris;
   };
 
   appEventBus.on("modelCleared", () => {
-    console.debug("[unfold2d] reset manager");
     modelLoaded = false;
     clearScene();
     clearTransforms();
   });
 
   appEventBus.on("groupFaceAdded", ({ groupId, faceId }: { groupId: number; faceId: number }) => {
-    console.debug("[unfold2d] face added event", { groupId, faceId });
     if (!modelLoaded) return;
     rebuildGroup2D(groupId);
   });
   appEventBus.on("groupFaceRemoved", ({ groupId, faceId }: { groupId: number; faceId: number }) => {
-    console.debug("[unfold2d] face removed event", { groupId, faceId });
     if (!modelLoaded) return;
     rebuildGroup2D(groupId);
   });
@@ -412,24 +508,22 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     modelLoaded = true;
     const groups = getGroupIds();
     if (groups.length === 0) return;
-    groups.forEach((gid) => rebuildGroup2D(gid));
+    const gid = getPreviewGroupId();
+    rebuildGroup2D(gid);
   });
-  appEventBus.on("groupAdded", (groupId: number) => {
-    console.debug("[unfold2d] group data changed, rebuilding preview group");
+  appEventBus.on("groupAdded", ({ groupId }) => {
     clearScene();
   });
   appEventBus.on("groupRemoved", ({ groupId, faces }) => {
-    console.debug("[unfold2d] group removed, clearing cache", { groupId });
     const gid = getPreviewGroupId();
     rebuildGroup2D(gid);
   });
 
   appEventBus.on("groupCurrentChanged", (groupId: number) => {
-    console.debug("[unfold2d] current group changed, rebuilding preview group");
     rebuildGroup2D(groupId);
   });
 
   return {
-    getGroupTrianglesWithEdgeInfo,
+    getGroupTrianglesData,
   };
 }

@@ -2,9 +2,9 @@ import {
   buildGroupMeshFromTriangles,
   buildGroupStepFromTriangles,
   buildGroupStlFromTriangles,
-} from "../modules/replicadModeling";
-import type { TriangleWithEdgeInfo } from "../types/triangles";
-import { applySettings, type Settings } from "../modules/settings";
+} from "./replicadModeling";
+import type { TriangleWithEdgeInfo } from "../../types/triangles";
+import { applySettings, type Settings } from "../settings";
 
 type WorkerRequest =
   | { id: number; type: "step"; triangles: TriangleWithEdgeInfo[]; settings: Settings }
@@ -21,7 +21,7 @@ type MeshPayload = {
 type WorkerResponse =
   | { id: number; ok: true; type: "step"; buffer: ArrayBuffer; mime: string }
   | { id: number; ok: true; type: "stl"; buffer: ArrayBuffer; mime: string }
-  | { id: number; ok: true; type: "mesh"; mesh: MeshPayload }
+  | { id: number; ok: true; type: "mesh"; buffer: ArrayBuffer; mime: string }
   | { id: number; ok: true; type: "progress"; message: number }
   | { id: number; ok: false; error: string };
 
@@ -58,7 +58,7 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const { id, type, settings } = event.data;
   try {
     applySettings(settings);
-    const report = (message: string) => ctx.postMessage({ id, ok: true, type: "progress", message } as WorkerResponse);
+    const report = (message: number) => ctx.postMessage({ id, ok: true, type: "progress", message } as WorkerResponse);
     if (type === "step") {
       const buffer = await (await buildGroupStepFromTriangles(event.data.triangles, report)).arrayBuffer();
       const resp: WorkerResponse = { id, ok: true, type: "step", buffer, mime: "application/step" };
@@ -72,11 +72,10 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       return;
     }
     if (type === "mesh") {
-      const mesh = await serializeMesh(event.data.triangles, report);
-      const transfers: ArrayBuffer[] = [mesh.positions, mesh.normals].filter(Boolean) as ArrayBuffer[];
-      if (mesh.indices) transfers.push(mesh.indices);
-      const resp: WorkerResponse = { id, ok: true, type: "mesh", mesh };
-      ctx.postMessage(resp, transfers);
+      // 通过生成 STL，再由主线程解析为 mesh，减少重复建模路径
+      const buffer = await (await buildGroupStlFromTriangles(event.data.triangles, report)).arrayBuffer();
+      const resp: WorkerResponse = { id, ok: true, type: "mesh", buffer, mime: "model/stl" };
+      ctx.postMessage(resp, [resp.buffer]);
       return;
     }
     ctx.postMessage({ id, ok: false, error: "Unknown task type" } as WorkerResponse);

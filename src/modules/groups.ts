@@ -6,6 +6,7 @@ export type GroupData = {
   faces: Set<number>;
   color: Color;
   treeParent: Map<number, number | null>;
+  name: string;
 };
 
 const GROUP_COLOR_PALETTE = [0x759fff, 0xff5757, 0xffff00, 0x00ee00, 0x00ffff, 0xff70ff];
@@ -30,6 +31,21 @@ function nextGroupId(): number {
   return maxId + 1;
 }
 
+export function nextGroupName(): string {
+  let maxNumber = 0;
+  const re = /^展开组\s+(\d+)$/;
+  groups.forEach((g) => {
+    const m = re.exec(g.name);
+    if (m) {
+      const num = parseInt(m[1], 10);
+      if (!Number.isNaN(num)) {
+        maxNumber = Math.max(maxNumber, num);
+      }
+    }
+  });
+  return `展开组 ${maxNumber + 1}`;
+}
+
 export function resetGroups() {
   groups = [];
   faceGroupMap = new Map();
@@ -48,6 +64,7 @@ export function addGroup(newGroupId?: number): number | undefined {
       faces: new Set<number>(),
       color: nextPaletteColor(),
       treeParent: new Map<number, number | null>(),
+      name: nextGroupName(),
     };
     groups.push(exists);
     return newGroupId;
@@ -91,6 +108,17 @@ export function getGroupFaces(id: number): Set<number> | undefined {
 export function getGroupColor(id: number): Color | undefined {
   const g = findGroup(id);
   return g ? g.color.clone() : undefined;
+}
+
+export function getGroupName(id: number): string | undefined {
+  return findGroup(id)?.name;
+}
+
+export function setGroupName(id: number, name: string): boolean {
+  const g = findGroup(id);
+  if (!g) return false;
+  g.name = name;
+  return true;
 }
 
 export function setGroupColor(groupId: number, color: Color): boolean {
@@ -245,6 +273,7 @@ export function applyImportedGroups(
     id: number;
     color: string;
     faces: number[];
+    name?: string;
   }[]>,
   faceAdjacency: Map<number, Set<number>>,
 ) {
@@ -261,6 +290,7 @@ export function applyImportedGroups(
         faces: new Set<number>(),
         color: new Color(g.color),
         treeParent: new Map<number, number | null>(),
+        name: g.name ?? `展开组 ${g.id}`,
       };
       groups.push(data);
       g.faces.forEach((fid) => setFaceGroup(fid, g.id));

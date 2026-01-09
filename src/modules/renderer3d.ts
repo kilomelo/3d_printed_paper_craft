@@ -419,7 +419,6 @@ export function createRenderer3D(
   }
 
   const resetView = () => {
-    console.debug("[renderer3d] resetView");
     const model = getWorkspaceState() === "previewGroupModel" ? previewModelGroup : modelGroup;
     if (!model) return;
     fitCameraToObject(model, camera, controls);
@@ -607,7 +606,6 @@ export function createRenderer3D(
 
   async function applyLoadedModel(file: File, ext: string) {
     log("加载中...", "info");
-    console.log("[renderer3d] loading file", file.name);
     try {
       const { object, importedGroups, importedColorCursor } = await loadRawObject(file, ext);
       await applyObject(object, file.name, importedGroups, importedColorCursor);
@@ -638,19 +636,6 @@ export function createRenderer3D(
       target: controls.target.clone(),
     };
     fitCameraToObject(previewModelGroup, camera, controls);
-  }
-
-  function clearPreviewModel() {
-    previewModelGroup.clear();
-    previewModelGroup.visible = false;
-    modelGroup.visible = true;
-    // setHoverLinesVisible(true);
-    if (previewCameraState) {
-      camera.position.copy(previewCameraState.position);
-      controls.target.copy(previewCameraState.target);
-      controls.update();
-      previewCameraState = null;
-    }
   }
 
   function renderAxesInset() {
@@ -691,7 +676,6 @@ export function createRenderer3D(
 
   return {
     loadPreviewModel,
-    resizeRenderer3D,
     resetView,
     toggleLight,
     toggleEdges,
@@ -699,6 +683,7 @@ export function createRenderer3D(
     toggleFaces,
     applyLoadedModel,
     getTriCount,
+    resizeRenderer3D,
     dispose: () => {
       interactionController?.dispose();
       el.removeEventListener("pointerdown", onCanvasPointerDown);

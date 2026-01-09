@@ -23,6 +23,7 @@ body {
     var(--bg);
   font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--text);
+  user-select: none;
 }
 
 #app {
@@ -31,6 +32,11 @@ body {
 
 .hidden {
   display: none !important;
+}
+
+input,
+textarea {
+  user-select: text;
 }
 
 .shell {
@@ -55,6 +61,15 @@ body {
   flex: 1;
   min-height: 0;
   height: 100%;
+}
+
+.page.preloaded {
+  display: flex;
+  flex-direction: column;
+  visibility: hidden;
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
 }
 
 .page.home {
@@ -103,6 +118,7 @@ body {
 .btn.sm {
   padding: 6px 10px;
   border-radius: 10px;
+  margin-right: 6px;
   font-size: 13px;
 }
 
@@ -163,6 +179,8 @@ body {
 
 .editor-menu {
   display: flex;
+  flex-wrap: nowrap;
+  white-space: nowrap;
   gap: 8px;
   align-items: center;
   padding: 10px 18px;
@@ -170,6 +188,7 @@ body {
   border: 1px solid var(--border);
   border-top: none;
   position: relative;
+  overflow: hidden;
 }
 
 .menu-blocker {
@@ -221,13 +240,17 @@ body {
   padding: 8px 10px;
   border-bottom: 1px solid var(--border);
   display: flex;
+  flex-wrap: nowrap;
+  white-space: nowrap;
   align-items: center;
-  gap: 8px;
+  /* gap: 0px; */
   background: rgba(255, 255, 255, 0.02);
+  overflow: hidden;
 }
 
 #group-edit-toggle {
   min-width: 90px;
+  margin-right: 10px;
   justify-content: center;
 }
 
@@ -242,10 +265,12 @@ body {
 
 .group-tabs {
   display: flex;
-  gap: 6px;
+  gap: 5px;
   align-items: center;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-width: 0;
   flex-wrap: nowrap;
+  overflow: hidden;
 }
 
 .tab-btn {
@@ -254,11 +279,16 @@ body {
   color: var(--text);
   border-radius: 8px;
   padding: 6px 10px;
+  height: 32px;
+  min-height: 32px;
+  justify-content: center;
+  margin-right: 1px;
   font-size: 13px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .tab-btn.active {
@@ -266,9 +296,29 @@ body {
   background: rgba(56, 189, 248, 0.16);
 }
 
+.tab-btn.tab-super {
+  width: 8px;
+  min-width: 8px;
+  height: 28px;
+  min-height: 28px;
+  border-radius: 4px;
+  padding: 6px 0;
+}
+
+.tab-btn.tab-compact {
+  max-width: 40px;
+  border-radius: 8px;
+  padding: 6px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .tab-add {
   padding: 6px 10px;
+  margin-left: 8px;
   border-radius: 8px;
+  flex-shrink: 0;
 }
 
 .preview-area {
@@ -359,9 +409,33 @@ body {
   display: none;
 }
 
+.rename-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+}
+
+.rename-overlay.hidden {
+  display: none;
+}
+
 .settings-modal {
   width: 500px;
-  height: 450px;
+  height: 600px;
+  background: #0b1020;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+}
+
+.rename-modal {
+  width: 500px;
+  height: 200px;
   background: #0b1020;
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
@@ -388,6 +462,20 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.rename-body {
+  justify-content: center;
+}
+
+.rename-body input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 14px;
 }
 
 .settings-footer {
@@ -432,8 +520,8 @@ body {
   min-width: 100px;
 }
 
-.setting-row label {
-  min-width: 75px;
+.setting-label {
+  min-width: 65px;
   color: var(--text);
 }
 
@@ -447,6 +535,7 @@ body {
 }
 .setting-desc {
   font-size: 12px;
+  padding-left: 10px;
   color: var(--muted);
   line-height: 1.4;
 }
@@ -483,6 +572,20 @@ body {
   color: var(--text);
 }
 
+.overlay-label.group-faces-count {
+  position: absolute;
+  left: 48px;
+  top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.35);
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  z-index: 6;
+  pointer-events: none;
+}
+
 .preview-2d-placeholder {
   flex: 1;
   width: 100%;
@@ -496,6 +599,24 @@ body {
 }
 
 .preview-2d-placeholder.hidden {
+  display: none;
+}
+
+.preview-2d-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.2);
+  z-index: 4;
+  font-size: 14px;
+  padding: 12px;
+}
+
+.preview-2d-empty.hidden {
   display: none;
 }
 

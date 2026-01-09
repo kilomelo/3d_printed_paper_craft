@@ -8,7 +8,6 @@ export type Renderer2DContext = {
   camera: THREE.OrthographicCamera;
   renderer: THREE.WebGLRenderer;
   root: Group;
-  resizeRenderer2D: () => void;
   dispose: () => void;
 };
 
@@ -16,7 +15,6 @@ export function createRenderer2D(
   getViewport: () => { width: number; height: number },
   mountRenderer: (canvas: HTMLElement) => void): Renderer2DContext {
   const {width, height} = getViewport();
-  console.log("createRenderer2D with size:", width, height);
   const { scene, camera, renderer } = createScene2D(width, height);
   mountRenderer(renderer.domElement);
   const root = new Group();
@@ -25,7 +23,7 @@ export function createRenderer2D(
   let isPanning = false;
   const panStart = { x: 0, y: 0 };
 
-  const resize = () => {
+  const resizeRenderer2D = () => {
     const { width, height } = getViewport();
     renderer.setSize(width, height);
     camera.left = -width * 0.5;
@@ -34,7 +32,7 @@ export function createRenderer2D(
     camera.bottom = -height * 0.5;
     camera.updateProjectionMatrix();
   };
-  window.addEventListener("resize", resize);
+  window.addEventListener("resize", resizeRenderer2D);
   const onContextMenu = (e: Event) => e.preventDefault();
   renderer.domElement.addEventListener("contextmenu", onContextMenu);
 
@@ -102,7 +100,7 @@ export function createRenderer2D(
   animate();
 
   const dispose = () => {
-    window.removeEventListener("resize", resize);
+    window.removeEventListener("resize", resizeRenderer2D);
     renderer.domElement.removeEventListener("wheel", onWheel);
     renderer.domElement.removeEventListener("contextmenu", onContextMenu);
     renderer.domElement.removeEventListener("pointerdown", onPointerDown);
@@ -112,7 +110,7 @@ export function createRenderer2D(
     renderer.domElement.remove();
   };
 
-  appEventBus.on("modelLoaded", resize);
+  appEventBus.on("modelLoaded", resizeRenderer2D);
 
-  return { scene, camera, renderer, root, resizeRenderer2D: resize, dispose };
+  return { scene, camera, renderer, root, dispose };
 }

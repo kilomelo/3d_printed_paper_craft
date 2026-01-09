@@ -2,7 +2,7 @@
 import { BufferGeometry, Float32BufferAttribute, Group, Mesh } from "three";
 import { collectGeometry, filterLargestComponent } from "./geometry";
 import { getLastFileName } from "./model";
-import { getGroupIds, getGroupColorCursor, getGroupFaces, getGroupColor } from "./groups";
+import { getGroupIds, getGroupColorCursor, getGroupFaces, getGroupColor, getGroupName } from "./groups";
 import { getSettings } from "./settings";
 
 export type PPCFile = {
@@ -24,6 +24,7 @@ export type PPCFile = {
     id: number;
     color: string;
     faces: number[];
+    name?: string;
   }[];
   groupColorCursor?: number;
   annotations?: Record<string, unknown>;
@@ -75,6 +76,7 @@ export async function build3dppcData(object: Group): Promise<PPCFile> {
       id: groupId,
       color: colorHex,
       faces: filteredFaces,
+      name: getGroupName(groupId),
     });
   });
 
