@@ -463,6 +463,13 @@ export function createRenderer3D(
       controls.target.copy(previewCameraState!.target);
       controls.update();
       previewCameraState = null;
+      applyFaceVisibility();
+      applyEdgeVisibility();
+      setSeamsVisibility(seamsVisible);
+    }
+    if (current === "previewGroupModel") {
+      applyFaceVisibility();
+      applyEdgeVisibility();
     }
   });
   appEventBus.on("groupCurrentChanged", (groupId: number) => syncGroupStateFromData(groupId));
