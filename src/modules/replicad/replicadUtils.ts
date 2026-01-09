@@ -36,12 +36,14 @@ export function triangles2Outer(trianglesWithAngles: TriangleWithEdgeInfo[]): {
   outer: Point2D[];
   min: Point2D;
   max: Point2D;
+  maxEdgeLen: number; // 所有三角形的边中最长的边长
   pointAngleMap: Map<string, number>;
 } | undefined {
   if (!trianglesWithAngles.length) return undefined;
   const edgeMap = new Map<string, { a: Point2D; b: Point2D; isSeam: boolean }>();
   const max: Point2D = [-Infinity, -Infinity];
   const min: Point2D = [Infinity, Infinity];
+  let maxEdgeLen = 0;
   trianglesWithAngles.forEach((triData) => {
     const edges: [Point2D, Point2D, { isOuter: boolean; angle: number; isSeam?: boolean } | undefined][] = [
       [triData.tri[0], triData.tri[1], triData.edges?.[0]],
@@ -56,6 +58,8 @@ export function triangles2Outer(trianglesWithAngles: TriangleWithEdgeInfo[]): {
       if (pt[1] > max[1]) max[1] = pt[1];
     });
     edges.forEach(([a, b, info]) => {
+      const edgeLen = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (edgeLen > maxEdgeLen) maxEdgeLen = edgeLen;
       if (!info?.isOuter) return;
       const k = edgeKey(a, b);
       if (!edgeMap.has(k)) {
@@ -98,7 +102,6 @@ export function triangles2Outer(trianglesWithAngles: TriangleWithEdgeInfo[]): {
       loops.push(loop);
     }
   });
-
   if (!loops.length) return undefined;
   let outer = loops[0];
   let bestArea = Math.abs(polygonArea(outer));
@@ -142,7 +145,7 @@ export function triangles2Outer(trianglesWithAngles: TriangleWithEdgeInfo[]): {
     const angleDeg = isReflex ? 360 - baseDeg : baseDeg;
     pointAngleMap.set(pointKey(curr), angleDeg);
   }
-  return { outer, min, max, pointAngleMap };
+  return { outer, min, max, maxEdgeLen, pointAngleMap };
 }
 
 // 根据三条边的二面角对三角形做内偏移（每条边向内平移 offset，取平移后的交点作为新三角）

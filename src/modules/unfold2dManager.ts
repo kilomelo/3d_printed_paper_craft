@@ -310,6 +310,8 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     const mesh = new Mesh(geom, createUnfoldFaceMaterial());
     const edgeGeom = geom.clone();
     const edgeMesh = new Mesh(edgeGeom, createUnfoldEdgeMaterial());
+    mesh.userData.groupId = groupId;
+    edgeMesh.userData.groupId = groupId;
     renderer2d.root.add(mesh);
     renderer2d.root.add(edgeMesh);
 
@@ -350,6 +352,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     const faceToEdges = getFaceToEdges();
     const faceIndexMap = getFaceIndexMap();
     const vertexKeyToPos = getVertexKeyToPos();
+    const snap = (v: number) => (Math.abs(v) < 1e-6 ? 0 : v);
     const tris: Array<TriangleData> = [];
     const { scale } = getSettings();
     const makeVertexKey = (pos: BufferAttribute | InterleavedBufferAttribute, idx: number) =>
@@ -358,6 +361,13 @@ export function createUnfold2dManager(opts: ManagerDeps) {
       const tri = faceTo2D(groupId, fid);
       if (!tri) return;
       const [a, b, c] = tri;
+      // 数值归零，避免共边顶点因极小误差导致不一致
+      a.x = snap(a.x);
+      a.y = snap(a.y);
+      b.x = snap(b.x);
+      b.y = snap(b.y);
+      c.x = snap(c.x);
+      c.y = snap(c.y);
       const edgeIds = faceToEdges.get(fid) ?? [];
       const keyTo2D = new Map<string, Point2D>();
       const mapping = faceIndexMap.get(fid);
@@ -503,6 +513,35 @@ export function createUnfold2dManager(opts: ManagerDeps) {
   appEventBus.on("groupFaceRemoved", ({ groupId, faceId }: { groupId: number; faceId: number }) => {
     if (!modelLoaded) return;
     rebuildGroup2D(groupId);
+  });
+  const repaintGroupColor = (groupId: number) => {
+    let painted = false;
+    const col = getGroupColor(groupId);
+    const cr = col?.r ?? 255;
+    const cg = col?.g ?? 255;
+    const cb = col?.b ?? 255;
+    renderer2d.root.children.forEach((child) => {
+      const mesh = child as Mesh;
+      if (!(mesh as any).isMesh) return;
+      if (mesh.userData.groupId !== groupId) return;
+      const colorAttr = (mesh.geometry as BufferGeometry).getAttribute("color") as Float32BufferAttribute | undefined;
+      if (!colorAttr) return;
+      const arr = colorAttr.array as Float32Array;
+      for (let i = 0; i < arr.length; i += 3) {
+        arr[i] = cr;
+        arr[i + 1] = cg;
+        arr[i + 2] = cb;
+      }
+      colorAttr.needsUpdate = true;
+      painted = true;
+    });
+    return painted;
+  };
+
+  appEventBus.on("groupColorChanged", ({ groupId }) => {
+    if (!modelLoaded) return;
+    const ok = repaintGroupColor(groupId);
+    if (!ok) rebuildGroup2D(groupId);
   });
   appEventBus.on("modelLoaded", () => {
     modelLoaded = true;
