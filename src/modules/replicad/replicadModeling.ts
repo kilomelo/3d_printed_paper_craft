@@ -1,5 +1,5 @@
 import { BufferGeometry, Float32BufferAttribute, Uint16BufferAttribute, Uint32BufferAttribute, Mesh } from "three";
-import { Shape3D, setOC, makeBox, Point } from "replicad";
+import { Shape3D, setOC, makeBox, sketchCircle, Point } from "replicad";
 import type { OpenCascadeInstance } from "replicad-opencascadejs";
 import initOC from "replicad-opencascadejs/src/replicad_single.js";
 import ocWasmUrl from "replicad-opencascadejs/src/replicad_single.wasm?url";
@@ -46,11 +46,11 @@ const buildSolidFromTrianglesWithAngles = async (
   if (!outerResult || !outerResult.outer || outerResult.outer.length < 3) {
     throw new Error("外轮廓查找失败");
   }
-  const connectionSketch = sketchFromContourPoints(outerResult.outer);
+  const connectionSketch = sketchFromContourPoints(outerResult.outer, "XY", -outerResult.maxEdgeLen);
   if (!connectionSketch) {
     throw new Error("连接层草图生成失败");
   }
-  let connectionSolid = connectionSketch.extrude(connectionThickness + bodyThickness).simplify();
+  let connectionSolid = connectionSketch.extrude(connectionThickness + bodyThickness + outerResult.maxEdgeLen).simplify();
   if (!connectionSolid) {
     throw new Error("连接层建模失败");
   }
@@ -59,10 +59,18 @@ const buildSolidFromTrianglesWithAngles = async (
   const earCutToolMarginMin = earWidth * 1.5;
   const slopToolHeight = 1e-3 + Math.max(Math.hypot(earWidth, earThickness), bodyThickness + connectionThickness);
   const slopeTools: Shape3D[] = [];
-  let maxEdgeDistance = -Infinity;
+  const vertexAngleMap = new Map<string, { position: Point2D; minAngle: number }>();
+
   trianglesWithAngles.forEach((triData, i) => {
     // console.log('[ReplicadModeling] processing triangle for ears', triData);
     const isDefined = <T,>(v: T | undefined | null): v is T => v != null;
+    // 收集顶点最小角度信息
+    triData.pointAngleData?.forEach((item) => {
+      const prev = vertexAngleMap.get(item.vertexKey);
+      if (!prev || item.minAngle < prev.minAngle) {
+        vertexAngleMap.set(item.vertexKey, { position: item.unfold2dPos, minAngle: item.minAngle });
+      }
+    });
     const [p0, p1, p2] = triData.tri;
     // 基准顺序：AC, CB, BA 对应 [p0->p2, p2->p1, p1->p0]
     const planes = [makeVerticalPlaneNormalAB(p2, p1), makeVerticalPlaneNormalAB(p0, p2), makeVerticalPlaneNormalAB(p1, p0)];
@@ -71,10 +79,7 @@ const buildSolidFromTrianglesWithAngles = async (
       return;
     }
     const dists  = [Math.hypot(p2[0] - p1[0], p2[1] - p1[1]), Math.hypot(p2[0] - p0[0], p2[1] - p0[1]), Math.hypot(p1[0] - p0[0], p1[1] - p0[1])];
-    dists.forEach((d) => {
-      if (d > maxEdgeDistance) maxEdgeDistance = d;
-    });
-    // 第二步：生成弯折、拼接坡度刀具
+    // 准备每条边都要用到的辅助刀具
     const earExtendMargin = Math.max(...dists);
     const cutToolMargin = Math.max(earCutToolMarginMin, earExtendMargin);
     const earEdgeCutToolSketches = [
@@ -100,6 +105,7 @@ const buildSolidFromTrianglesWithAngles = async (
       earEdgeCutToolSketches[1].extrude(dists[1] + 2 * cutToolMargin),
       earEdgeCutToolSketches[2].extrude(dists[2] + 2 * cutToolMargin),
     ];
+
     triData.edges.forEach((edge, idx) => {
       const pick = (k: 0 | 1 | 2): 0 | 1 | 2 => ((k + (idx % 3) + 3) % 3) as 0 | 1 | 2;
       const [pointA, pointB, pointC] = [triData.tri[pick(0)], triData.tri[pick(1)], triData.tri[pick(2)]];
@@ -199,7 +205,7 @@ const buildSolidFromTrianglesWithAngles = async (
   });
   
   onProgress?.(40);
-  const progressPerSlope = 59 / slopeTools.length;
+  const progressPerSlope = 40 / slopeTools.length;
   // 第四步：应用坡度刀具
   slopeTools.forEach((tool, idx) => {
     connectionSolid = connectionSolid.cut(tool).simplify();
@@ -207,10 +213,29 @@ const buildSolidFromTrianglesWithAngles = async (
   });
   slopeTools.forEach((tool) => tool.delete());
 
-  // 第四步，削平底部
+  onProgress?.(80);
+  // 第五步：消除干涉
+  const progressPerPoint = 19 / vertexAngleMap.size;
+  let itor = 0;
+  vertexAngleMap.forEach((data, key) => {
+    if (data.minAngle < Math.PI) {
+      const radius = 1.414 * Math.max(0.01, (earCutToolMarginMin - connectionThickness) * Math.tan((Math.PI - data.minAngle) * 0.5));
+      // console.log(`[ReplicadModeling] adding cone at vertex ${key} with radius ${radius}`);
+      const base = sketchCircle(radius, { plane: "XY", origin: earCutToolMarginMin });
+      // const bottom = sketchCircle(1e-4, { plane: "XY", origin:connectionThickness });
+      // const cone = base.loftWith(bottom)
+      const cone = base.loftWith([], { endPoint: [0, 0, connectionThickness], ruled: true })
+        .translate([data.position[0], data.position[1], 0]);
+      connectionSolid = connectionSolid.cut(cone).simplify();
+    }
+    onProgress?.(Math.floor(80 + progressPerPoint * (itor + 1)));
+    itor++;
+  });
+
+  // 第六步，削平底部
   const margin = earWidth + 1;
   const tool = makeBox(
-    [outerResult.min[0] - margin, outerResult.min[1] - margin, -maxEdgeDistance] as Point,
+    [outerResult.min[0] - margin, outerResult.min[1] - margin, -outerResult.maxEdgeLen - 1] as Point,
     [outerResult.max[0] + margin, outerResult.max[1] + margin, 0] as Point
   );
   connectionSolid = connectionSolid.cut(tool) as Shape3D;
