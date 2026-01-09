@@ -44,7 +44,7 @@ const buildSolidFromTrianglesWithAngles = async (
   // 第一步：生成连接层和主体
   const outerResult  = triangles2Outer(trianglesWithAngles);
   if (!outerResult || !outerResult.outer || outerResult.outer.length < 3) {
-    throw new Error("三角形建模失败");
+    throw new Error("外轮廓查找失败");
   }
   const connectionSketch = sketchFromContourPoints(outerResult.outer);
   if (!connectionSketch) {
@@ -59,6 +59,7 @@ const buildSolidFromTrianglesWithAngles = async (
   const earCutToolMarginMin = earWidth * 1.5;
   const slopToolHeight = 1e-3 + Math.max(Math.hypot(earWidth, earThickness), bodyThickness + connectionThickness);
   const slopeTools: Shape3D[] = [];
+  let maxEdgeDistance = -Infinity;
   trianglesWithAngles.forEach((triData, i) => {
     // console.log('[ReplicadModeling] processing triangle for ears', triData);
     const isDefined = <T,>(v: T | undefined | null): v is T => v != null;
@@ -70,6 +71,10 @@ const buildSolidFromTrianglesWithAngles = async (
       return;
     }
     const dists  = [Math.hypot(p2[0] - p1[0], p2[1] - p1[1]), Math.hypot(p2[0] - p0[0], p2[1] - p0[1]), Math.hypot(p1[0] - p0[0], p1[1] - p0[1])];
+    dists.forEach((d) => {
+      if (d > maxEdgeDistance) maxEdgeDistance = d;
+    });
+    // 第二步：生成弯折、拼接坡度刀具
     const earExtendMargin = Math.max(...dists);
     const cutToolMargin = Math.max(earCutToolMarginMin, earExtendMargin);
     const earEdgeCutToolSketches = [
@@ -111,11 +116,12 @@ const buildSolidFromTrianglesWithAngles = async (
 
         const slopeToolSketch = sketchFromContourPoints([
           [-slopeFirstLayerOffset, slopeStartZ], [0,slopeStartZ],
-          [0, slopToolHeight], [-slopeTopOffset, slopToolHeight]], planes[pick(2)]);
+          [0, slopToolHeight], [-slopeTopOffset, slopToolHeight]], planes[pick(2)], -cutToolMargin);
         if (!slopeToolSketch) {
           console.warn('[ReplicadModeling] failed to create slope tool sketch for edge, skip this edge', edge);
         }
-        const slopeTool = slopeToolSketch?.extrude(dists[pick(2)])
+        // 超量挤出了坡度刀具并切掉两头超出的部分，以更好地应付钝角
+        const slopeTool = slopeToolSketch?.extrude(dists[pick(2)] + cutToolMargin).cut(earEdgeCutTools[pick(0)].clone()).cut(earEdgeCutTools[pick(1)].clone()).simplify();
         if (!slopeTool) {
           console.warn('[ReplicadModeling] failed to create slope tool for edge, skip this edge', edge);
           return;
@@ -186,8 +192,6 @@ const buildSolidFromTrianglesWithAngles = async (
       });
       connectionSolid = connectionSolid.fuse(earSolid).simplify();
     });
-
-    // 第三步：生成弯折、拼接坡度刀具
     earEdgeCutTools.forEach((tool) => tool.delete());
     planes.forEach((plane) => { if (plane) plane.delete(); });
 
@@ -196,7 +200,7 @@ const buildSolidFromTrianglesWithAngles = async (
   
   onProgress?.(40);
   const progressPerSlope = 59 / slopeTools.length;
-  // 第四步：应用刀具
+  // 第四步：应用坡度刀具
   slopeTools.forEach((tool, idx) => {
     connectionSolid = connectionSolid.cut(tool).simplify();
     onProgress?.(Math.floor(40 + progressPerSlope * (idx + 1)));
@@ -206,10 +210,10 @@ const buildSolidFromTrianglesWithAngles = async (
   // 第四步，削平底部
   const margin = earWidth + 1;
   const tool = makeBox(
-    [outerResult.min[0] - margin, outerResult.min[1] - margin, slopToolHeight] as Point,
+    [outerResult.min[0] - margin, outerResult.min[1] - margin, -maxEdgeDistance] as Point,
     [outerResult.max[0] + margin, outerResult.max[1] + margin, 0] as Point
   );
-  connectionSolid = connectionSolid.intersect(tool) as Shape3D;
+  connectionSolid = connectionSolid.cut(tool) as Shape3D;
   connectionSolid = connectionSolid.simplify().mirror("XY").rotate(180, [0, 0, 0], [0, 1, 0])
   onProgress?.(100);
   return connectionSolid;

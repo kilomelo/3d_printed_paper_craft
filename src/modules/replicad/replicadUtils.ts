@@ -38,6 +38,7 @@ export function triangles2Outer(trianglesWithAngles: TriangleWithEdgeInfo[]): {
   max: Point2D;
   pointAngleMap: Map<string, number>;
 } | undefined {
+  console.log("[replicadModeling] triangles2Outer: finding outer contour from triangles", trianglesWithAngles);
   if (!trianglesWithAngles.length) return undefined;
   const edgeMap = new Map<string, { a: Point2D; b: Point2D; isSeam: boolean }>();
   const max: Point2D = [-Infinity, -Infinity];
@@ -98,7 +99,6 @@ export function triangles2Outer(trianglesWithAngles: TriangleWithEdgeInfo[]): {
       loops.push(loop);
     }
   });
-
   if (!loops.length) return undefined;
   let outer = loops[0];
   let bestArea = Math.abs(polygonArea(outer));

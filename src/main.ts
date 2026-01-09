@@ -653,6 +653,7 @@ exportGroupStepBtn.addEventListener("click", async () => {
   exportGroupStepBtn.disabled = true;
   try {
     const targetGroupId = groupController.getPreviewGroupId();
+    const groupName = groupController.getGroupName(targetGroupId) ?? `group-${targetGroupId}`;
     const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
     if (!trisWithAngles.length) {
       log("当前展开组没有三角面，无法导出。", "error");
@@ -663,7 +664,7 @@ exportGroupStepBtn.addEventListener("click", async () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `group-${targetGroupId}.step`;
+    a.download = `group-${groupName}.step`;
     a.style.display = "none";
     document.body.appendChild(a);
     a.click();
@@ -681,6 +682,7 @@ exportGroupStlBtn.addEventListener("click", async () => {
   exportGroupStlBtn.disabled = true;
   try {
     const targetGroupId = groupController.getPreviewGroupId();
+    const groupName = groupController.getGroupName(targetGroupId) ?? `group-${targetGroupId}`;
     const cached = previewMeshCache.get(targetGroupId);
     if (cached) {
       log("使用缓存 mesh 导出展开组 STL...", "info");
@@ -699,7 +701,7 @@ exportGroupStlBtn.addEventListener("click", async () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `group-${targetGroupId}.stl`;
+      a.download = `group-${groupName}.stl`;
       a.style.display = "none";
       document.body.appendChild(a);
       a.click();
@@ -724,7 +726,7 @@ exportGroupStlBtn.addEventListener("click", async () => {
       const url = URL.createObjectURL(new Blob([buffer], { type: "model/stl" }));
       const a = document.createElement("a");
       a.href = url;
-      a.download = `group-${targetGroupId}.stl`;
+      a.download = `group-${groupName}.stl`;
       a.style.display = "none";
       document.body.appendChild(a);
       a.click();
