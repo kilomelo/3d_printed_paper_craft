@@ -3,6 +3,7 @@ import "./style.css";
 import packageJson from "../package.json";
 import { Color, Mesh } from "three";
 import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { type WorkspaceState } from "./types/workspaceState.js";
 import { createLog } from "./modules/log";
 import { createRenderer3D } from "./modules/renderer3d";
@@ -26,6 +27,7 @@ import {
 
 const VERSION = packageJson.version ?? "0.0.0.0";
 const previewMeshCache = new Map<number, Mesh>();
+const stlLoader = new STLLoader();
 const defaultSettings = getDefaultSettings();
 const limits = SETTINGS_LIMITS;
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -705,7 +707,14 @@ exportGroupStlBtn.addEventListener("click", async () => {
       }
       log("正在导出展开组 STL...", "info");
       const blob = await buildStlInWorker(trisWithAngles, (progress) => log(progress, "progress"));
-      const url = URL.createObjectURL(blob);
+      const buffer = await blob.arrayBuffer();
+      const geometry = stlLoader.parse(buffer);
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+      const mesh = new Mesh(geometry);
+      mesh.name = "Replicad Mesh";
+      previewMeshCache.set(targetGroupId, mesh.clone());
+      const url = URL.createObjectURL(new Blob([buffer], { type: "model/stl" }));
       const a = document.createElement("a");
       a.href = url;
       a.download = `group-${targetGroupId}.stl`;

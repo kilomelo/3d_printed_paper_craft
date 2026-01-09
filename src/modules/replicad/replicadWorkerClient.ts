@@ -7,6 +7,7 @@ import {
   Uint32BufferAttribute,
   Mesh,
 } from "three";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 
 type MeshPayload = {
   positions: ArrayBuffer;
@@ -18,7 +19,7 @@ type MeshPayload = {
 type WorkerResponse =
   | { id: number; ok: true; type: "step"; buffer: ArrayBuffer; mime: string }
   | { id: number; ok: true; type: "stl"; buffer: ArrayBuffer; mime: string }
-  | { id: number; ok: true; type: "mesh"; mesh: MeshPayload }
+  | { id: number; ok: true; type: "mesh"; buffer: ArrayBuffer; mime: string }
   | { id: number; ok: true; type: "progress"; message: number }
   | { id: number; ok: false; error: string };
 
@@ -105,28 +106,17 @@ export async function buildStlInWorker(trisWithAngles: TriangleWithEdgeInfo[], o
   return new Blob([res.buffer], { type: res.mime });
 }
 
-const reconstructMesh = (payload: MeshPayload) => {
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new Float32BufferAttribute(new Float32Array(payload.positions), 3));
-  geometry.setAttribute("normal", new Float32BufferAttribute(new Float32Array(payload.normals), 3));
-  if (payload.indices && payload.indexType) {
-    if (payload.indexType === "uint32") {
-      geometry.setIndex(new Uint32BufferAttribute(new Uint32Array(payload.indices), 1));
-    } else {
-      geometry.setIndex(new Uint16BufferAttribute(new Uint16Array(payload.indices), 1));
-    }
-  }
-  geometry.computeBoundingBox();
-  geometry.computeBoundingSphere();
-  const mesh = new Mesh(geometry);
-  mesh.name = "Replicad Mesh";
-  return mesh;
-};
+const stlLoader = new STLLoader();
 
 export async function buildMeshInWorker(trisWithAngles: TriangleWithEdgeInfo[], onProgress?: (msg: number) => void) {
   const res = (await callWorker({ type: "mesh", triangles: trisWithAngles, settings: getSettings() }, onProgress)) as Extract<
     WorkerResponse,
     { type: "mesh"; ok: true }
   >;
-  return reconstructMesh(res.mesh);
+  const geometry = stlLoader.parse(res.buffer);
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  const mesh = new Mesh(geometry);
+  mesh.name = "Replicad Mesh";
+  return mesh;
 }
