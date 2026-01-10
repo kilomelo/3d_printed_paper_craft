@@ -72,6 +72,7 @@ app.innerHTML = `
             <button class="btn sm toggle" id="edges-toggle">线框：关</button>
             <button class="btn sm toggle" id="seams-toggle">拼接边：关</button>
             <button class="btn sm toggle active" id="faces-toggle">面渲染：开</button>
+            <button class="btn sm toggle" id="bbox-toggle">包围盒：关</button>
             <div class="toolbar-spacer"></div>
             <span class="toolbar-stat" id="tri-counter">渲染三角形：0</span>
           </div>
@@ -427,6 +428,24 @@ const renderer3d = createRenderer3D(
   },
   (canvas) => viewer.appendChild(canvas),
 );
+const bboxToggle = document.querySelector<HTMLButtonElement>("#bbox-toggle")!;
+bboxToggle.addEventListener("click", () => {
+  const visible = renderer3d.toggleBBox();
+  bboxToggle.classList.toggle("active", visible);
+  bboxToggle.textContent = `包围盒：${visible ? "开" : "关"}`;
+});
+appEventBus.on("workspaceStateChanged", ({ current, previous }) => {
+  const isPreview = current === "previewGroupModel";
+  bboxToggle.classList.toggle("hidden", isPreview);
+  if (isPreview) {
+    bboxToggle.classList.remove("active");
+    bboxToggle.textContent = "包围盒：关";
+  } else {
+    const visible = (renderer3d as any).getBBoxVisible?.() ?? false;
+    bboxToggle.classList.toggle("active", visible);
+    bboxToggle.textContent = `包围盒：${visible ? "开" : "关"}`;
+  }
+});
 const allowedExtensions = ["obj", "fbx", "stl", "3dppc"];
 function getExtension(name: string) {
   const parts = name.split(".");
@@ -648,8 +667,8 @@ exportBtn.addEventListener("click", async () => {
   try {
     log("正在导出 .3dppc ...", "info");
     const data = await build3dppcData(model);
-    await download3dppc(data);
-    log("导出成功", "success");
+    const fileName = download3dppc(data);
+    log(`3dppc 已导出：下载目录/${fileName}`, "success");
   } catch (error) {
     console.error("导出失败", error);
     log("导出失败，请重试。", "error");
@@ -679,7 +698,7 @@ exportGroupStepBtn.addEventListener("click", async () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    log("展开组 STEP 已导出", "success");
+    log(`展开组 STEP 已导出：下载目录/group-${groupName}.step`, "success");
   } catch (error) {
     console.error("展开组 STEP 导出失败", error);
     log("展开组 STEP 导出失败，请查看控制台日志。", "error");
@@ -716,7 +735,7 @@ exportGroupStlBtn.addEventListener("click", async () => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      log("展开组 STL 已导出", "success");
+      log(`展开组 STL 已导出：下载目录/group-${groupName}.stl`, "success");
     } else {
       const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
       if (!trisWithAngles.length) {
@@ -741,7 +760,7 @@ exportGroupStlBtn.addEventListener("click", async () => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      log("展开组 STL 已导出", "success");
+      log(`展开组 STL 已导出：下载目录/group-${groupName}.stl`, "success");
     }
   } catch (error) {
     console.error("展开组 STL 导出失败", error);

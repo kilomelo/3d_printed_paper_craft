@@ -29,6 +29,7 @@ export type SceneContext = {
   dir: DirectionalLight;
   modelGroup: Group;
   previewModelGroup: Group;
+  gizmosGroup: Group;
 };
 
 export function createScene(width: number, height: number): SceneContext {
@@ -55,9 +56,10 @@ export function createScene(width: number, height: number): SceneContext {
 
   const modelGroup = new Group();
   const previewModelGroup = new Group();
-  scene.add(modelGroup, previewModelGroup);
+  const gizmosGroup = new Group();
+  scene.add(modelGroup, previewModelGroup, gizmosGroup);
 
-  return { scene, camera, renderer, controls, ambient, dir, modelGroup, previewModelGroup };
+  return { scene, camera, renderer, controls, ambient, dir, modelGroup, previewModelGroup, gizmosGroup };
 }
 
 export type Scene2DContext = {

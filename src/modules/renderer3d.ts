@@ -14,6 +14,11 @@ import {
   AxesHelper,
   Scene,
   type Object3D,
+  Box3Helper,
+  Box3,
+  Sprite,
+  SpriteMaterial,
+  CanvasTexture,
 } from "three";
 import type { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
@@ -21,7 +26,7 @@ import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { getModel, setModel, setLastFileName, prepareGeometryData } from "./model";
 import { load3dppc, type PPCFile } from "./ppc";
-import { applySettings, resetSettings } from "./settings";
+import { applySettings, resetSettings, getSettings } from "./settings";
 import { createScene, fitCameraToObject } from "./scene";
 import { FACE_DEFAULT_COLOR, createFrontMaterial, createPreviewMaterial, createEdgeMaterial } from "./materials";
 import {
@@ -83,11 +88,91 @@ export function createRenderer3D(
   let breathGroupId: number | null = null;
   let breathStart = 0;
   let breathRaf: number | null = null;
+  let gizmosVisible = false;
+  let gizmosVisibleBeforePreview = false;
   
-  const { scene, camera, renderer, controls, ambient, dir, modelGroup, previewModelGroup } = createScene((getViewport().width), getViewport().height);
+  const { scene, camera, renderer, controls, ambient, dir, modelGroup, previewModelGroup, gizmosGroup } = createScene((getViewport().width), getViewport().height);
   mountRenderer(renderer.domElement);
+  gizmosGroup.visible = false;
+  let bboxHelper: Box3Helper | null = null;
+  let bboxBox: Box3 | null = null;
+  let bboxLabels: Sprite[] = [];
 
-  const updateClipPlanes = () => {
+  const drawLabelTexture = (text: string, canvas?: HTMLCanvasElement) => {
+    const cvs = canvas ?? document.createElement("canvas");
+    cvs.width = 256;
+    cvs.height = 128;
+    const ctx = cvs.getContext("2d")!;
+    ctx.clearRect(0, 0, cvs.width, cvs.height);
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    ctx.fillRect(0, 0, cvs.width, cvs.height);
+    ctx.font = "bold 64px sans-serif";
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, cvs.width / 2, cvs.height / 2);
+    return cvs;
+  };
+
+  const createLabelSprite = (text: string) => {
+    const canvas = document.createElement("canvas");
+    drawLabelTexture(text, canvas);
+    const texture = new CanvasTexture(canvas);
+    const material = new SpriteMaterial({ map: texture, depthTest: false, depthWrite: false, transparent: true });
+    const sprite = new Sprite(material);
+    sprite.scale.set(1.5, 0.75, 1);
+    return sprite;
+  };
+
+  const updateLabelPositions = () => {
+    if (!bboxBox || bboxLabels.length !== 3) return;
+    const center = bboxBox.getCenter(new Vector3());
+    const min = bboxBox.min;
+    const max = bboxBox.max;
+    const camPos = camera.position;
+    const pickNearest = (points: Vector3[]) => {
+      let best = points[0];
+      let bestDist = Infinity;
+      points.forEach((p) => {
+        const d = p.distanceTo(camPos);
+        if (d < bestDist) {
+          bestDist = d;
+          best = p;
+        }
+      });
+      return best;
+    };
+    const midX = (min.x + max.x) * 0.5;
+    const midY = (min.y + max.y) * 0.5;
+    const midZ = (min.z + max.z) * 0.5;
+    const xPoints = [
+      new Vector3(midX, min.y, min.z),
+      new Vector3(midX, min.y, max.z),
+      new Vector3(midX, max.y, min.z),
+      new Vector3(midX, max.y, max.z),
+    ];
+    const yPoints = [
+      new Vector3(min.x, midY, min.z),
+      new Vector3(min.x, midY, max.z),
+      new Vector3(max.x, midY, min.z),
+      new Vector3(max.x, midY, max.z),
+    ];
+    const zPoints = [
+      new Vector3(min.x, min.y, midZ),
+      new Vector3(min.x, max.y, midZ),
+      new Vector3(max.x, min.y, midZ),
+      new Vector3(max.x, max.y, midZ),
+    ];
+    bboxLabels[0].position.copy(pickNearest(xPoints));
+    bboxLabels[1].position.copy(pickNearest(yPoints));
+    bboxLabels[2].position.copy(pickNearest(zPoints));
+    // 让标签大小随相机距离缩放，保持可读性
+    const dist = camera.position.distanceTo(controls.target);
+    const scaleBase = Math.max(0.2, dist * 0.05);
+    bboxLabels.forEach((s) => s.scale.set(scaleBase, scaleBase * 0.5, 1));
+  };
+
+  const onControlChanged = () => {
     const dist = camera.position.distanceTo(controls.target);
     const minNear = 0.01;
     const near = Math.max(minNear, dist * 0.002);
@@ -97,9 +182,10 @@ export function createRenderer3D(
       camera.far = far;
       camera.updateProjectionMatrix();
     }
+    updateLabelPositions();
   };
-  controls.addEventListener("change", updateClipPlanes);
-  updateClipPlanes();
+  controls.addEventListener("change", onControlChanged);
+  onControlChanged();
 
   const seamManager = createSeamManager(
     modelGroup,
@@ -334,6 +420,7 @@ export function createRenderer3D(
     interactionController?.endBrush();
     disposeGroupDeep(modelGroup);
     disposeGroupDeep(previewModelGroup);
+    disposeGroupDeep(gizmosGroup);
     previewModelGroup.visible = false;
     disposeHoverLinesLocal();
     setModel(null);
@@ -471,6 +558,12 @@ export function createRenderer3D(
     applyFaceVisibility();
     return facesVisible;
   };
+  const toggleBBox = () => {
+    gizmosVisible = !gizmosVisible;
+    gizmosGroup.visible = gizmosVisible;
+    return gizmosVisible;
+  };
+  const getBBoxVisible = () => gizmosVisible;
 
   let lastTriCount = 0;
   const getTriCount = () => lastTriCount;
@@ -514,6 +607,8 @@ export function createRenderer3D(
 
   appEventBus.on("workspaceStateChanged", ({previous, current}) => {
     if (current === "normal" && previous === "previewGroupModel") {
+      gizmosVisible = gizmosVisibleBeforePreview;
+      gizmosGroup.visible = gizmosVisible;
       previewModelGroup.visible = false;
       modelGroup.visible = true;
       // fitCameraToObject(modelGroup, camera, controls);
@@ -527,12 +622,27 @@ export function createRenderer3D(
       rebuildSpecialEdges(modelGroup, false);
     }
     if (current === "previewGroupModel") {
+      gizmosVisibleBeforePreview = gizmosVisible;
+      gizmosVisible = false;
+      gizmosGroup.visible = false;
       applyFaceVisibility();
       applyEdgeVisibility();
       rebuildSpecialEdges(previewModelGroup);
     }
   });
   appEventBus.on("groupCurrentChanged", (groupId: number) => syncGroupStateFromData(groupId));
+  appEventBus.on("settingsChanged", () => {
+    if (!bboxBox || bboxLabels.length !== 3) return;
+    const { scale } = getSettings();
+    const size = bboxBox.getSize(new Vector3()).multiplyScalar(scale);
+    const texts = [`${Math.round(size.x)}`, `${Math.round(size.y)}`, `${Math.round(size.z)}`];
+    bboxLabels.forEach((s, i) => {
+      const mat = s.material as SpriteMaterial;
+      const canvas = drawLabelTexture(texts[i], (mat.map as CanvasTexture).image as HTMLCanvasElement);
+      (mat.map as CanvasTexture).image = canvas;
+      (mat.map as CanvasTexture).needsUpdate = true;
+    });
+  });
 
   interactionController = initInteractionController({
     renderer,
@@ -670,6 +780,18 @@ export function createRenderer3D(
     log(`已加载：${name} · 三角面 ${geometryIndex.getTriangleCount()}`, "success");
     appEventBus.emit("modelLoaded", undefined);
     rebuildSpecialEdges(modelGroup);
+    bboxBox = new Box3().setFromObject(modelGroup);
+    bboxHelper = new Box3Helper(bboxBox, new Color(0x00ff88));
+    gizmosGroup.add(bboxHelper);
+    const { scale } = getSettings();
+    const size = bboxBox.getSize(new Vector3()).multiplyScalar(scale);
+    bboxLabels = [
+      createLabelSprite(`${Math.round(size.x)}`),
+      createLabelSprite(`${Math.round(size.y)}`),
+      createLabelSprite(`${Math.round(size.z)}`),
+    ];
+    bboxLabels.forEach((s) => gizmosGroup.add(s));
+    updateLabelPositions();
   }
 
   async function applyLoadedModel(file: File, ext: string) {
@@ -751,6 +873,8 @@ export function createRenderer3D(
     toggleEdges,
     toggleSeams,
     toggleFaces,
+    toggleBBox,
+    getBBoxVisible,
     applyLoadedModel,
     getTriCount,
     resizeRenderer3D,

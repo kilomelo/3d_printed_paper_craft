@@ -13,12 +13,12 @@ function disposeMaterial(mat: THREE.Material) {
 
 export function disposeGroupDeep(group: THREE.Object3D, renderer?: THREE.WebGLRenderer) {
   group.traverse((obj) => {
-    if (!(obj as any).isMesh) return;
-    const mesh = obj as THREE.Mesh;
+    const anyObj = obj as any;
+    if (anyObj.geometry?.dispose) {
+      anyObj.geometry.dispose();
+    }
 
-    mesh.geometry?.dispose();
-
-    const mat = mesh.material as THREE.Material | THREE.Material[];
+    const maybeMaterial = anyObj.material as THREE.Material | THREE.Material[] | undefined;
     const disposeMat = (m: THREE.Material) => {
       for (const k of Object.keys(m)) {
         const v = (m as any)[k];
@@ -27,8 +27,11 @@ export function disposeGroupDeep(group: THREE.Object3D, renderer?: THREE.WebGLRe
       m.dispose();
     };
 
-    if (Array.isArray(mat)) mat.forEach(disposeMat);
-    else if (mat) disposeMat(mat);
+    if (Array.isArray(maybeMaterial)) {
+      maybeMaterial.forEach(disposeMat);
+    } else if (maybeMaterial) {
+      disposeMat(maybeMaterial);
+    }
   });
 
   group.clear();

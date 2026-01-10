@@ -126,7 +126,7 @@ const buildSolidFromTrianglesWithAngles = async (
       const pick = (k: 0 | 1 | 2): 0 | 1 | 2 => ((k + (idx % 3) + 3) % 3) as 0 | 1 | 2;
       const [pointA, pointB] = [triData.tri[pick(0)], triData.tri[pick(1)]];
       const minDistance = 0.2;
-      if (!edge.isOuter || edge.angle < Math.PI - 1e-6) {
+      if (edge.angle < Math.PI * 0.995) {
         // 第二步：生成弯折、拼接坡度刀具
         const slopeStartZ = edge.isOuter ? layerHeight : connectionThickness;
         const slopeZDelta = slopToolHeight - slopeStartZ;
@@ -246,7 +246,7 @@ const buildSolidFromTrianglesWithAngles = async (
       const coneHeight =  Math.max(earCutToolMarginMin, bodyThickness + 1);
       const radius = 1.415 * Math.max(0.01, coneHeight * Math.tan((Math.PI - data.minAngle) * 0.5));
       const base = sketchCircle(radius, { plane: "XY", origin: coneHeight + connectionThickness });
-      const bottom = sketchCircle(0.1, { plane: "XY", origin: connectionThickness });
+      const bottom = sketchCircle(0.05, { plane: "XY", origin: connectionThickness });
       const cone = base.loftWith(bottom)
       // const cone = base.loftWith([], { endPoint: [0, 0, connectionThickness + 1e-2], ruled: true })
         .translate([data.position[0], data.position[1], 0]);
