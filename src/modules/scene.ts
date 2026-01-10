@@ -103,7 +103,7 @@ export function fitCameraToObject(object: Object3D, camera: PerspectiveCamera, c
   const offset = 1.5;
   controls.target.set(center.x, center.y, center.z);
   camera.position.set(-distance * offset * 0.75 + center.x, -distance * offset + center.y, distance * offset * 0.75 + center.z);
-  camera.near = Math.max(0.1, distance / 100);
+  camera.near = Math.max(0.01, distance / 500);
   camera.far = distance * 100;
   camera.updateProjectionMatrix();
 

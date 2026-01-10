@@ -70,7 +70,7 @@ function applyDefaultFaceColors(mesh: Mesh) {
   geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
 }
 
-export function generateFunctionalMaterials(root: Object3D, target: Object3D) {
+export function generateFunctionalMeshes(root: Object3D, target: Object3D) {
   target.traverse((child) => {
     if ((child as Mesh).isMesh) {
       const mesh = child as Mesh;

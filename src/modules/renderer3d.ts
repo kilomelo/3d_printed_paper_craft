@@ -19,7 +19,7 @@ import type { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import { getModel, setModel, setLastFileName } from "./model";
+import { getModel, setModel, setLastFileName, prepareGeometryData } from "./model";
 import { load3dppc, type PPCFile } from "./ppc";
 import { applySettings, resetSettings } from "./settings";
 import { createScene, fitCameraToObject } from "./scene";
@@ -33,12 +33,14 @@ import {
   initInteractionController,
   type HoverState,
 } from "./interactions";
-import { type EdgeRecord, generateFunctionalMaterials } from "./model";
+import { type EdgeRecord, generateFunctionalMeshes } from "./model";
 import { createFaceColorService } from "./faceColorService";
 import { createSeamManager } from "./seamManager";
+import { createSpecialEdgeManager } from "./specialEdgeManager";
 import { appEventBus } from "./eventBus";
-import { type GeometryContext } from "./geometry";
+import { type GeometryContext, createGeometryContext } from "./geometry";
 import { WorkspaceState } from "@/types/workspaceState";
+import { disposeGroupDeep } from "./threeUtils";
 
 export type GroupApi = {
   handleRemoveFace: (faceId: number) => void;
@@ -66,6 +68,7 @@ export function createRenderer3D(
   let facesVisible = true;
   const geometryIndex = geometryContext.geometryIndex;
   const angleIndex = geometryContext.angleIndex;
+  const previewGeometryContext = createGeometryContext();
   let faceAdjacency = geometryIndex.getFaceAdjacency();
   let faceIndexMap = geometryIndex.getFaceIndexMap();
   let meshFaceIdMap = geometryIndex.getMeshFaceIdMap();
@@ -84,6 +87,20 @@ export function createRenderer3D(
   const { scene, camera, renderer, controls, ambient, dir, modelGroup, previewModelGroup } = createScene((getViewport().width), getViewport().height);
   mountRenderer(renderer.domElement);
 
+  const updateClipPlanes = () => {
+    const dist = camera.position.distanceTo(controls.target);
+    const minNear = 0.01;
+    const near = Math.max(minNear, dist * 0.002);
+    const far = Math.max(near * 50, dist * 100);
+    if (Math.abs(camera.near - near) > 1e-4 || Math.abs(camera.far - far) > 1e-2) {
+      camera.near = near;
+      camera.far = far;
+      camera.updateProjectionMatrix();
+    }
+  };
+  controls.addEventListener("change", updateClipPlanes);
+  updateClipPlanes();
+
   const seamManager = createSeamManager(
     modelGroup,
     getViewport,
@@ -92,7 +109,9 @@ export function createRenderer3D(
     () => vertexKeyToPos,
     (edgeId: number) => geometryIndex.getEdgeWorldPositions(edgeId),
     () => seamsVisible,
-  )
+  );
+
+  const specialEdgeManager = createSpecialEdgeManager(modelGroup, getViewport);
 
   function syncGroupStateFromData(groupId: number) {
     interactionController?.endBrush();
@@ -135,7 +154,7 @@ export function createRenderer3D(
     root.name = name;
     root.add(object);
     applyFrontMaterialToMeshes(root);
-    generateFunctionalMaterials(root, object);
+    generateFunctionalMeshes(root, object);
     return root;
   }
 
@@ -313,8 +332,8 @@ export function createRenderer3D(
   function clearModel() {
     stopGroupBreath();
     interactionController?.endBrush();
-    modelGroup.clear();
-    previewModelGroup.clear();
+    disposeGroupDeep(modelGroup);
+    disposeGroupDeep(previewModelGroup);
     previewModelGroup.visible = false;
     disposeHoverLinesLocal();
     setModel(null);
@@ -331,6 +350,7 @@ export function createRenderer3D(
     edgeKeyToId = geometryIndex.getEdgeKeyToId();
     vertexKeyToPos = geometryIndex.getVertexKeyToPos();
     seamManager?.dispose();
+    specialEdgeManager?.dispose();
     hideHoverLines(hoverState);
     appEventBus.emit("modelCleared", undefined);
   }
@@ -380,6 +400,7 @@ export function createRenderer3D(
     axesCamera.aspect = 1;
     axesCamera.updateProjectionMatrix();
     seamManager.updateSeamResolution();
+    specialEdgeManager.updateResolution();
 
     updateHoverResolution(getViewport(), hoverLines);
   }
@@ -454,6 +475,43 @@ export function createRenderer3D(
   let lastTriCount = 0;
   const getTriCount = () => lastTriCount;
 
+  function rebuildSpecialEdges(targetRoot: Group, logSpecialEdges = true) {
+    const usePreviewData = targetRoot === previewModelGroup;
+    let openCount = 0;
+    let nonManifoldCount = 0;
+    if (usePreviewData) {
+      const previewIdx = previewGeometryContext.geometryIndex;
+      const res = specialEdgeManager.rebuild(
+        targetRoot,
+        () => previewIdx.getEdgesArray(),
+        (edgeId: number) => previewIdx.getEdgeWorldPositions(edgeId),
+        () => previewIdx.getVertexKeyToPos(),
+      );
+      openCount = res.openCount;
+      nonManifoldCount = res.nonManifoldCount;
+    } else {
+      const res = specialEdgeManager.rebuild(
+        targetRoot,
+        () => edges,
+        (edgeId: number) => geometryIndex.getEdgeWorldPositions(edgeId),
+        () => vertexKeyToPos,
+      );
+      openCount = res.openCount;
+      nonManifoldCount = res.nonManifoldCount;
+    }
+    if (logSpecialEdges) {
+      if (openCount > 0 || nonManifoldCount > 0) {
+        if (openCount > 0 && nonManifoldCount === 0) {
+          log(`检测到 ${openCount} 条未封闭边`);
+        } else if (openCount === 0 && nonManifoldCount > 0) {
+          log(`检测到 ${nonManifoldCount} 条非流形边`);
+        } else {
+          log(`检测到 ${openCount} 条未封闭边，及 ${nonManifoldCount} 条非流形边`);
+        }
+      }
+    }
+  }
+
   appEventBus.on("workspaceStateChanged", ({previous, current}) => {
     if (current === "normal" && previous === "previewGroupModel") {
       previewModelGroup.visible = false;
@@ -466,10 +524,12 @@ export function createRenderer3D(
       applyFaceVisibility();
       applyEdgeVisibility();
       setSeamsVisibility(seamsVisible);
+      rebuildSpecialEdges(modelGroup, false);
     }
     if (current === "previewGroupModel") {
       applyFaceVisibility();
       applyEdgeVisibility();
+      rebuildSpecialEdges(previewModelGroup);
     }
   });
   appEventBus.on("groupCurrentChanged", (groupId: number) => syncGroupStateFromData(groupId));
@@ -609,6 +669,7 @@ export function createRenderer3D(
     fitCameraToObject(model, camera, controls);
     log(`已加载：${name} · 三角面 ${geometryIndex.getTriangleCount()}`, "success");
     appEventBus.emit("modelLoaded", undefined);
+    rebuildSpecialEdges(modelGroup);
   }
 
   async function applyLoadedModel(file: File, ext: string) {
@@ -643,6 +704,8 @@ export function createRenderer3D(
       target: controls.target.clone(),
     };
     fitCameraToObject(previewModelGroup, camera, controls);
+    previewGeometryContext.rebuildFromModel(previewModelGroup);
+    rebuildSpecialEdges(previewModelGroup);
   }
 
   function renderAxesInset() {

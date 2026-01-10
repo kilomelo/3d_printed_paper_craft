@@ -384,7 +384,7 @@ const closeRenameDialog = () => {
 
 renameCancelBtn.addEventListener("click", closeRenameDialog);
 const isValidGroupName = (val: string) => !!val && /\S/.test(val);
-renameConfirmBtn.addEventListener("click", () => {
+const handleRenameConfirm = () => {
   const val = renameInput.value ?? "";
   if (!isValidGroupName(val)) {
     log("组名无效，请输入至少一个可见字符", "error");
@@ -394,6 +394,16 @@ renameConfirmBtn.addEventListener("click", () => {
   groupController.setGroupName(groupController.getPreviewGroupId(), val.trim());
   log("展开组名称修改成功", "success");
   closeRenameDialog();
+};
+renameConfirmBtn.addEventListener("click", handleRenameConfirm);
+renameInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    handleRenameConfirm();
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    closeRenameDialog();
+  }
 });
 const renderer3d = createRenderer3D(
   log,
@@ -493,7 +503,6 @@ const unfold2d = createUnfold2dManager({
   getGroupIds: groupController.getGroupIds,
   getGroupFaces: groupController.getGroupFaces,
   getPreviewGroupId: groupController.getPreviewGroupId,
-  refreshVertexWorldPositions: () => geometryContext.geometryIndex.refreshVertexWorldPositions(getModel()),
   getFaceGroupMap: groupController.getFaceGroupMap,
   getGroupColor: groupController.getGroupColor,
   getGroupTreeParent: groupController.getGroupTreeParent,

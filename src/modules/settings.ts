@@ -15,7 +15,7 @@ export const SETTINGS_LIMITS = {
   layerHeight: { min: 0, max: 0.5 },
   connectionLayers: { min: 1, max: 4 },
   bodyLayers: { min: 1, max: 8 },
-  earWidth: { min: 0, max: 990 },
+  earWidth: { min: 0, max: 20 },
   earThickness: { min: 1, max: 2 },
 } as const;
 

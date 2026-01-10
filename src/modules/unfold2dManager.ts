@@ -29,7 +29,6 @@ type ManagerDeps = {
   getGroupIds: () => number[];
   getGroupFaces: (id: number) => Set<number> | undefined;
   getPreviewGroupId: () => number;
-  refreshVertexWorldPositions: () => void;
   getFaceGroupMap: () => Map<number, number | null>;
   getGroupColor: (id: number) => THREE.Color | undefined;
   getGroupTreeParent: (id: number) => Map<number, number | null> | undefined;
@@ -46,7 +45,6 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     getGroupIds,
     getGroupFaces,
     getPreviewGroupId,
-    refreshVertexWorldPositions,
     getFaceGroupMap,
     getGroupColor,
     getGroupTreeParent,
@@ -275,7 +273,6 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     clearTransforms();
     buildRootTransforms(groupId);
     buildTransformsForGroup(groupId);
-    refreshVertexWorldPositions();
     const positions: number[] = [];
     const colors: number[] = [];
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -348,7 +345,6 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     if (!faces || faces.size === 0) return [];
     buildRootTransforms(groupId);
     buildTransformsForGroup(groupId);
-    refreshVertexWorldPositions();
     const faceToEdges = getFaceToEdges();
     const faceIndexMap = getFaceIndexMap();
     const vertexKeyToPos = getVertexKeyToPos();
