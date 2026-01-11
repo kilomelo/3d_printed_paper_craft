@@ -503,6 +503,8 @@ seamsToggle.classList.add("active");
 seamsToggle.textContent = "拼接边：开";
 facesToggle.classList.add("active");
 facesToggle.textContent = "面渲染：开";
+bboxToggle.classList.add("active");
+bboxToggle.textContent = "包围盒：开";
 
 // 三角形计数跟随渲染器
 const syncTriCount = () => {
@@ -530,6 +532,7 @@ const unfold2d = createUnfold2dManager({
   getVertexKeyToPos: () => geometryContext.geometryIndex.getVertexKeyToPos(),
   getFaceIndexMap: () => geometryContext.geometryIndex.getFaceIndexMap(),
 });
+renderer2d.setUnfoldManager(unfold2d);
 const menuButtons = [menuOpenBtn, exportBtn, exportGroupStepBtn, previewGroupModelBtn, settingsOpenBtn];
 const updateMenuState = () => {
   const isPreview = workspaceState === "previewGroupModel" as WorkspaceState;
@@ -688,7 +691,11 @@ exportGroupStepBtn.addEventListener("click", async () => {
       return;
     }
     log("正在导出展开组 STEP...", "info");
-    const blob = await buildStepInWorker(trisWithAngles, (progress) => log(progress, "progress"));
+    const blob = await buildStepInWorker(
+      trisWithAngles,
+      (progress) => log(progress, "progress"),
+      (msg, tone) => log(msg, (tone as any) ?? "error"),
+    );
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -743,7 +750,11 @@ exportGroupStlBtn.addEventListener("click", async () => {
         return;
       }
       log("正在导出展开组 STL...", "info");
-      const blob = await buildStlInWorker(trisWithAngles, (progress) => log(progress, "progress"));
+      const blob = await buildStlInWorker(
+        trisWithAngles,
+        (progress) => log(progress, "progress"),
+        (msg, tone) => log(msg, (tone as any) ?? "error"),
+      );
       const buffer = await blob.arrayBuffer();
       const geometry = stlLoader.parse(buffer);
       geometry.computeBoundingBox();
@@ -783,7 +794,11 @@ previewGroupModelBtn.addEventListener("click", async () => {
         return;
       }
       log("正在用 Replicad 生成 mesh...", "info");
-      const mesh = await buildMeshInWorker(trisWithAngles, (progress) => log(progress, "progress"));
+      const mesh = await buildMeshInWorker(
+        trisWithAngles,
+        (progress) => log(progress, "progress"),
+        (msg, tone) => log(msg, (tone as any) ?? "error"),
+      );
       previewMeshCache.set(targetGroupId, mesh.clone());
       renderer3d.loadPreviewModel(mesh);
     }

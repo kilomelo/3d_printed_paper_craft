@@ -88,12 +88,12 @@ export function createRenderer3D(
   let breathGroupId: number | null = null;
   let breathStart = 0;
   let breathRaf: number | null = null;
-  let gizmosVisible = false;
+  let gizmosVisible = true;
   let gizmosVisibleBeforePreview = false;
   
   const { scene, camera, renderer, controls, ambient, dir, modelGroup, previewModelGroup, gizmosGroup } = createScene((getViewport().width), getViewport().height);
   mountRenderer(renderer.domElement);
-  gizmosGroup.visible = false;
+  gizmosGroup.visible = true;
   let bboxHelper: Box3Helper | null = null;
   let bboxBox: Box3 | null = null;
   let bboxLabels: Sprite[] = [];

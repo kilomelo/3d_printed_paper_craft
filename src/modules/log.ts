@@ -38,11 +38,40 @@ export function createLog(listEl: HTMLElement): LogController {
 
   const log = (message: string | number, tone: LogTone = "info") => {
     const last = entries[entries.length - 1];
-    if (tone === "progress" && last?.tone === "progress") {
-      last.message = message;
-      last.count = 0;
-    } else if (last && last.message === message && last.tone === tone) {
-      last.count += 1;
+    if (tone === "progress") {
+      const value =
+        typeof message === "number"
+          ? message
+          : Number(message.toString().match(/(\d+(?:\.\d+)?)/)?.[1] ?? 0);
+      if (value !== 0) {
+        let foundIdx = -1;
+        for (let i = entries.length - 1; i >= 0; i--) {
+          if (entries[i].tone === "progress") {
+            foundIdx = i;
+            break;
+          }
+        }
+        if (foundIdx >= 0) {
+          const entry = entries.splice(foundIdx, 1)[0];
+          entry.message = message;
+          entry.count = 0;
+          entries.push(entry);
+          render();
+          return;
+        }
+      }
+      if (last?.tone === "progress") {
+        last.message = message;
+        last.count = 0;
+      } else {
+        entries.push({ message, tone, count: 0 });
+      }
+      render();
+      return;
+    }
+    const targetForStack = last?.tone === "progress" ? entries[entries.length - 2] : last;
+    if (targetForStack && targetForStack.message === message && targetForStack.tone === tone) {
+      targetForStack.count += 1;
     } else {
       entries.push({ message, tone, count: 0 });
     }

@@ -49,7 +49,9 @@ const isOcctValid = (shape: { wrapped: any }) => {
 const buildSolidFromTrianglesWithAngles = async (
   trianglesWithAngles: TriangleWithEdgeInfo[],
   onProgress?: (progress: number) => void,
+  onLog?: (msg: string) => void,
 ) => {
+  onProgress?.(0);
   const { layerHeight, connectionLayers, bodyLayers, earWidth, earThickness } = getSettings();
   const bodyThickness = bodyLayers * layerHeight;
   const connectionThickness = connectionLayers * layerHeight;
@@ -58,14 +60,17 @@ const buildSolidFromTrianglesWithAngles = async (
   // 第一步：生成连接层和主体
   const outerResult  = triangles2Outer(trianglesWithAngles);
   if (!outerResult || !outerResult.outer || outerResult.outer.length < 3) {
+    onLog?.("外轮廓查找失败");
     throw new Error("外轮廓查找失败");
   }
   const connectionSketch = sketchFromContourPoints(outerResult.outer, "XY", -outerResult.maxEdgeLen);
   if (!connectionSketch) {
+    onLog?.("连接层草图生成失败");
     throw new Error("连接层草图生成失败");
   }
   let connectionSolid = connectionSketch.extrude(connectionThickness + bodyThickness + outerResult.maxEdgeLen).simplify();
   if (!connectionSolid) {
+    onLog?.("连接层建模失败");
     throw new Error("连接层建模失败");
   }
   onProgress?.(2);
@@ -90,7 +95,8 @@ const buildSolidFromTrianglesWithAngles = async (
     // 基准顺序：AC, CB, BA 对应 [p0->p2, p2->p1, p1->p0]
     const planes = [makeVerticalPlaneNormalAB(p2, p1), makeVerticalPlaneNormalAB(p0, p2), makeVerticalPlaneNormalAB(p1, p0)];
     if (!planes.every(isDefined)) {
-      console.warn('[ReplicadModeling] failed to create cutting planes for triangle, skip this triangle', triData);
+      onLog?.("创建切边平面失败，跳过三角形");
+      console.warn('[ReplicadModeling] failed to create edge cutting planes for triangle, skip this triangle', triData);
       return;
     }
     const dists  = [Math.hypot(p2[0] - p1[0], p2[1] - p1[1]), Math.hypot(p2[0] - p0[0], p2[1] - p0[1]), Math.hypot(p1[0] - p0[0], p1[1] - p0[1])];
@@ -112,7 +118,8 @@ const buildSolidFromTrianglesWithAngles = async (
         -cutToolMargin),
     ];
     if (!edgeCutToolSketches.every(isDefined)) {
-      console.warn('[ReplicadModeling] failed to create ear cutting tools for triangle, skip this triangle', triData);
+      onLog?.("创建切边草图失败，跳过三角形");
+      console.warn('[ReplicadModeling] failed to create edge cut tool sketches for triangle, skip this triangle', triData);
       return;
     }
     // 这个工具会用来裁剪掉耳朵和坡度刀具超出三角形范围的部分
@@ -145,11 +152,14 @@ const buildSolidFromTrianglesWithAngles = async (
           [-slopeFirstLayerOffset, slopeStartZ], [0,slopeStartZ],
           [0, slopToolHeight], [-slopeTopOffset, slopToolHeight]], planes[pick(2)], -cutToolMargin);
         if (!slopeToolSketch) {
+          onLog?.("创建坡度刀具草图失败，跳过该边");
           console.warn('[ReplicadModeling] failed to create slope tool sketch for edge, skip this edge', edge);
+          return;
         }
         // 超量挤出了坡度刀具并切掉两头超出的部分，以更好地应付钝角
         const slopeTool = slopeToolSketch?.extrude(dists[pick(2)] + cutToolMargin).cut(edgeCutTools[pick(0)].clone()).cut(edgeCutTools[pick(1)].clone()).simplify();
         if (!slopeTool) {
+          onLog?.("创建坡度刀具失败，跳过该边");
           console.warn('[ReplicadModeling] failed to create slope tool for edge, skip this edge', edge);
           return;
         }
@@ -160,6 +170,7 @@ const buildSolidFromTrianglesWithAngles = async (
         // 用拼接对向三角形的内心与拼接边形成的三角形和自己的内心相对于拼接边的镜像点与拼接边形成的三角形计算交集，作为耳朵三角形形状
         const minIncenter = solveE(edge.incenter, pointA, pointB, triData.incenter);
         if (!minIncenter) {
+          onLog?.("耳朵内心求解失败，跳过该边");
           console.warn('[ReplicadModeling] failed to solve ear incenter for edge, skip this edge', edge);
           return;
         }
@@ -181,6 +192,7 @@ const buildSolidFromTrianglesWithAngles = async (
         // 耳朵从layerHeight处开始挤出，因为需要确保超小角度时的首层面积符合三角形面积
         const earSolidSketch = sketchFromContourPoints(earTrapezoid, "XY", layerHeight);
         if (!earSolidSketch) {
+          onLog?.("创建耳朵草图失败，跳过该边");
           console.warn('[ReplicadModeling] failed to create ear sketch for edge, skip this edge', edge);
           return;
         }
@@ -226,6 +238,11 @@ const buildSolidFromTrianglesWithAngles = async (
 
     onProgress?.(Math.floor(2 + progressPerTriangle * (i + 1)));
   });
+
+  if (!isOcctValid(connectionSolid)) {
+    onLog?.("生成耳朵后实体不是有效的 OCCT 形状");
+    console.warn('[ReplicadModeling] final solid is not valid OCCT shape');
+  }
   
   onProgress?.(40);
   const progressPerSlope = 40 / slopeTools.length;
@@ -235,6 +252,10 @@ const buildSolidFromTrianglesWithAngles = async (
     onProgress?.(Math.floor(40 + progressPerSlope * (idx + 1)));
   });
   slopeTools.forEach((tool) => tool.delete());
+  if (!isOcctValid(connectionSolid)) {
+    onLog?.("应用坡度刀具后实体不是有效的 OCCT 形状");
+    console.warn('[ReplicadModeling] final solid is not valid OCCT shape');
+  }
 
   onProgress?.(80);
   // 第五步：消除干涉
@@ -254,6 +275,10 @@ const buildSolidFromTrianglesWithAngles = async (
     onProgress?.(Math.floor(80 + progressPerPoint * (itor + 1)));
     itor++;
   });
+  if (!isOcctValid(connectionSolid)) {
+    onLog?.("消除干涉后实体不是有效的 OCCT 形状");
+    console.warn('[ReplicadModeling] final solid is not valid OCCT shape');
+  }
 
   // 第六步，削平底部
   const margin = earWidth + 1;
@@ -265,6 +290,7 @@ const buildSolidFromTrianglesWithAngles = async (
   connectionSolid = connectionSolid.simplify().mirror("XY").rotate(180, [0, 0, 0], [0, 1, 0])
   onProgress?.(100);
   if (!isOcctValid(connectionSolid)) {
+    onLog?.("最终实体不是有效的 OCCT 形状");
     console.warn('[ReplicadModeling] final solid is not valid OCCT shape');
   }
   return connectionSolid;
@@ -273,11 +299,13 @@ const buildSolidFromTrianglesWithAngles = async (
 export async function buildGroupStepFromTriangles(
   trisWithAngles: TriangleWithEdgeInfo[],
   onProgress?: (msg: number) => void,
+  onLog?: (msg: string) => void,
 ) {
   if (!trisWithAngles.length) {
+    onLog?.("没有可用于建模的展开三角形");
     throw new Error("没有可用于建模的展开三角形");
   }
-  const fused = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress);
+  const fused = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog);
   const blob = fused.blobSTEP();
   return blob;
 }
@@ -287,19 +315,26 @@ const buildMeshAngularTolerance = 0.5;
 export async function buildGroupStlFromTriangles(
   trisWithAngles: TriangleWithEdgeInfo[],
   onProgress?: (msg: number) => void,
+  onLog?: (msg: string) => void,
 ) {
   if (!trisWithAngles.length) {
+    onLog?.("没有可用于建模的展开三角形");
     throw new Error("没有可用于建模的展开三角形");
   }
-  const fused = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress);
+  const fused = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog);
   return fused.blobSTL({ binary: true, tolerance: buildMeshTolerance, angularTolerance: buildMeshAngularTolerance });
 }
 
-export async function buildGroupMeshFromTriangles(trisWithAngles: TriangleWithEdgeInfo[], onProgress?: (msg: number) => void) {
+export async function buildGroupMeshFromTriangles(
+  trisWithAngles: TriangleWithEdgeInfo[],
+  onProgress?: (msg: number) => void,
+  onLog?: (msg: string) => void,
+) {
   if (!trisWithAngles.length) {
+    onLog?.("没有可用于建模的展开三角形");
     throw new Error("没有可用于建模的展开三角形");
   }
-  const solid = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress);
+  const solid = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog);
   const mesh = solid.mesh({ tolerance: buildMeshTolerance, angularTolerance: buildMeshAngularTolerance });
   const geometry = new BufferGeometry();
   const position = new Float32BufferAttribute(mesh.vertices, 3);

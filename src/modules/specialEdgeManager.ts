@@ -23,8 +23,8 @@ export function createSpecialEdgeManager(
     nonmanifold: 6,
   };
   const offsetUnits: Record<SpecialType, number> = {
-    open: 4,
-    nonmanifold: 1,
+    open: -1,
+    nonmanifold: -4,
   };
 
   const disposeAll = () => {
@@ -52,7 +52,7 @@ export function createSpecialEdgeManager(
       linewidth: lineWidth[type],
       resolution: new Vector2(width, height),
       polygonOffset: true,
-      polygonOffsetFactor: -1,
+      polygonOffsetFactor: -2,
       polygonOffsetUnits: offsetUnits[type],
     });
     const line = new LineSegments2(geom, mat);
