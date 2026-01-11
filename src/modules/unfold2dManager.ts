@@ -18,6 +18,7 @@ import type { Renderer2DContext } from "./renderer2d";
 import { createUnfoldEdgeMaterial, createUnfoldFaceMaterial } from "./materials";
 import type { Point2D, TriangleWithEdgeInfo as TriangleData } from "../types/triangles";
 import { getSettings } from "./settings";
+import { LineSegments, BufferGeometry, Float32BufferAttribute } from "three";
 
 // 记录“3D → 2D”变换矩阵，后续将按组树关系进行累乘展开。
 type TransformTree = Map<number, Matrix4>;
@@ -68,6 +69,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
   const anchor = new Vector3();
   const axis = new Vector3();
   const transformKey = (a: number, b: number) => `${a}->${b}`;
+  let lastBounds: { minX: number; maxX: number; minY: number; maxY: number } | null = null;
 
   let modelLoaded = false;
 
@@ -269,7 +271,10 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     // console.log(`[Unfold2DManager] rebuildGroup2D called for group ${groupId}`);
     const faces = getGroupFaces(groupId);
     clearScene();
-    if (!faces || faces.size === 0) return;
+    if (!faces || faces.size === 0) {
+      renderer2d.bboxRuler.hide();
+      return;
+    }
     clearTransforms();
     buildRootTransforms(groupId);
     buildTransformsForGroup(groupId);
@@ -294,7 +299,10 @@ export function createUnfold2dManager(opts: ManagerDeps) {
         maxY = Math.max(maxY, v.y);
       });
     });
-    if (positions.length === 0) return;
+    if (positions.length === 0) {
+      renderer2d.bboxRuler.hide();
+      return;
+    }
     const geom = new BufferGeometry();
     geom.setAttribute("position", new Float32BufferAttribute(positions, 3));
     geom.setAttribute("color", new Float32BufferAttribute(colors, 3));
@@ -312,6 +320,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     renderer2d.root.add(mesh);
     renderer2d.root.add(edgeMesh);
 
+    lastBounds = { minX, maxX, minY, maxY };
     const centerX = (minX + maxX) * 0.5;
     const centerY = (minY + maxY) * 0.5;
     renderer2d.camera.position.x = centerX;
@@ -326,7 +335,16 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     const zoomY = viewH / (spanY * pad);
     renderer2d.camera.zoom = Math.min(zoomX, zoomY);
     renderer2d.camera.updateProjectionMatrix();
+
+    // 更新 2D 尺寸线
+    const { scale } = getSettings();
+    renderer2d.bboxRuler.update(minX, maxX, minY, maxY, scale);
   };
+  appEventBus.on("settingsChanged", () => {
+    if (!lastBounds) return;
+    const { scale } = getSettings();
+    renderer2d.bboxRuler.update(lastBounds.minX, lastBounds.maxX, lastBounds.minY, lastBounds.maxY, scale);
+  });
 
   const computeIncenter2D = (p1: Point2D, p2: Point2D, p3: Point2D): Point2D => {
     const la = Math.hypot(p2[0] - p3[0], p2[1] - p3[1]);
@@ -508,6 +526,8 @@ export function createUnfold2dManager(opts: ManagerDeps) {
   });
   appEventBus.on("groupFaceRemoved", ({ groupId, faceId }: { groupId: number; faceId: number }) => {
     if (!modelLoaded) return;
+    const current = getPreviewGroupId();
+    if (groupId !== current) return;
     rebuildGroup2D(groupId);
   });
   const repaintGroupColor = (groupId: number) => {

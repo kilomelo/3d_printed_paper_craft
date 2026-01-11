@@ -1,6 +1,6 @@
 // 2D 展开预览渲染器：在右侧区域创建正交相机的 Three.js 场景，用于后续绘制展开组三角面与交互。
 import { Group } from "three";
-import { createScene2D } from "./scene";
+import { BBoxRuler, createScene2D } from "./scene";
 import { appEventBus } from "./eventBus";
 
 export type Renderer2DContext = {
@@ -8,6 +8,7 @@ export type Renderer2DContext = {
   camera: THREE.OrthographicCamera;
   renderer: THREE.WebGLRenderer;
   root: Group;
+  bboxRuler: BBoxRuler;
   dispose: () => void;
 };
 
@@ -15,7 +16,7 @@ export function createRenderer2D(
   getViewport: () => { width: number; height: number },
   mountRenderer: (canvas: HTMLElement) => void): Renderer2DContext {
   const {width, height} = getViewport();
-  const { scene, camera, renderer } = createScene2D(width, height);
+  const { scene, camera, renderer, bboxRuler } = createScene2D(width, height);
   mountRenderer(renderer.domElement);
   const root = new Group();
   scene.add(root);
@@ -112,5 +113,5 @@ export function createRenderer2D(
 
   appEventBus.on("modelLoaded", resizeRenderer2D);
 
-  return { scene, camera, renderer, root, dispose };
+  return { scene, camera, renderer, root, bboxRuler, dispose };
 }

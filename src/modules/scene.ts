@@ -13,12 +13,152 @@ import {
   Object3D,
   Vector3,
   Box3,
+  BufferGeometry,
+  BufferAttribute,
+  LineBasicMaterial,
+  LineSegments,
+  CanvasTexture,
+  SpriteMaterial,
+  Sprite,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 const clearColor = new Color("#808592");
 const AmbientLightIntensity = 0.8;
 const DirectionalLightIntensity = 1;
+const rulerColor = 0x00ff88;
+
+export class BBoxRuler {
+  group: Group;
+  lineX: LineSegments;
+  lineY: LineSegments;
+  lineXEndA: LineSegments;
+  lineXEndB: LineSegments;
+  lineYEndA: LineSegments;
+  lineYEndB: LineSegments;
+  labelX: Sprite;
+  labelY: Sprite;
+
+  constructor(scene: Scene) {
+    const makeLine = () => {
+      const geom = new BufferGeometry();
+      const mat = new LineBasicMaterial({ color: rulerColor });
+      return new LineSegments(geom, mat);
+    };
+    const makeLabel = (text: string) => {
+      const tex = this.makeLabelTexture(text);
+      const mat = new SpriteMaterial({ map: tex, depthTest: false, depthWrite: false, transparent: true });
+      const sprite = new Sprite(mat);
+      sprite.scale.set(1, 1, 1);
+      return sprite;
+    };
+    this.group = new Group();
+    this.lineX = makeLine();
+    this.lineY = makeLine();
+    this.lineXEndA = makeLine();
+    this.lineXEndB = makeLine();
+    this.lineYEndA = makeLine();
+    this.lineYEndB = makeLine();
+    this.labelX = makeLabel("");
+    this.labelY = makeLabel("");
+    this.group.add(
+      this.lineX,
+      this.lineY,
+      this.lineXEndA,
+      this.lineXEndB,
+      this.lineYEndA,
+      this.lineYEndB,
+      this.labelX,
+      this.labelY,
+    );
+    this.group.visible = false;
+    scene.add(this.group);
+  }
+
+  private setLine(line: LineSegments, pts: [number, number, number][]) {
+    const arr = new Float32Array(pts.flat());
+    line.geometry.dispose();
+    line.geometry = new BufferGeometry();
+    line.geometry.setAttribute("position", new BufferAttribute(arr, 3));
+  }
+
+  private scaleLabel(sprite: Sprite, base: number) {
+    const mat = sprite.material as SpriteMaterial;
+    const tex = mat.map as CanvasTexture;
+    const img = tex.image as HTMLCanvasElement;
+    const aspect = img.width / img.height || 1;
+    sprite.scale.set(base * aspect, base, 1);
+  }
+
+  private makeLabelTexture(text: string): CanvasTexture {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d")!;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = "bold 32px sans-serif";
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+    return new CanvasTexture(canvas);
+  }
+
+  update(minX: number, maxX: number, minY: number, maxY: number, scale = 1) {
+    const width = maxX - minX;
+    const height = maxY - minY;
+    const margin = Math.max(width, height) * 0.025;
+    const len = margin * 0.8;
+    const yDimY = minY - margin;
+    const xDimX = maxX + margin;
+    this.setLine(this.lineX, [
+      [minX, yDimY, 0],
+      [maxX, yDimY, 0],
+    ]);
+    this.setLine(this.lineY, [
+      [xDimX, maxY, 0],
+      [xDimX, minY, 0],
+    ]);
+    this.setLine(this.lineXEndA, [
+      [minX, yDimY - len * 0.5, 0],
+      [minX, yDimY + len * 0.5, 0],
+    ]);
+    this.setLine(this.lineXEndB, [
+      [maxX, yDimY - len * 0.5, 0],
+      [maxX, yDimY + len * 0.5, 0],
+    ]);
+    this.setLine(this.lineYEndA, [
+      [xDimX - len * 0.5, maxY, 0],
+      [xDimX + len * 0.5, maxY, 0],
+    ]);
+    this.setLine(this.lineYEndB, [
+      [xDimX - len * 0.5, minY, 0],
+      [xDimX + len * 0.5, minY, 0],
+    ]);
+    const labelXText = `${Math.round(width * scale)}`;
+    const labelYText = `${Math.round(height * scale)}`;
+    const refreshLabel = (sprite: Sprite, text: string) => {
+      const mat = sprite.material as SpriteMaterial;
+      const tex = mat.map as CanvasTexture;
+      const newTex = this.makeLabelTexture(text);
+      tex.image = newTex.image;
+      tex.needsUpdate = true;
+    };
+    refreshLabel(this.labelX, labelXText);
+    refreshLabel(this.labelY, labelYText);
+    const labelScale = Math.max(width, height) * 0.1;
+    this.scaleLabel(this.labelX, labelScale);
+    this.scaleLabel(this.labelY, labelScale);
+    this.labelX.position.set((minX + maxX) * 0.5, yDimY, 0);
+    this.labelY.position.set(xDimX, (minY + maxY) * 0.5, 0);
+    this.labelY.material.rotation = -Math.PI / 2;
+    this.group.visible = true;
+  }
+
+  hide() {
+    this.group.visible = false;
+  }
+}
 
 export type SceneContext = {
   scene: Scene;
@@ -66,6 +206,7 @@ export type Scene2DContext = {
   scene: Scene;
   camera: OrthographicCamera;
   renderer: WebGLRenderer;
+  bboxRuler: BBoxRuler;
 };
 
 // 创建 2D 正交场景，用于展开预览
@@ -91,7 +232,15 @@ export function createScene2D(width: number, height: number): Scene2DContext {
   canvasStyle.display = "block";
   canvasStyle.zIndex = "0";
   canvasStyle.backgroundColor = typeof clearColor === "string" ? (clearColor as string) : `#${Number(clearColor).toString(16)}`;
-  return { scene, camera, renderer };
+
+  const bboxRuler = new BBoxRuler(scene);
+
+  return {
+    scene,
+    camera,
+    renderer,
+    bboxRuler,
+  };
 }
 
 export function fitCameraToObject(object: Object3D, camera: PerspectiveCamera, controls: any) {

@@ -167,7 +167,7 @@ export function initInteractionController(opts: InteractionOptions): Interaction
       return;
     }
     const model = opts.getModel();
-    if (!model || !opts.facesVisible()) return;
+    if (!model) return;
     const rect = opts.renderer.domElement.getBoundingClientRect();
     lastClientPos.x = event.clientX;
     lastClientPos.y = event.clientY;

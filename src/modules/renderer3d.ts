@@ -104,9 +104,7 @@ export function createRenderer3D(
     cvs.height = 128;
     const ctx = cvs.getContext("2d")!;
     ctx.clearRect(0, 0, cvs.width, cvs.height);
-    ctx.fillStyle = "rgba(0,0,0,0.6)";
-    ctx.fillRect(0, 0, cvs.width, cvs.height);
-    ctx.font = "bold 64px sans-serif";
+    ctx.font = "bold 72px sans-serif";
     ctx.fillStyle = "#fff";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -449,7 +447,7 @@ export function createRenderer3D(
   function pickFace(event: PointerEvent): number | null {
     if (previewModelGroup.visible) return null;
     const model = getModel();
-    if (!model || !facesVisible) return null;
+    if (!model) return null;
     const rect = el.getBoundingClientRect();
     pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -611,7 +609,6 @@ export function createRenderer3D(
       gizmosGroup.visible = gizmosVisible;
       previewModelGroup.visible = false;
       modelGroup.visible = true;
-      // fitCameraToObject(modelGroup, camera, controls);
       camera.position.copy(previewCameraState!.position);
       controls.target.copy(previewCameraState!.target);
       controls.update();
@@ -622,6 +619,7 @@ export function createRenderer3D(
       rebuildSpecialEdges(modelGroup, false);
     }
     if (current === "previewGroupModel") {
+      hideHoverLines(hoverState);
       gizmosVisibleBeforePreview = gizmosVisible;
       gizmosVisible = false;
       gizmosGroup.visible = false;

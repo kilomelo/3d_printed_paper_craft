@@ -74,9 +74,9 @@ const buildSolidFromTrianglesWithAngles = async (
   const slopToolHeight = 1e-3 + Math.max(Math.hypot(earWidth, earThickness), bodyThickness) + connectionThickness;
   const slopeTools: Shape3D[] = [];
   const vertexAngleMap = new Map<string, { position: Point2D; minAngle: number }>();
+  const minDistance = 0.2 * connectionLayers;
 
   trianglesWithAngles.forEach((triData, i) => {
-    // console.log('[ReplicadModeling] processing triangle for ears', triData);
     const isDefined = <T,>(v: T | undefined | null): v is T => v != null;
     // 收集顶点最小角度信息
     triData.pointAngleData?.forEach((item) => {
@@ -125,8 +125,7 @@ const buildSolidFromTrianglesWithAngles = async (
     triData.edges.forEach((edge, idx) => {
       const pick = (k: 0 | 1 | 2): 0 | 1 | 2 => ((k + (idx % 3) + 3) % 3) as 0 | 1 | 2;
       const [pointA, pointB] = [triData.tri[pick(0)], triData.tri[pick(1)]];
-      const minDistance = 0.2;
-      if (edge.angle < Math.PI * 0.995) {
+      if ((!edge.isOuter && Math.abs(edge.angle - Math.PI) > 1e-3) || edge.angle < Math.PI - 1e-3) {
         // 第二步：生成弯折、拼接坡度刀具
         const slopeStartZ = edge.isOuter ? layerHeight : connectionThickness;
         const slopeZDelta = slopToolHeight - slopeStartZ;
