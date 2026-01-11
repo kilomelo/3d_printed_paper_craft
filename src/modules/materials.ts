@@ -28,7 +28,7 @@ export function createBackMaterial() {
     side: BackSide,
     polygonOffset: true,
     polygonOffsetFactor: 1,
-    polygonOffsetUnits: 1,
+    polygonOffsetUnits: 2,
   });
 }
 

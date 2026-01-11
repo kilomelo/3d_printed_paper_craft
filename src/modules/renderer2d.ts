@@ -1,26 +1,29 @@
 // 2D 展开预览渲染器：在右侧区域创建正交相机的 Three.js 场景，用于后续绘制展开组三角面与交互。
-import { Group } from "three";
-import { createScene2D } from "./scene";
+import { Group, OrthographicCamera, Scene, WebGLRenderer } from "three";
+import { BBoxRuler, createScene2D } from "./scene";
 import { appEventBus } from "./eventBus";
+import type { Unfold2dManager } from "./unfold2dManager";
 
 export type Renderer2DContext = {
-  scene: THREE.Scene;
-  camera: THREE.OrthographicCamera;
-  renderer: THREE.WebGLRenderer;
+  scene: Scene;
+  camera: OrthographicCamera;
+  renderer: WebGLRenderer;
   root: Group;
+  bboxRuler: BBoxRuler;
+  setUnfoldManager: (manager: Unfold2dManager) => void;
   dispose: () => void;
 };
 
-export function createRenderer2D(
-  getViewport: () => { width: number; height: number },
-  mountRenderer: (canvas: HTMLElement) => void): Renderer2DContext {
-  const {width, height} = getViewport();
-  const { scene, camera, renderer } = createScene2D(width, height);
+export function createRenderer2D(getViewport: () => { width: number; height: number }, mountRenderer: (canvas: HTMLElement) => void): Renderer2DContext {
+  const { width, height } = getViewport();
+  const { scene, camera, renderer, bboxRuler } = createScene2D(width, height);
   mountRenderer(renderer.domElement);
   const root = new Group();
   scene.add(root);
+  let unfoldManager: Unfold2dManager | null = null;
 
   let isPanning = false;
+  let isRotating = false;
   const panStart = { x: 0, y: 0 };
 
   const resizeRenderer2D = () => {
@@ -32,6 +35,7 @@ export function createRenderer2D(
     camera.bottom = -height * 0.5;
     camera.updateProjectionMatrix();
   };
+  
   window.addEventListener("resize", resizeRenderer2D);
   const onContextMenu = (e: Event) => e.preventDefault();
   renderer.domElement.addEventListener("contextmenu", onContextMenu);
@@ -55,25 +59,35 @@ export function createRenderer2D(
   };
 
   const onPointerDown = (event: PointerEvent) => {
-    if (event.button !== 2) return;
-    renderer.domElement.requestPointerLock?.();
-    isPanning = true;
-    panStart.x = event.clientX;
-    panStart.y = event.clientY;
+    if (event.button === 2) {
+      renderer.domElement.requestPointerLock?.();
+      isPanning = true;
+      panStart.x = event.clientX;
+      panStart.y = event.clientY;
+    } else if (event.button === 0) {
+      renderer.domElement.requestPointerLock?.();
+      isRotating = true;
+    }
   };
 
   const onPointerMove = (event: PointerEvent) => {
-    if (!isPanning) return;
-    const locked = document.pointerLockElement === renderer.domElement;
-    const dx = locked ? event.movementX : event.clientX - panStart.x;
-    const dy = locked ? event.movementY : event.clientY - panStart.y;
-    const { x, y } = screenToWorldDelta(dx, dy);
-    camera.position.x -= x;
-    camera.position.y -= y;
-    camera.updateProjectionMatrix();
-    if (!locked) {
-      panStart.x = event.clientX;
-      panStart.y = event.clientY;
+    if (isPanning) {
+      const locked = document.pointerLockElement === renderer.domElement;
+      const dx = locked ? event.movementX : event.clientX - panStart.x;
+      const dy = locked ? event.movementY : event.clientY - panStart.y;
+      const { x, y } = screenToWorldDelta(dx, dy);
+      camera.position.x -= x;
+      camera.position.y -= y;
+      camera.updateProjectionMatrix();
+      if (!locked) {
+        panStart.x = event.clientX;
+        panStart.y = event.clientY;
+      }
+      return;
+    }
+    if (isRotating && unfoldManager) {
+      const current = unfoldManager.getPreviewRotationAngle();
+      unfoldManager.setPreviewRotationAngle(current + event.movementX * 0.005);
     }
   };
 
@@ -84,13 +98,23 @@ export function createRenderer2D(
     }
   };
 
+  const stopRotate = () => {
+    isRotating = false;
+    if (document.pointerLockElement === renderer.domElement) {
+      document.exitPointerLock();
+    }
+  }
+
   const onPointerUp = (event: PointerEvent) => {
-    if (event.button !== 2) return;
-    stopPan();
+    if (event.button === 2) {
+      stopPan();
+    } else if (event.button === 0) {
+      stopRotate();
+    }
   };
 
-  document.addEventListener("pointerup", onPointerUp);
-  document.addEventListener("pointermove", onPointerMove);
+  renderer.domElement.addEventListener("pointerup", onPointerUp);
+  renderer.domElement.addEventListener("pointermove", onPointerMove);
   renderer.domElement.addEventListener("pointerdown", onPointerDown);
 
   const animate = () => {
@@ -112,5 +136,15 @@ export function createRenderer2D(
 
   appEventBus.on("modelLoaded", resizeRenderer2D);
 
-  return { scene, camera, renderer, root, dispose };
+  return {
+    scene,
+    camera,
+    renderer,
+    root,
+    bboxRuler,
+    setUnfoldManager: (manager: Unfold2dManager) => {
+      unfoldManager = manager;
+    },
+    dispose,
+  };
 }

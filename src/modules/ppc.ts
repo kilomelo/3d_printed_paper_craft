@@ -103,7 +103,7 @@ export async function build3dppcData(object: Group): Promise<PPCFile> {
   };
 }
 
-export function download3dppc(data: PPCFile) {
+export function download3dppc(data: PPCFile): string {
   const json = JSON.stringify(data, null, 2);
   const blob = new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -119,6 +119,7 @@ export function download3dppc(data: PPCFile) {
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return name;
 }
 
 export async function load3dppc(url: string, frontMaterial: Mesh["material"]) {

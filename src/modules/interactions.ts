@@ -41,8 +41,8 @@ export function createHoverLines(view: { width: number; height: number }, scene:
       linewidth: 5,
       resolution: new Vector2(view.width, view.height),
       polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: 2,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -3,
     });
     const line = new LineSegments2(geom, mat);
     line.computeLineDistances();
@@ -167,7 +167,7 @@ export function initInteractionController(opts: InteractionOptions): Interaction
       return;
     }
     const model = opts.getModel();
-    if (!model || !opts.facesVisible()) return;
+    if (!model) return;
     const rect = opts.renderer.domElement.getBoundingClientRect();
     lastClientPos.x = event.clientX;
     lastClientPos.y = event.clientY;

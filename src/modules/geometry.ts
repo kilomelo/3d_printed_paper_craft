@@ -290,26 +290,6 @@ export class GeometryIndex {
     this.triangleCount = prep.triangleCount;
   }
 
-  refreshVertexWorldPositions(model: Object3D | null) {
-    this.vertexKeyToPos.clear();
-    if (!model) return;
-    const vertexKey = (pos: any, idx: number) => `${pos.getX(idx)},${pos.getY(idx)},${pos.getZ(idx)}`;
-    model.traverse((child) => {
-      if (!(child as Mesh).isMesh) return;
-      const mesh = child as Mesh;
-      if (mesh.userData.functional) return;
-      mesh.updateWorldMatrix(true, false);
-      const position = mesh.geometry.getAttribute("position");
-      if (!position) return;
-      const count = position.count;
-      for (let i = 0; i < count; i++) {
-        const key = vertexKey(position, i);
-        const world = new Vector3(position.getX(i), position.getY(i), position.getZ(i)).applyMatrix4(mesh.matrixWorld);
-        this.vertexKeyToPos.set(key, world);
-      }
-    });
-  }
-
   getFaceId(mesh: Mesh, localFace: number | undefined): number | null {
     if (localFace === undefined || localFace === null) return null;
     const map = this.meshFaceIdMap.get(mesh.uuid);

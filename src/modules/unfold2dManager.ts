@@ -22,6 +22,7 @@ import { getSettings } from "./settings";
 // 记录“3D → 2D”变换矩阵，后续将按组树关系进行累乘展开。
 type TransformTree = Map<number, Matrix4>;
 type TransformStore = Map<number, TransformTree>;
+type RootRotationStore = Map<number, Matrix4>;
 
 type ManagerDeps = {
   angleIndex: AngleIndex;
@@ -29,7 +30,6 @@ type ManagerDeps = {
   getGroupIds: () => number[];
   getGroupFaces: (id: number) => Set<number> | undefined;
   getPreviewGroupId: () => number;
-  refreshVertexWorldPositions: () => void;
   getFaceGroupMap: () => Map<number, number | null>;
   getGroupColor: (id: number) => THREE.Color | undefined;
   getGroupTreeParent: (id: number) => Map<number, number | null> | undefined;
@@ -46,7 +46,6 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     getGroupIds,
     getGroupFaces,
     getPreviewGroupId,
-    refreshVertexWorldPositions,
     getFaceGroupMap,
     getGroupColor,
     getGroupTreeParent,
@@ -57,6 +56,9 @@ export function createUnfold2dManager(opts: ManagerDeps) {
   } = opts;
   const transformStore: TransformStore = new Map();
   const transformCache: Map<string, Matrix4> = new Map();
+  const rootRotationStore: RootRotationStore = new Map();
+  const groupPreviewRotation: Map<number, number> = new Map(); // radians, per group
+  const tmpVec = new Vector3();
   const tmpA = new Vector3();
   const tmpB = new Vector3();
   const tmpC = new Vector3();
@@ -70,6 +72,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
   const anchor = new Vector3();
   const axis = new Vector3();
   const transformKey = (a: number, b: number) => `${a}->${b}`;
+  let lastBounds: { minX: number; maxX: number; minY: number; maxY: number } | null = null;
 
   let modelLoaded = false;
 
@@ -82,6 +85,8 @@ export function createUnfold2dManager(opts: ManagerDeps) {
       }
     });
     renderer2d.root.clear();
+    renderer2d.root.rotation.set(0, 0, 0);
+    renderer2d.root.updateMatrixWorld(true);
   };
 
   const computeFaceNormal = (faceId: number, out: Vector3) => {
@@ -156,9 +161,56 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     setFaceTransform(groupId, childId, mat);
   };
 
+  const getPreviewRotationAngle = (groupId?: number) => {
+    const gid = groupId ?? getPreviewGroupId();
+    if (!groupPreviewRotation.has(gid)) {
+      groupPreviewRotation.set(gid, 0);
+    }
+    return groupPreviewRotation.get(gid)!;
+  };
+
+  const setPreviewRotationAngle = (angleRad: number, groupId?: number) => {
+    const gid = groupId ?? getPreviewGroupId();
+    const prev = getPreviewRotationAngle(gid);
+    const delta = angleRad - prev;
+    groupPreviewRotation.set(gid, angleRad);
+    renderer2d.root.rotateOnAxis(new Vector3(0, 0, 1), delta);
+    const { minX, maxX, minY, maxY } = getMeshVertexBounds();
+    updateCamera(minX, maxX, minY, maxY, false);
+
+    updateBBoxRuler(minX, maxX, minY, maxY);
+  };
+
+  const getMeshVertexBounds = (): { minX: number; maxX: number; minY: number; maxY: number } => {
+    renderer2d.root.updateMatrixWorld(true);
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    renderer2d.root.traverse((obj) => {
+      const mesh = obj as Mesh;
+      if (!(mesh as any).isMesh) return;
+      const posAttr = mesh.geometry.getAttribute("position");
+      if (!posAttr) return;
+      for (let i = 0; i < posAttr.count; i++) {
+        tmpVec.set(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i)).applyMatrix4(mesh.matrixWorld);
+        minX = Math.min(minX, tmpVec.x);
+        maxX = Math.max(maxX, tmpVec.x);
+        minY = Math.min(minY, tmpVec.y);
+        maxY = Math.max(maxY, tmpVec.y);
+      }
+    });
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+      return lastBounds ?? { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+    }
+    return { minX, maxX, minY, maxY };
+  };
+
   const buildTransformsForGroup = (groupId: number) => {
     const parentMap = getGroupTreeParent(groupId);
     if (!parentMap) return;
+    const rotMat = new Matrix4().makeRotationZ(getPreviewRotationAngle(groupId));
+    rootRotationStore.set(groupId, rotMat);
     // 根已在 buildRootTransforms 设置，这里做 BFS，子面依赖父面
     const queue: number[] = [];
     parentMap.forEach((parent, faceId) => {
@@ -177,6 +229,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
   const clearTransforms = () => {
     transformStore.clear();
     transformCache.clear();
+    rootRotationStore.clear();
   };
 
   const ensureTransformTree = (groupId: number): TransformTree => {
@@ -208,6 +261,8 @@ export function createUnfold2dManager(opts: ManagerDeps) {
       if (m) chain.push(m.clone());
       cur = parentMap.get(cur) ?? null;
     }
+    const rot = rootRotationStore.get(groupId);
+    if (rot) chain.push(rot.clone());
     return chain;
   };
 
@@ -268,14 +323,15 @@ export function createUnfold2dManager(opts: ManagerDeps) {
   };
 
   const rebuildGroup2D = (groupId: number) => {
-    // console.log(`[Unfold2DManager] rebuildGroup2D called for group ${groupId}`);
     const faces = getGroupFaces(groupId);
     clearScene();
-    if (!faces || faces.size === 0) return;
+    if (!faces || faces.size === 0) {
+      renderer2d.bboxRuler.hide();
+      return;
+    }
     clearTransforms();
     buildRootTransforms(groupId);
     buildTransformsForGroup(groupId);
-    refreshVertexWorldPositions();
     const positions: number[] = [];
     const colors: number[] = [];
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -297,7 +353,10 @@ export function createUnfold2dManager(opts: ManagerDeps) {
         maxY = Math.max(maxY, v.y);
       });
     });
-    if (positions.length === 0) return;
+    if (positions.length === 0) {
+      renderer2d.bboxRuler.hide();
+      return;
+    }
     const geom = new BufferGeometry();
     geom.setAttribute("position", new Float32BufferAttribute(positions, 3));
     geom.setAttribute("color", new Float32BufferAttribute(colors, 3));
@@ -315,21 +374,42 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     renderer2d.root.add(mesh);
     renderer2d.root.add(edgeMesh);
 
+    updateCamera(minX, maxX, minY, maxY);
+    updateBBoxRuler(minX, maxX, minY, maxY);
+  };
+
+  function updateCamera(minX: number, maxX: number, minY: number, maxY: number, updateZoom: boolean = true) {
     const centerX = (minX + maxX) * 0.5;
     const centerY = (minY + maxY) * 0.5;
     renderer2d.camera.position.x = centerX;
     renderer2d.camera.position.y = centerY;
-    // 根据展开尺寸自动调整正交相机缩放，避免小模型看不到
-    const spanX = Math.max(1e-6, maxX - minX);
-    const spanY = Math.max(1e-6, maxY - minY);
-    const pad = 1.1; // 留出边距
-    const viewW = (renderer2d.renderer.domElement.clientWidth || renderer2d.renderer.domElement.width || 1);
-    const viewH = (renderer2d.renderer.domElement.clientHeight || renderer2d.renderer.domElement.height || 1);
-    const zoomX = viewW / (spanX * pad);
-    const zoomY = viewH / (spanY * pad);
-    renderer2d.camera.zoom = Math.min(zoomX, zoomY);
+    // if (updateZoom) {
+      // 根据展开尺寸自动调整正交相机缩放，避免小模型看不到
+      const spanX = Math.max(1e-6, maxX - minX);
+      const spanY = Math.max(1e-6, maxY - minY);
+      const pad = 1.1; // 留出边距
+      const viewW = (renderer2d.renderer.domElement.clientWidth || renderer2d.renderer.domElement.width || 1);
+      const viewH = (renderer2d.renderer.domElement.clientHeight || renderer2d.renderer.domElement.height || 1);
+      const zoomX = viewW / (spanX * pad);
+      const zoomY = viewH / (spanY * pad);
+      const newZoom = Math.min(zoomX, zoomY);
+      renderer2d.camera.zoom = updateZoom ? newZoom : Math.min(newZoom, renderer2d.camera.zoom);
+    // }
     renderer2d.camera.updateProjectionMatrix();
-  };
+  }
+
+  function updateBBoxRuler(minX: number, maxX: number, minY: number, maxY: number) {
+    lastBounds = { minX, maxX, minY, maxY };
+    // 更新 2D 尺寸线
+    const { scale } = getSettings();
+    renderer2d.bboxRuler.update(minX, maxX, minY, maxY, scale);
+  }
+
+  appEventBus.on("settingsChanged", () => {
+    if (!lastBounds) return;
+    const { scale } = getSettings();
+    renderer2d.bboxRuler.update(lastBounds.minX, lastBounds.maxX, lastBounds.minY, lastBounds.maxY, scale);
+  });
 
   const computeIncenter2D = (p1: Point2D, p2: Point2D, p3: Point2D): Point2D => {
     const la = Math.hypot(p2[0] - p3[0], p2[1] - p3[1]);
@@ -348,7 +428,6 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     if (!faces || faces.size === 0) return [];
     buildRootTransforms(groupId);
     buildTransformsForGroup(groupId);
-    refreshVertexWorldPositions();
     const faceToEdges = getFaceToEdges();
     const faceIndexMap = getFaceIndexMap();
     const vertexKeyToPos = getVertexKeyToPos();
@@ -512,6 +591,8 @@ export function createUnfold2dManager(opts: ManagerDeps) {
   });
   appEventBus.on("groupFaceRemoved", ({ groupId, faceId }: { groupId: number; faceId: number }) => {
     if (!modelLoaded) return;
+    const current = getPreviewGroupId();
+    if (groupId !== current) return;
     rebuildGroup2D(groupId);
   });
   const repaintGroupColor = (groupId: number) => {
@@ -554,6 +635,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     clearScene();
   });
   appEventBus.on("groupRemoved", ({ groupId, faces }) => {
+    groupPreviewRotation.delete(groupId);
     const gid = getPreviewGroupId();
     rebuildGroup2D(gid);
   });
@@ -564,5 +646,9 @@ export function createUnfold2dManager(opts: ManagerDeps) {
 
   return {
     getGroupTrianglesData,
+    getPreviewRotationAngle,
+    setPreviewRotationAngle,
   };
 }
+
+export type Unfold2dManager = ReturnType<typeof createUnfold2dManager>;

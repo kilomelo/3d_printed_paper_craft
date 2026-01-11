@@ -72,6 +72,7 @@ app.innerHTML = `
             <button class="btn sm toggle" id="edges-toggle">线框：关</button>
             <button class="btn sm toggle" id="seams-toggle">拼接边：关</button>
             <button class="btn sm toggle active" id="faces-toggle">面渲染：开</button>
+            <button class="btn sm toggle" id="bbox-toggle">包围盒：关</button>
             <div class="toolbar-spacer"></div>
             <span class="toolbar-stat" id="tri-counter">渲染三角形：0</span>
           </div>
@@ -384,7 +385,7 @@ const closeRenameDialog = () => {
 
 renameCancelBtn.addEventListener("click", closeRenameDialog);
 const isValidGroupName = (val: string) => !!val && /\S/.test(val);
-renameConfirmBtn.addEventListener("click", () => {
+const handleRenameConfirm = () => {
   const val = renameInput.value ?? "";
   if (!isValidGroupName(val)) {
     log("组名无效，请输入至少一个可见字符", "error");
@@ -394,6 +395,16 @@ renameConfirmBtn.addEventListener("click", () => {
   groupController.setGroupName(groupController.getPreviewGroupId(), val.trim());
   log("展开组名称修改成功", "success");
   closeRenameDialog();
+};
+renameConfirmBtn.addEventListener("click", handleRenameConfirm);
+renameInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    handleRenameConfirm();
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    closeRenameDialog();
+  }
 });
 const renderer3d = createRenderer3D(
   log,
@@ -417,6 +428,24 @@ const renderer3d = createRenderer3D(
   },
   (canvas) => viewer.appendChild(canvas),
 );
+const bboxToggle = document.querySelector<HTMLButtonElement>("#bbox-toggle")!;
+bboxToggle.addEventListener("click", () => {
+  const visible = renderer3d.toggleBBox();
+  bboxToggle.classList.toggle("active", visible);
+  bboxToggle.textContent = `包围盒：${visible ? "开" : "关"}`;
+});
+appEventBus.on("workspaceStateChanged", ({ current, previous }) => {
+  const isPreview = current === "previewGroupModel";
+  bboxToggle.classList.toggle("hidden", isPreview);
+  if (isPreview) {
+    bboxToggle.classList.remove("active");
+    bboxToggle.textContent = "包围盒：关";
+  } else {
+    const visible = (renderer3d as any).getBBoxVisible?.() ?? false;
+    bboxToggle.classList.toggle("active", visible);
+    bboxToggle.textContent = `包围盒：${visible ? "开" : "关"}`;
+  }
+});
 const allowedExtensions = ["obj", "fbx", "stl", "3dppc"];
 function getExtension(name: string) {
   const parts = name.split(".");
@@ -474,6 +503,8 @@ seamsToggle.classList.add("active");
 seamsToggle.textContent = "拼接边：开";
 facesToggle.classList.add("active");
 facesToggle.textContent = "面渲染：开";
+bboxToggle.classList.add("active");
+bboxToggle.textContent = "包围盒：开";
 
 // 三角形计数跟随渲染器
 const syncTriCount = () => {
@@ -493,7 +524,6 @@ const unfold2d = createUnfold2dManager({
   getGroupIds: groupController.getGroupIds,
   getGroupFaces: groupController.getGroupFaces,
   getPreviewGroupId: groupController.getPreviewGroupId,
-  refreshVertexWorldPositions: () => geometryContext.geometryIndex.refreshVertexWorldPositions(getModel()),
   getFaceGroupMap: groupController.getFaceGroupMap,
   getGroupColor: groupController.getGroupColor,
   getGroupTreeParent: groupController.getGroupTreeParent,
@@ -502,6 +532,7 @@ const unfold2d = createUnfold2dManager({
   getVertexKeyToPos: () => geometryContext.geometryIndex.getVertexKeyToPos(),
   getFaceIndexMap: () => geometryContext.geometryIndex.getFaceIndexMap(),
 });
+renderer2d.setUnfoldManager(unfold2d);
 const menuButtons = [menuOpenBtn, exportBtn, exportGroupStepBtn, previewGroupModelBtn, settingsOpenBtn];
 const updateMenuState = () => {
   const isPreview = workspaceState === "previewGroupModel" as WorkspaceState;
@@ -639,8 +670,8 @@ exportBtn.addEventListener("click", async () => {
   try {
     log("正在导出 .3dppc ...", "info");
     const data = await build3dppcData(model);
-    await download3dppc(data);
-    log("导出成功", "success");
+    const fileName = download3dppc(data);
+    log(`3dppc 已导出：下载目录/${fileName}`, "success");
   } catch (error) {
     console.error("导出失败", error);
     log("导出失败，请重试。", "error");
@@ -660,7 +691,11 @@ exportGroupStepBtn.addEventListener("click", async () => {
       return;
     }
     log("正在导出展开组 STEP...", "info");
-    const blob = await buildStepInWorker(trisWithAngles, (progress) => log(progress, "progress"));
+    const blob = await buildStepInWorker(
+      trisWithAngles,
+      (progress) => log(progress, "progress"),
+      (msg, tone) => log(msg, (tone as any) ?? "error"),
+    );
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -670,7 +705,7 @@ exportGroupStepBtn.addEventListener("click", async () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    log("展开组 STEP 已导出", "success");
+    log(`展开组 STEP 已导出：下载目录/group-${groupName}.step`, "success");
   } catch (error) {
     console.error("展开组 STEP 导出失败", error);
     log("展开组 STEP 导出失败，请查看控制台日志。", "error");
@@ -707,7 +742,7 @@ exportGroupStlBtn.addEventListener("click", async () => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      log("展开组 STL 已导出", "success");
+      log(`展开组 STL 已导出：下载目录/group-${groupName}.stl`, "success");
     } else {
       const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
       if (!trisWithAngles.length) {
@@ -715,7 +750,11 @@ exportGroupStlBtn.addEventListener("click", async () => {
         return;
       }
       log("正在导出展开组 STL...", "info");
-      const blob = await buildStlInWorker(trisWithAngles, (progress) => log(progress, "progress"));
+      const blob = await buildStlInWorker(
+        trisWithAngles,
+        (progress) => log(progress, "progress"),
+        (msg, tone) => log(msg, (tone as any) ?? "error"),
+      );
       const buffer = await blob.arrayBuffer();
       const geometry = stlLoader.parse(buffer);
       geometry.computeBoundingBox();
@@ -732,7 +771,7 @@ exportGroupStlBtn.addEventListener("click", async () => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      log("展开组 STL 已导出", "success");
+      log(`展开组 STL 已导出：下载目录/group-${groupName}.stl`, "success");
     }
   } catch (error) {
     console.error("展开组 STL 导出失败", error);
@@ -755,7 +794,11 @@ previewGroupModelBtn.addEventListener("click", async () => {
         return;
       }
       log("正在用 Replicad 生成 mesh...", "info");
-      const mesh = await buildMeshInWorker(trisWithAngles, (progress) => log(progress, "progress"));
+      const mesh = await buildMeshInWorker(
+        trisWithAngles,
+        (progress) => log(progress, "progress"),
+        (msg, tone) => log(msg, (tone as any) ?? "error"),
+      );
       previewMeshCache.set(targetGroupId, mesh.clone());
       renderer3d.loadPreviewModel(mesh);
     }
