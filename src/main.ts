@@ -4,7 +4,7 @@ import packageJson from "../package.json";
 import { Color, Mesh } from "three";
 import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import { type WorkspaceState } from "./types/workspaceState.js";
+import { type WorkspaceState, getWorkspaceState, setWorkspaceState } from "./types/workspaceState.js";
 import { createLog } from "./modules/log";
 import { createRenderer3D } from "./modules/renderer3d";
 import { createGroupController } from "./modules/groupController";
@@ -317,24 +317,21 @@ if (
 }
 // 预加载 workspace 布局，方便渲染器在首帧前完成尺寸初始化
 layoutWorkspace.classList.add("preloaded");
-
-let workspaceState: WorkspaceState = "normal" as WorkspaceState;
-const setWorkspaceState = (state: WorkspaceState) => {
-  if (workspaceState === state) return;
-  const previousState = workspaceState;
-  workspaceState = state;
-  if (previousState === "editingGroup") log("已退出展开组编辑模式", "info");      
-  if (state === "editingGroup") log("已进入展开组编辑模式", "info");
-  if (previousState === "previewGroupModel") log("已退出组模型预览", "info");
-  if (state === "previewGroupModel") log("展开组预览模型已加载", "info");
-
-  appEventBus.emit("workspaceStateChanged", {previous: previousState, current: workspaceState});
-}
 // 确保文件选择框只允许支持的模型/3dppc 后缀
 fileInput.setAttribute("accept", ".obj,.fbx,.stl,.3dppc");
 document.querySelectorAll("input").forEach((inp) => inp.setAttribute("autocomplete", "off"));
 
 const { log } = createLog(logListEl);
+const changeWorkspaceState = (state: WorkspaceState) => {
+  const previousState = getWorkspaceState();
+  if (previousState === state) return;
+  setWorkspaceState(state);
+  if (previousState === "editingGroup") log("已退出展开组编辑模式", "info");
+  if (state === "editingGroup") log("已进入展开组编辑模式", "info");
+  if (previousState === "previewGroupModel") log("已退出组模型预览", "info");
+  if (state === "previewGroupModel") log("展开组预览模型已加载", "info");
+  appEventBus.emit("workspaceStateChanged", { previous: previousState, current: state });
+};
 // 全局禁用右键菜单，避免画布交互被系统菜单打断
 document.addEventListener("contextmenu", (e) => e.preventDefault());
 const settingsUI = createSettingsUI(
@@ -408,7 +405,6 @@ renameInput.addEventListener("keydown", (e) => {
 });
 const renderer3d = createRenderer3D(
   log,
-  () => workspaceState,
   {
     handleRemoveFace: (faceId: number) => {
       groupController.removeFace(faceId, groupController.getPreviewGroupId());
@@ -517,25 +513,27 @@ const renderer2d = createRenderer2D(() => {
     const rect = groupPreview.getBoundingClientRect();
     return { width: rect.width, height: rect.height };
   },
-  (canvas) => groupPreview.appendChild(canvas),);
-const unfold2d = createUnfold2dManager({
-  angleIndex: geometryContext.angleIndex,
+  (canvas) => groupPreview.appendChild(canvas),
+  groupController.updateCurrentGroupPlaceAngle,
+);
+const unfold2d = createUnfold2dManager(
+  geometryContext.angleIndex,
   renderer2d,
-  getGroupIds: groupController.getGroupIds,
-  getGroupFaces: groupController.getGroupFaces,
-  getPreviewGroupId: groupController.getPreviewGroupId,
-  getFaceGroupMap: groupController.getFaceGroupMap,
-  getGroupColor: groupController.getGroupColor,
-  getGroupTreeParent: groupController.getGroupTreeParent,
-  getFaceToEdges: () => geometryContext.geometryIndex.getFaceToEdges(),
-  getEdgesArray: () => geometryContext.geometryIndex.getEdgesArray(),
-  getVertexKeyToPos: () => geometryContext.geometryIndex.getVertexKeyToPos(),
-  getFaceIndexMap: () => geometryContext.geometryIndex.getFaceIndexMap(),
-});
-renderer2d.setUnfoldManager(unfold2d);
+  groupController.getGroupIds,
+  groupController.getGroupFaces,
+  groupController.getPreviewGroupId,
+  groupController.getFaceGroupMap,
+  groupController.getGroupColor,
+  groupController.getGroupTreeParent,
+  () => geometryContext.geometryIndex.getFaceToEdges(),
+  () => geometryContext.geometryIndex.getEdgesArray(),
+  () => geometryContext.geometryIndex.getVertexKeyToPos(),
+  () => geometryContext.geometryIndex.getFaceIndexMap(),
+  groupController.getGroupPlaceAngle,
+);
 const menuButtons = [menuOpenBtn, exportBtn, exportGroupStepBtn, previewGroupModelBtn, settingsOpenBtn];
 const updateMenuState = () => {
-  const isPreview = workspaceState === "previewGroupModel" as WorkspaceState;
+  const isPreview = getWorkspaceState() === "previewGroupModel";
   menuButtons.forEach((btn) => btn.classList.toggle("hidden", isPreview));
   exitPreviewBtn.classList.toggle("hidden", !isPreview);
   groupPreviewPanel.classList.toggle("hidden", isPreview);
@@ -553,7 +551,7 @@ const buildGroupUIState = () => {
     groupCount: groupCount,
     groupIds: groupController.getGroupIds(),
     previewGroupId,
-    editGroupState: workspaceState === "editingGroup",
+    editGroupState: getWorkspaceState() === "editingGroup",
     getGroupColor: groupController.getGroupColor,
     getGroupName: groupController.getGroupName,
     getGroupFacesCount: (id: number) => groupController.getGroupFaces(id)?.size ?? 0,
@@ -588,8 +586,9 @@ const groupUI = createGroupUI(
 );
 
 const updateGroupEditToggle = () => {
-  groupEditToggle.classList.toggle("active", workspaceState === "editingGroup");
-  groupEditToggle.textContent = workspaceState !== "editingGroup" ? "编辑展开组" : "结束编辑";
+  const ws = getWorkspaceState();
+  groupEditToggle.classList.toggle("active", ws === "editingGroup");
+  groupEditToggle.textContent = ws !== "editingGroup" ? "编辑展开组" : "结束编辑";
 };
 
 appEventBus.on("modelLoaded", () => {
@@ -606,7 +605,7 @@ appEventBus.on("modelCleared", () => {
   logPanelEl?.classList.add("hidden");
   layoutEmpty.classList.toggle("active", true);
   layoutWorkspace.classList.toggle("active", false);
-  setWorkspaceState("normal" as WorkspaceState);
+  changeWorkspaceState("normal");
   previewMeshCache.clear();
   layoutWorkspace.classList.add("preloaded");
 });
@@ -626,9 +625,9 @@ appEventBus.on("groupFaceRemoved", ({ groupId }) => {
   previewMeshCache.delete(groupId);
   groupUI.render(buildGroupUIState());
 });
-appEventBus.on("workspaceStateChanged", ({previous, current}) => groupUI.render(buildGroupUIState()));
-appEventBus.on("workspaceStateChanged", ({previous, current}) => updateGroupEditToggle());
-appEventBus.on("workspaceStateChanged", ({previous, current}) => updateMenuState());
+appEventBus.on("workspaceStateChanged", () => groupUI.render(buildGroupUIState()));
+appEventBus.on("workspaceStateChanged", () => updateGroupEditToggle());
+appEventBus.on("workspaceStateChanged", () => updateMenuState());
 appEventBus.on("settingsChanged", (changed) => {previewMeshCache.clear();});
 
 groupUI.render(buildGroupUIState());
@@ -637,27 +636,27 @@ updateMenuState();
 
 onWorkerBusyChange((busy) => {
   appEventBus.emit("workerBusyChange", busy);
-  if (busy && workspaceState === "editingGroup") {
-    setWorkspaceState("normal" as WorkspaceState);
+  if (busy && getWorkspaceState() === "editingGroup") {
+    changeWorkspaceState("normal");
   }
 });
 
 groupAddBtn.addEventListener("click", () => {
   groupController.addGroup();
-  if (workspaceState !== "editingGroup") {
-    setWorkspaceState("editingGroup" as WorkspaceState);
+  if (getWorkspaceState() !== "editingGroup") {
+    changeWorkspaceState("editingGroup");
   }
 });
 groupEditToggle.addEventListener("click", () => {
   const currentGroupId = groupController.getPreviewGroupId();
-  if (workspaceState === "editingGroup") {
-    setWorkspaceState("normal" as WorkspaceState);
+  if (getWorkspaceState() === "editingGroup") {
+    changeWorkspaceState("normal");
   } else {
     if (isWorkerBusy()) {
       log("正在生成展开组模型，请稍后再编辑", "info");
       return;
     }
-    setWorkspaceState("editingGroup" as WorkspaceState);
+    changeWorkspaceState("editingGroup");
   }
 });
 exportBtn.addEventListener("click", async () => {
@@ -802,7 +801,7 @@ previewGroupModelBtn.addEventListener("click", async () => {
       previewMeshCache.set(targetGroupId, mesh.clone());
       renderer3d.loadPreviewModel(mesh);
     }
-    setWorkspaceState("previewGroupModel" as WorkspaceState);
+    changeWorkspaceState("previewGroupModel");
   } catch (error) {
     console.error("Replicad mesh 生成失败", error);
     log("Replicad mesh 生成失败，请检查控制台日志。", "error");
@@ -811,5 +810,5 @@ previewGroupModelBtn.addEventListener("click", async () => {
   }
 });
 exitPreviewBtn.addEventListener("click", () => {
-  setWorkspaceState("normal" as WorkspaceState);
+  changeWorkspaceState("normal");
 });

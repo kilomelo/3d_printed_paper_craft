@@ -3,6 +3,8 @@ import { Group, OrthographicCamera, Scene, WebGLRenderer } from "three";
 import { BBoxRuler, createScene2D } from "./scene";
 import { appEventBus } from "./eventBus";
 import type { Unfold2dManager } from "./unfold2dManager";
+import { getWorkspaceState } from "@/types/workspaceState";
+import { isSafari } from "./utils";
 
 export type Renderer2DContext = {
   scene: Scene;
@@ -10,17 +12,19 @@ export type Renderer2DContext = {
   renderer: WebGLRenderer;
   root: Group;
   bboxRuler: BBoxRuler;
-  setUnfoldManager: (manager: Unfold2dManager) => void;
   dispose: () => void;
 };
 
-export function createRenderer2D(getViewport: () => { width: number; height: number }, mountRenderer: (canvas: HTMLElement) => void): Renderer2DContext {
+export function createRenderer2D(
+  getViewport: () => { width: number; height: number },
+  mountRenderer: (canvas: HTMLElement) => void,
+  updateCurrentGroupPlaceAngle: (deltaAngle: number) => void,
+): Renderer2DContext {
   const { width, height } = getViewport();
   const { scene, camera, renderer, bboxRuler } = createScene2D(width, height);
   mountRenderer(renderer.domElement);
   const root = new Group();
   scene.add(root);
-  let unfoldManager: Unfold2dManager | null = null;
 
   let isPanning = false;
   let isRotating = false;
@@ -60,12 +64,12 @@ export function createRenderer2D(getViewport: () => { width: number; height: num
 
   const onPointerDown = (event: PointerEvent) => {
     if (event.button === 2) {
-      renderer.domElement.requestPointerLock?.();
+      if (!isSafari()) renderer.domElement.requestPointerLock?.();
       isPanning = true;
       panStart.x = event.clientX;
       panStart.y = event.clientY;
-    } else if (event.button === 0) {
-      renderer.domElement.requestPointerLock?.();
+    } else if (event.button === 0 && getWorkspaceState() === "editingGroup") {
+      if (!isSafari()) renderer.domElement.requestPointerLock?.();
       isRotating = true;
     }
   };
@@ -85,9 +89,8 @@ export function createRenderer2D(getViewport: () => { width: number; height: num
       }
       return;
     }
-    if (isRotating && unfoldManager) {
-      const current = unfoldManager.getPreviewRotationAngle();
-      unfoldManager.setPreviewRotationAngle(current + event.movementX * 0.005);
+    if (isRotating) {
+      updateCurrentGroupPlaceAngle(event.movementX * 0.005);
     }
   };
 
@@ -114,6 +117,7 @@ export function createRenderer2D(getViewport: () => { width: number; height: num
   };
 
   renderer.domElement.addEventListener("pointerup", onPointerUp);
+  renderer.domElement.addEventListener("pointercancel", onPointerUp);
   renderer.domElement.addEventListener("pointermove", onPointerMove);
   renderer.domElement.addEventListener("pointerdown", onPointerDown);
 
@@ -142,9 +146,6 @@ export function createRenderer2D(getViewport: () => { width: number; height: num
     renderer,
     root,
     bboxRuler,
-    setUnfoldManager: (manager: Unfold2dManager) => {
-      unfoldManager = manager;
-    },
     dispose,
   };
 }

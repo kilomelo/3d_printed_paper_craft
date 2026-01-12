@@ -62,13 +62,6 @@ export function disposeHoverLines(hoverLines: LineSegments2[]) {
   hoverLines.length = 0;
 }
 
-export function updateHoverResolution(view: { width: number; height: number }, hoverLines: LineSegments2[]) {
-  hoverLines.forEach((line) => {
-    const mat = line.material as LineMaterial;
-    mat.resolution.set(view.width, view.height);
-  });
-}
-
 export function hideHoverLines(state: HoverState) {
   state.hoverLines.forEach((line) => {
     line.visible = false;

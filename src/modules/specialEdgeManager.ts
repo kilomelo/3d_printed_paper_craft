@@ -116,21 +116,11 @@ export function createSpecialEdgeManager(
         nonManifoldCount += 1;
       }
     });
-    updateResolution();
     return { openCount, nonManifoldCount };
-  };
-
-  const updateResolution = () => {
-    const { width, height } = viewportSizeProvider();
-    edgeLines.forEach((line) => {
-      const mat = line.material as LineMaterial;
-      mat.resolution.set(width, height);
-    });
   };
 
   return {
     rebuild,
-    updateResolution,
     dispose: disposeAll,
   };
 }

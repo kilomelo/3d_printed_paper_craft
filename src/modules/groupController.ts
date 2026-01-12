@@ -17,6 +17,8 @@ import {
   getGroupTreeParent as getGroupTreeParentData,
   getGroupName as getGroupNameData,
   setGroupName as setGroupNameData,
+  getGroupPlaceAngle as getGroupPlaceAngleData,
+  setGroupPlaceAngle as setGroupPlaceAngleData,
   resetGroups,
   setGroupColorCursor,
 } from "./groups";
@@ -48,6 +50,22 @@ export function createGroupController(
     if (setGroupNameData(groupId, name)) {
       appEventBus.emit("groupNameChanged", { groupId, name });
     }
+  }
+
+  function getGroupPlaceAngle(groupId: number): number | undefined {
+    return getGroupPlaceAngleData(groupId);
+  }
+
+  function setGroupPlaceAngle(groupId: number, angle: number) {
+    const oldAngle = getGroupPlaceAngleData(groupId);
+    if (setGroupPlaceAngleData(groupId, angle)) {
+      appEventBus.emit("groupPlaceAngleChanged", { groupId, newAngle: angle, oldAngle: oldAngle ?? 0 });
+    }
+  }
+
+  function updateCurrentGroupPlaceAngle(deltaAngle: number) {
+    const currentAngle = getGroupPlaceAngle(previewGroupId) || 0;
+    setGroupPlaceAngle(previewGroupId, currentAngle + deltaAngle);
   }
 
   function removeFace(faceId: number, groupId: number | null): boolean {
@@ -164,8 +182,11 @@ export function createGroupController(
     getFaceGroupMap: getFaceGroupMapData,
     getGroupTreeParent: getGroupTreeParentData,
     getGroupName: getGroupNameData,
+    getGroupPlaceAngle,
     setGroupColor,
     setGroupName,
+    setGroupPlaceAngle,
+    updateCurrentGroupPlaceAngle,
     removeFace,
     addFace,
     deleteGroup,

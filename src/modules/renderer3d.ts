@@ -33,7 +33,6 @@ import {
   createHoverLines,
   disposeHoverLines,
   hideHoverLines,
-  updateHoverResolution,
   createRaycaster,
   initInteractionController,
   type HoverState,
@@ -44,7 +43,8 @@ import { createSeamManager } from "./seamManager";
 import { createSpecialEdgeManager } from "./specialEdgeManager";
 import { appEventBus } from "./eventBus";
 import { type GeometryContext, createGeometryContext } from "./geometry";
-import { WorkspaceState } from "@/types/workspaceState";
+import { WorkspaceState, getWorkspaceState } from "@/types/workspaceState";
+import { isSafari } from "./utils";
 import { disposeGroupDeep } from "./threeUtils";
 
 export type GroupApi = {
@@ -58,7 +58,6 @@ export type GroupApi = {
 
 export function createRenderer3D(
   log: (msg: string, tone?: "info" | "error" | "success") => void,
-  getWorkspaceState: () => WorkspaceState,
   groupApi: GroupApi,
   geometryContext: GeometryContext,
   getViewport: () => { width: number; height: number },
@@ -367,7 +366,7 @@ export function createRenderer3D(
     // console.debug("[pointer] down", { id: event.pointerId, button: event.button });
     if (!shouldLockPointer(event)) return;
     lockedButton = event.button;
-    if (document.pointerLockElement !== el) {
+    if (document.pointerLockElement !== el && !isSafari()) {
       el.requestPointerLock();
     }
   };
@@ -403,10 +402,10 @@ export function createRenderer3D(
       controls.update();
     }
   };
-  el.addEventListener("pointerdown", onCanvasPointerDown);
-  window.addEventListener("pointerup", onWindowPointerUp);
-  window.addEventListener("pointercancel", onWindowPointerUp);
-  window.addEventListener("pointermove", onGlobalPointerMove);
+  renderer.domElement.addEventListener("pointerdown", onCanvasPointerDown);
+  renderer.domElement.addEventListener("pointerup", onWindowPointerUp);
+  renderer.domElement.addEventListener("pointercancel", onWindowPointerUp);
+  renderer.domElement.addEventListener("pointermove", onGlobalPointerMove);
   document.addEventListener("pointerlockchange", onPointerLockChange);
 
   const objLoader = new OBJLoader();
@@ -484,10 +483,6 @@ export function createRenderer3D(
     camera.updateProjectionMatrix();
     axesCamera.aspect = 1;
     axesCamera.updateProjectionMatrix();
-    seamManager.updateSeamResolution();
-    specialEdgeManager.updateResolution();
-
-    updateHoverResolution(getViewport(), hoverLines);
   }
 
   window.addEventListener("resize", resizeRenderer3D);
@@ -540,14 +535,12 @@ export function createRenderer3D(
   const toggleEdges = () => {
     edgesVisible = !edgesVisible;
     applyEdgeVisibility();
-    updateHoverResolution(getViewport(), hoverLines);
     return edgesVisible;
   };
 
   const toggleSeams = () => {
     seamsVisible = !seamsVisible;
     setSeamsVisibility(seamsVisible);
-    seamManager.updateSeamResolution();
     return seamsVisible;
   };
 

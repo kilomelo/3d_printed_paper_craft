@@ -25,7 +25,6 @@ export function createSeamManager(
       const isSeam = edgeIsSeam(edgeId);
       updateSeamLine(edgeId, edges, isSeam, isSeamsVisible());
     });
-    updateSeamResolution();
   };
 
   function setVisibility(visible: boolean) {
@@ -105,17 +104,8 @@ export function createSeamManager(
     return line;
   }
   
-  function updateSeamResolution() {
-    seamLines.forEach((line) => {
-      const material = line.material as LineMaterial;
-      const { width, height } = viewportSizeProvider()
-      material.resolution.set(width, height);
-    });
-  }
-
   return {
     setVisibility,
-    updateSeamResolution,
     dispose: () => {
       seamLines.forEach((line) => {
         if (line.removeFromParent) line.removeFromParent();

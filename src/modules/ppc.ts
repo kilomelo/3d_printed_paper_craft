@@ -2,7 +2,7 @@
 import { BufferGeometry, Float32BufferAttribute, Group, Mesh } from "three";
 import { collectGeometry, filterLargestComponent } from "./geometry";
 import { getLastFileName } from "./model";
-import { getGroupIds, getGroupColorCursor, getGroupFaces, getGroupColor, getGroupName } from "./groups";
+import { getGroupColorCursor, exportGroupsData } from "./groups";
 import { getSettings } from "./settings";
 
 export type PPCFile = {
@@ -25,6 +25,7 @@ export type PPCFile = {
     color: string;
     faces: number[];
     name?: string;
+    placeAngle?: number;
   }[];
   groupColorCursor?: number;
   annotations?: Record<string, unknown>;
@@ -61,22 +62,19 @@ export async function build3dppcData(object: Group): Promise<PPCFile> {
   });
 
   const groupsData: NonNullable<PPCFile["groups"]> = [];
-  const groupIds = getGroupIds();
-  groupIds.forEach((groupId) => {
-    const faces = getGroupFaces(groupId);
-    const color = getGroupColor(groupId);
-    if (!faces || !color) return;
+  const rawGroups = exportGroupsData();
+  rawGroups.forEach((g) => {
     const filteredFaces: number[] = [];
-    faces.forEach((faceId) => {
+    g.faces.forEach((faceId) => {
       const mapped = mapping[faceId];
       if (mapped !== undefined && mapped >= 0) filteredFaces.push(mapped);
     });
-    const colorHex = `#${color.getHexString()}`;
     groupsData.push({
-      id: groupId,
-      color: colorHex,
+      id: g.id,
+      color: `#${g.color.toString(16).padStart(6, "0")}`,
       faces: filteredFaces,
-      name: getGroupName(groupId),
+      name: g.name,
+      placeAngle: g.placeAngle,
     });
   });
 

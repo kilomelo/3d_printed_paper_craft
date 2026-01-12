@@ -40,6 +40,7 @@ export type AppEvents = {
   groupCurrentChanged: number;
   groupFaceAdded: { groupId: number; faceId: number };
   groupFaceRemoved: { groupId: number; faceId: number };
+  groupPlaceAngleChanged: { groupId: number; newAngle: number; oldAngle: number };
   workerBusyChange: boolean;
   settingsChanged: Partial<import("./settings.js").Settings>;
 };

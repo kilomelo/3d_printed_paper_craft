@@ -24,40 +24,24 @@ type TransformTree = Map<number, Matrix4>;
 type TransformStore = Map<number, TransformTree>;
 type RootRotationStore = Map<number, Matrix4>;
 
-type ManagerDeps = {
-  angleIndex: AngleIndex;
-  renderer2d: Renderer2DContext;
-  getGroupIds: () => number[];
-  getGroupFaces: (id: number) => Set<number> | undefined;
-  getPreviewGroupId: () => number;
-  getFaceGroupMap: () => Map<number, number | null>;
-  getGroupColor: (id: number) => THREE.Color | undefined;
-  getGroupTreeParent: (id: number) => Map<number, number | null> | undefined;
-  getFaceToEdges: () => Map<number, [number, number, number]>;
-  getEdgesArray: () => ReturnType<GeometryIndex["getEdgesArray"]>;
-  getVertexKeyToPos: () => Map<string, Vector3>;
-  getFaceIndexMap: () => Map<number, { mesh: Mesh; localFace: number }>;
-};
-
-export function createUnfold2dManager(opts: ManagerDeps) {
-  const {
-    angleIndex,
-    renderer2d,
-    getGroupIds,
-    getGroupFaces,
-    getPreviewGroupId,
-    getFaceGroupMap,
-    getGroupColor,
-    getGroupTreeParent,
-    getFaceToEdges,
-    getEdgesArray,
-    getVertexKeyToPos,
-    getFaceIndexMap,
-  } = opts;
+export function createUnfold2dManager(
+  angleIndex: AngleIndex,
+  renderer2d: Renderer2DContext,
+  getGroupIds: () => number[],
+  getGroupFaces: (id: number) => Set<number> | undefined,
+  getPreviewGroupId: () => number,
+  getFaceGroupMap: () => Map<number, number | null>,
+  getGroupColor: (id: number) => THREE.Color | undefined,
+  getGroupTreeParent: (id: number) => Map<number, number | null> | undefined,
+  getFaceToEdges: () => Map<number, [number, number, number]>,
+  getEdgesArray: () => ReturnType<GeometryIndex["getEdgesArray"]>,
+  getVertexKeyToPos: () => Map<string, Vector3>,
+  getFaceIndexMap: () => Map<number, { mesh: Mesh; localFace: number }>,
+  getGroupPlaceAngle: (id: number) => number | undefined,
+) {
   const transformStore: TransformStore = new Map();
   const transformCache: Map<string, Matrix4> = new Map();
   const rootRotationStore: RootRotationStore = new Map();
-  const groupPreviewRotation: Map<number, number> = new Map(); // radians, per group
   const tmpVec = new Vector3();
   const tmpA = new Vector3();
   const tmpB = new Vector3();
@@ -161,26 +145,6 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     setFaceTransform(groupId, childId, mat);
   };
 
-  const getPreviewRotationAngle = (groupId?: number) => {
-    const gid = groupId ?? getPreviewGroupId();
-    if (!groupPreviewRotation.has(gid)) {
-      groupPreviewRotation.set(gid, 0);
-    }
-    return groupPreviewRotation.get(gid)!;
-  };
-
-  const setPreviewRotationAngle = (angleRad: number, groupId?: number) => {
-    const gid = groupId ?? getPreviewGroupId();
-    const prev = getPreviewRotationAngle(gid);
-    const delta = angleRad - prev;
-    groupPreviewRotation.set(gid, angleRad);
-    renderer2d.root.rotateOnAxis(new Vector3(0, 0, 1), delta);
-    const { minX, maxX, minY, maxY } = getMeshVertexBounds();
-    updateCamera(minX, maxX, minY, maxY, false);
-
-    updateBBoxRuler(minX, maxX, minY, maxY);
-  };
-
   const getMeshVertexBounds = (): { minX: number; maxX: number; minY: number; maxY: number } => {
     renderer2d.root.updateMatrixWorld(true);
     let minX = Infinity;
@@ -209,7 +173,7 @@ export function createUnfold2dManager(opts: ManagerDeps) {
   const buildTransformsForGroup = (groupId: number) => {
     const parentMap = getGroupTreeParent(groupId);
     if (!parentMap) return;
-    const rotMat = new Matrix4().makeRotationZ(getPreviewRotationAngle(groupId));
+    const rotMat = new Matrix4().makeRotationZ(getGroupPlaceAngle(groupId)??0);
     rootRotationStore.set(groupId, rotMat);
     // 根已在 buildRootTransforms 设置，这里做 BFS，子面依赖父面
     const queue: number[] = [];
@@ -404,12 +368,6 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     const { scale } = getSettings();
     renderer2d.bboxRuler.update(minX, maxX, minY, maxY, scale);
   }
-
-  appEventBus.on("settingsChanged", () => {
-    if (!lastBounds) return;
-    const { scale } = getSettings();
-    renderer2d.bboxRuler.update(lastBounds.minX, lastBounds.maxX, lastBounds.minY, lastBounds.maxY, scale);
-  });
 
   const computeIncenter2D = (p1: Point2D, p2: Point2D, p3: Point2D): Point2D => {
     const la = Math.hypot(p2[0] - p3[0], p2[1] - p3[1]);
@@ -635,7 +593,6 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     clearScene();
   });
   appEventBus.on("groupRemoved", ({ groupId, faces }) => {
-    groupPreviewRotation.delete(groupId);
     const gid = getPreviewGroupId();
     rebuildGroup2D(gid);
   });
@@ -644,10 +601,24 @@ export function createUnfold2dManager(opts: ManagerDeps) {
     rebuildGroup2D(groupId);
   });
 
+  appEventBus.on("settingsChanged", () => {
+    if (!lastBounds) return;
+    const { scale } = getSettings();
+    renderer2d.bboxRuler.update(lastBounds.minX, lastBounds.maxX, lastBounds.minY, lastBounds.maxY, scale);
+  });
+
+  appEventBus.on("groupPlaceAngleChanged", ({ groupId, newAngle, oldAngle }) => {
+    if (groupId !== getPreviewGroupId()) return;
+    const delta = newAngle - oldAngle;
+    renderer2d.root.rotateOnAxis(new Vector3(0, 0, 1), delta);
+    const { minX, maxX, minY, maxY } = getMeshVertexBounds();
+    updateCamera(minX, maxX, minY, maxY, false);
+
+    updateBBoxRuler(minX, maxX, minY, maxY);
+  });
+
   return {
     getGroupTrianglesData,
-    getPreviewRotationAngle,
-    setPreviewRotationAngle,
   };
 }
 

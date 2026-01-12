@@ -7,6 +7,7 @@ export type GroupData = {
   color: Color;
   treeParent: Map<number, number | null>;
   name: string;
+  placeAngle: number;
 };
 
 const GROUP_COLOR_PALETTE = [0x759fff, 0xff5757, 0xffff00, 0x00ee00, 0x00ffff, 0xff70ff];
@@ -65,6 +66,7 @@ export function addGroup(newGroupId?: number): number | undefined {
       color: nextPaletteColor(),
       treeParent: new Map<number, number | null>(),
       name: nextGroupName(),
+      placeAngle: 0,
     };
     groups.push(exists);
     return newGroupId;
@@ -121,6 +123,17 @@ export function setGroupName(id: number, name: string): boolean {
   return true;
 }
 
+export function getGroupPlaceAngle(id: number): number | undefined {
+  return findGroup(id)?.placeAngle;
+}
+
+export function setGroupPlaceAngle(id: number, angle: number): boolean {
+  const g = findGroup(id);
+  if (!g) return false;
+  g.placeAngle = angle;
+  return true;
+}
+
 export function setGroupColor(groupId: number, color: Color): boolean {
   const g = findGroup(groupId);
   if (!g) return false;
@@ -140,6 +153,25 @@ export function setGroupColorCursor(value: number) {
   groupColorCursor = value;
 }
 
+export function setGroupsPlaceAngles(data: { id: number; placeAngle?: number }[]) {
+  data.forEach(({ id, placeAngle }) => {
+    const g = findGroup(id);
+    if (g && typeof placeAngle === "number") {
+      g.placeAngle = placeAngle;
+    }
+  });
+}
+
+export function exportGroupsData() {
+  return groups.map((g) => ({
+    id: g.id,
+    faces: Array.from(g.faces),
+    color: g.color.getHex(),
+    treeParent: Array.from(g.treeParent.entries()),
+    name: g.name,
+    placeAngle: g.placeAngle,
+  }));
+}
 export function setFaceGroup(faceId: number, groupId: number | null): boolean {
   const prev = faceGroupMap.get(faceId) ?? null;
   if (prev === groupId) return false;
@@ -274,6 +306,7 @@ export function applyImportedGroups(
     color: string;
     faces: number[];
     name?: string;
+    placeAngle?: number;
   }[]>,
   faceAdjacency: Map<number, Set<number>>,
 ) {
@@ -291,6 +324,7 @@ export function applyImportedGroups(
         color: new Color(g.color),
         treeParent: new Map<number, number | null>(),
         name: g.name ?? `展开组 ${g.id}`,
+        placeAngle: typeof g.placeAngle === "number" ? g.placeAngle : 0,
       };
       groups.push(data);
       g.faces.forEach((fid) => setFaceGroup(fid, g.id));
