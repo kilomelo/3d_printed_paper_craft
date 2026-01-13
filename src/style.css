@@ -148,12 +148,12 @@ textarea {
 .editor-header {
   width: 100%;
   padding: 14px 18px;
+  height: 45px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--panel);
+  background: linear-gradient(90deg, rgba(50, 51, 120, 0.8), rgba(28, 90, 124, 0.8));
   border: 1px solid var(--border);
-  border-radius: 14px 14px 0 0;
 }
 
 .editor-title {
@@ -424,13 +424,14 @@ textarea {
 }
 
 .settings-modal {
-  width: 500px;
-  height: 600px;
+  width: 550px;
+  max-height: 80vh;
   background: #0b1020;
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .rename-modal {
@@ -444,11 +445,13 @@ textarea {
 }
 
 .settings-header {
+  min-height: 40px;
   height: 40px;
   display: flex;
   align-items: center;
   padding: 0 12px;
   border-bottom: 1px solid var(--border);
+  background: linear-gradient(90deg, rgba(50, 51, 120, 0.8), rgba(28, 90, 124, 0.8));
 }
 
 .settings-title {
@@ -462,6 +465,7 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow-y: auto;
 }
 
 .rename-body {

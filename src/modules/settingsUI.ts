@@ -12,6 +12,8 @@ type SettingsUIRefs = {
   earWidthResetBtn: HTMLButtonElement;
   earThicknessInput: HTMLInputElement;
   earThicknessResetBtn: HTMLButtonElement;
+  earClipGapInput: HTMLInputElement;
+  earClipGapResetBtn: HTMLButtonElement;
   layerHeightInput: HTMLInputElement;
   layerHeightResetBtn: HTMLButtonElement;
   connectionLayersDecBtn: HTMLButtonElement;
@@ -63,6 +65,8 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
       Number.isInteger(val) && val >= SETTINGS_LIMITS.bodyLayers.min && val <= SETTINGS_LIMITS.bodyLayers.max,
     earWidth: (val: number) =>
       !Number.isNaN(val) && val >= SETTINGS_LIMITS.earWidth.min && val < SETTINGS_LIMITS.earWidth.max,
+    earClipGap: (val: number) =>
+      !Number.isNaN(val) && val >= SETTINGS_LIMITS.earClipGap.min && val <= SETTINGS_LIMITS.earClipGap.max,
   };
 
   const blockKeysWhenSettingsOpen = (e: KeyboardEvent) => {
@@ -86,7 +90,8 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
     refs.earWidthInput.value = String(settingsDraft.earWidth);
     refs.earThicknessInput.value = String(settingsDraft.earThickness);
-    [refs.scaleInput, refs.layerHeightInput, refs.earWidthInput, refs.earThicknessInput].forEach((el) =>
+    refs.earClipGapInput.value = String(settingsDraft.earClipGap);
+    [refs.scaleInput, refs.layerHeightInput, refs.earWidthInput, refs.earThicknessInput, refs.earClipGapInput].forEach((el) =>
       updateInputColor(el, true),
     );
     refs.overlay.classList.remove("hidden");
@@ -169,6 +174,15 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     validators.earThickness,
     () => getDefaultSettings().earThickness,
   );
+  bindNumericInput(
+    refs.earClipGapInput,
+    refs.earClipGapResetBtn,
+    (raw) => parseFloat(raw),
+    () => settingsDraft.earClipGap,
+    (v) => (settingsDraft.earClipGap = v),
+    validators.earClipGap,
+    () => getDefaultSettings().earClipGap,
+  );
 
   const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
   const updateConnectionValue = (val: number) => {
@@ -200,7 +214,8 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
     refs.earWidthInput.value = String(settingsDraft.earWidth);
     refs.earThicknessInput.value = String(settingsDraft.earThickness);
-    [refs.scaleInput, refs.layerHeightInput, refs.earWidthInput, refs.earThicknessInput].forEach((el) =>
+    refs.earClipGapInput.value = String(settingsDraft.earClipGap);
+    [refs.scaleInput, refs.layerHeightInput, refs.earWidthInput, refs.earThicknessInput, refs.earClipGapInput].forEach((el) =>
       updateInputColor(el, true),
     );
   });
@@ -231,6 +246,9 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     }
     if (settingsDraft.earThickness !== settingsSnapshot.earThickness) {
       changes.push(`设置值 [拼接边耳朵厚度] 已修改为 ${settingsDraft.earThickness}`);
+    }
+    if (settingsDraft.earClipGap !== settingsSnapshot.earClipGap) {
+      changes.push(`设置值 [夹子配合间隙] 已修改为 ${settingsDraft.earClipGap}`);
     }
     applySettings(settingsDraft);
     closeSettings();

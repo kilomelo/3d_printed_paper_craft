@@ -1,7 +1,7 @@
 // 应用入口与编排层：负责初始化页面结构、事件总线订阅、组/拼缝控制器与渲染器的装配，并绑定 UI 交互。
 import "./style.css";
 import packageJson from "../package.json";
-import { Color, Mesh } from "three";
+import { Color, Mesh, Matrix4 } from "three";
 import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { type WorkspaceState, getWorkspaceState, setWorkspaceState } from "./types/workspaceState.js";
@@ -13,7 +13,7 @@ import { createGroupUI } from "./modules/groupUI";
 import { createRenderer2D } from "./modules/renderer2d";
 import { createUnfold2dManager } from "./modules/unfold2dManager";
 import { createGeometryContext } from "./modules/geometry";
-import { build3dppcData, download3dppc, load3dppc, type PPCFile } from "./modules/ppc";
+import { build3dppcData, download3dppc } from "./modules/ppc";
 import { createSettingsUI } from "./modules/settingsUI";
 import { getDefaultSettings, SETTINGS_LIMITS } from "./modules/settings";
 import { getModel } from "./modules/model";
@@ -24,6 +24,8 @@ import {
   onWorkerBusyChange,
   isWorkerBusy,
 } from "./modules/replicad/replicadWorkerClient";
+import { buildEarClip } from "./modules/replicad/replicadModeling";
+import { getLastFileName } from "./modules/model";
 
 const VERSION = packageJson.version ?? "0.0.0.0";
 const previewMeshCache = new Map<number, Mesh>();
@@ -60,8 +62,9 @@ app.innerHTML = `
         <button class="btn ghost" id="export-btn">导出 .3dppc</button>
         <button class="btn ghost" id="export-group-step-btn">导出展开组 STEP</button>
         <button class="btn ghost" id="export-group-stl-btn">导出展开组 STL</button>
+        <button class="btn ghost" id="export-ear-clip-btn">导出拼接边固定夹 STL</button>
         <button class="btn ghost" id="preview-group-model-btn">预览展开组模型</button>
-        <button class="btn ghost" id="settings-open-btn">设置</button>
+        <button class="btn ghost" id="settings-open-btn">项目设置</button>
         <div id="menu-blocker" class="menu-blocker"></div>
       </nav>
       <section class="editor-preview">
@@ -105,7 +108,7 @@ app.innerHTML = `
   <div id="settings-overlay" class="settings-overlay hidden">
     <div class="settings-modal">
       <div class="settings-header">
-        <div class="settings-title">设置</div>
+        <div class="settings-title">项目设置</div>
       </div>
       <div class="settings-body">
         <div class="setting-row">
@@ -176,6 +179,16 @@ app.innerHTML = `
             <button id="setting-ear-thickness-reset" class="btn ghost settings-inline-btn">恢复默认</button>
           </div>
         </div>
+        <div class="setting-row">
+          <div class="setting-label-row">
+            <label for="setting-ear-clip-gap" class="setting-label">夹子配合间隙</label>
+            <span class="setting-desc">连接耳朵的夹子松紧程度，值越大越容易安装，${limits.earClipGap.min}-${limits.earClipGap.max}，默认${defaultSettings.earClipGap}</span>
+          </div>
+          <div class="setting-field">
+            <input id="setting-ear-clip-gap" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+            <button id="setting-ear-clip-gap-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+          </div>
+        </div>
       </div>
       <div class="settings-footer">
         <button id="settings-cancel-btn" class="btn ghost settings-action">取消</button>
@@ -216,6 +229,7 @@ const facesToggle = document.querySelector<HTMLButtonElement>("#faces-toggle");
 const exportBtn = document.querySelector<HTMLButtonElement>("#export-btn");
 const exportGroupStepBtn = document.querySelector<HTMLButtonElement>("#export-group-step-btn");
 const exportGroupStlBtn = document.querySelector<HTMLButtonElement>("#export-group-stl-btn");
+const exportEarClipBtn = document.querySelector<HTMLButtonElement>("#export-ear-clip-btn");
 const previewGroupModelBtn = document.querySelector<HTMLButtonElement>("#preview-group-model-btn");
 const settingsOpenBtn = document.querySelector<HTMLButtonElement>("#settings-open-btn");
 const triCounter = document.querySelector<HTMLDivElement>("#tri-counter");
@@ -247,6 +261,8 @@ const settingEarWidthInput = document.querySelector<HTMLInputElement>("#setting-
 const settingEarWidthResetBtn = document.querySelector<HTMLButtonElement>("#setting-ear-width-reset");
 const settingEarThicknessInput = document.querySelector<HTMLInputElement>("#setting-ear-thickness");
 const settingEarThicknessResetBtn = document.querySelector<HTMLButtonElement>("#setting-ear-thickness-reset");
+const settingEarClipGapInput = document.querySelector<HTMLInputElement>("#setting-ear-clip-gap");
+const settingEarClipGapResetBtn = document.querySelector<HTMLButtonElement>("#setting-ear-clip-gap-reset");
 const groupPreviewPanel = groupPreview?.closest(".preview-panel") as HTMLDivElement | null;
 const groupFacesCountLabel = document.querySelector<HTMLSpanElement>("#group-faces-count");
 const groupColorBtn = document.querySelector<HTMLButtonElement>("#group-color-btn");
@@ -311,6 +327,8 @@ if (
   !settingBodyLayersResetBtn ||
   !settingEarThicknessInput ||
   !settingEarThicknessResetBtn ||
+  !settingEarClipGapInput ||
+  !settingEarClipGapResetBtn ||
   !settingsOpenBtn
 ) {
   throw new Error("初始化界面失败，缺少必要的元素");
@@ -346,6 +364,8 @@ const settingsUI = createSettingsUI(
     earWidthResetBtn: settingEarWidthResetBtn,
     earThicknessInput: settingEarThicknessInput,
     earThicknessResetBtn: settingEarThicknessResetBtn,
+    earClipGapInput: settingEarClipGapInput,
+    earClipGapResetBtn: settingEarClipGapResetBtn,
     layerHeightInput: settingLayerHeightInput,
     layerHeightResetBtn: settingLayerHeightResetBtn,
     connectionLayersDecBtn: settingConnectionLayersDecBtn,
@@ -363,6 +383,21 @@ const settingsUI = createSettingsUI(
 const geometryContext = createGeometryContext();
 const groupController = createGroupController(log, () => geometryContext.geometryIndex.getFaceAdjacency());
 let renameDialogOpen = false;
+
+const getCachedPreviewMesh = (groupId: number): Mesh | null => {
+  const cached = previewMeshCache.get(groupId);
+  if (!cached) return null;
+  const mesh = cached.clone();
+  const angle = groupController.getGroupPlaceAngle(groupId) ?? 0;
+  if (Math.abs(angle) > 1e-8) {
+    mesh.applyMatrix4(new Matrix4().makeRotationZ(angle));
+  }
+  mesh.updateMatrixWorld(true);
+  mesh.geometry?.computeBoundingBox?.();
+  mesh.geometry?.computeBoundingSphere?.();
+  return mesh;
+};
+
 const openRenameDialog = () => {
   if (!renameOverlay || !renameModal || !renameInput) return;
   if (settingsUI.isOpen()) return;
@@ -531,7 +566,7 @@ const unfold2d = createUnfold2dManager(
   () => geometryContext.geometryIndex.getFaceIndexMap(),
   groupController.getGroupPlaceAngle,
 );
-const menuButtons = [menuOpenBtn, exportBtn, exportGroupStepBtn, previewGroupModelBtn, settingsOpenBtn];
+const menuButtons = [menuOpenBtn, exportBtn, exportGroupStepBtn, exportGroupStlBtn, exportEarClipBtn, previewGroupModelBtn, settingsOpenBtn];
 const updateMenuState = () => {
   const isPreview = getWorkspaceState() === "previewGroupModel";
   menuButtons.forEach((btn) => btn.classList.toggle("hidden", isPreview));
@@ -717,13 +752,12 @@ exportGroupStlBtn.addEventListener("click", async () => {
   try {
     const targetGroupId = groupController.getPreviewGroupId();
     const groupName = groupController.getGroupName(targetGroupId) ?? `group-${targetGroupId}`;
-    const cached = previewMeshCache.get(targetGroupId);
+    const cached = getCachedPreviewMesh(targetGroupId);
     if (cached) {
       log("使用缓存 mesh 导出展开组 STL...", "info");
       const exporter = new STLExporter();
-      const meshForExport = cached.clone();
-      meshForExport.updateMatrixWorld(true);
-      const stlResult = exporter.parse(meshForExport, { binary: true });
+      cached.updateMatrixWorld(true);
+      const stlResult = exporter.parse(cached, { binary: true });
       const stlArray =
         stlResult instanceof ArrayBuffer
           ? new Uint8Array(stlResult)
@@ -760,7 +794,7 @@ exportGroupStlBtn.addEventListener("click", async () => {
       geometry.computeBoundingSphere();
       const mesh = new Mesh(geometry);
       mesh.name = "Replicad Mesh";
-      previewMeshCache.set(targetGroupId, mesh.clone());
+      previewMeshCache.set(targetGroupId, mesh);
       const url = URL.createObjectURL(new Blob([buffer], { type: "model/stl" }));
       const a = document.createElement("a");
       a.href = url;
@@ -779,13 +813,40 @@ exportGroupStlBtn.addEventListener("click", async () => {
     exportGroupStlBtn.disabled = false;
   }
 });
+exportEarClipBtn?.addEventListener("click", async () => {
+  if (!exportEarClipBtn) return;
+  exportEarClipBtn.disabled = true;
+  try {
+    log("正在生成拼接边固定夹...", "info");
+    const solid = await buildEarClip();
+    const blob = solid.blobSTL({ binary: true });
+    const buffer = await blob.arrayBuffer();
+    const baseName = getLastFileName().replace(/\.[^/.]+$/, "");
+    const fileName = `${baseName}_earClip.stl`;
+    const url = URL.createObjectURL(new Blob([buffer], { type: "model/stl" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    log(`拼接边固定夹 STL 已导出：下载目录/${fileName}`, "success");
+  } catch (error) {
+    console.error("拼接边固定夹导出失败", error);
+    log("拼接边固定夹导出失败，请查看控制台日志。", "error");
+  } finally {
+    exportEarClipBtn.disabled = false;
+  }
+});
 previewGroupModelBtn.addEventListener("click", async () => {
   previewGroupModelBtn.disabled = true;
   try {
     const targetGroupId = groupController.getPreviewGroupId();
-    const cached = previewMeshCache.get(targetGroupId);
+    const cached = getCachedPreviewMesh(targetGroupId);
     if (cached) {
-      renderer3d.loadPreviewModel(cached.clone());
+      renderer3d.loadPreviewModel(cached);
     } else {
       const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
       if (!trisWithAngles.length) {
@@ -798,7 +859,7 @@ previewGroupModelBtn.addEventListener("click", async () => {
         (progress) => log(progress, "progress"),
         (msg, tone) => log(msg, (tone as any) ?? "error"),
       );
-      previewMeshCache.set(targetGroupId, mesh.clone());
+      previewMeshCache.set(targetGroupId, mesh);
       renderer3d.loadPreviewModel(mesh);
     }
     changeWorkspaceState("previewGroupModel");
