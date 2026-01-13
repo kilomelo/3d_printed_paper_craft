@@ -22,7 +22,6 @@ import { getSettings } from "./settings";
 // 记录“3D → 2D”变换矩阵，后续将按组树关系进行累乘展开。
 type TransformTree = Map<number, Matrix4>;
 type TransformStore = Map<number, TransformTree>;
-type RootRotationStore = Map<number, Matrix4>;
 
 export function createUnfold2dManager(
   angleIndex: AngleIndex,
@@ -41,7 +40,7 @@ export function createUnfold2dManager(
 ) {
   const transformStore: TransformStore = new Map();
   const transformCache: Map<string, Matrix4> = new Map();
-  const rootRotationStore: RootRotationStore = new Map();
+  let cachedSnapped: { groupId: number; tris: SnappedTri[] } | null = null;
   const tmpVec = new Vector3();
   const tmpA = new Vector3();
   const tmpB = new Vector3();
@@ -167,14 +166,13 @@ export function createUnfold2dManager(
     if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
       return lastBounds ?? { minX: 0, maxX: 0, minY: 0, maxY: 0 };
     }
-    return { minX, maxX, minY, maxY };
+    lastBounds = { minX, maxX, minY, maxY };
+    return lastBounds;
   };
 
   const buildTransformsForGroup = (groupId: number) => {
     const parentMap = getGroupTreeParent(groupId);
     if (!parentMap) return;
-    const rotMat = new Matrix4().makeRotationZ(getGroupPlaceAngle(groupId)??0);
-    rootRotationStore.set(groupId, rotMat);
     // 根已在 buildRootTransforms 设置，这里做 BFS，子面依赖父面
     const queue: number[] = [];
     parentMap.forEach((parent, faceId) => {
@@ -193,7 +191,33 @@ export function createUnfold2dManager(
   const clearTransforms = () => {
     transformStore.clear();
     transformCache.clear();
-    rootRotationStore.clear();
+  };
+
+  type SnappedTri = { faceId: number; tri: [Vector3, Vector3, Vector3] };
+
+  const buildSnappedTris = (groupId: number, force: boolean = false): SnappedTri[] => {
+    if (cachedSnapped?.groupId === groupId && cachedSnapped && !force) {
+      return cachedSnapped.tris;
+    }
+    const faces = getGroupFaces(groupId);
+    if (!faces || faces.size === 0) return [];
+    clearTransforms();
+    buildRootTransforms(groupId);
+    buildTransformsForGroup(groupId);
+    const snap = (v: number) => (Math.abs(v) < 1e-6 ? 0 : v);
+    const tris: SnappedTri[] = [];
+    faces.forEach((fid) => {
+      const tri = faceTo2D(groupId, fid);
+      if (!tri) return;
+      const [a, b, c] = tri;
+      a.x = snap(a.x); a.y = snap(a.y);
+      b.x = snap(b.x); b.y = snap(b.y);
+      c.x = snap(c.x); c.y = snap(c.y);
+      tris.push({ faceId: fid, tri: [a.clone(), b.clone(), c.clone()] });
+    });
+    if (!tris.length) return [];
+    cachedSnapped = { groupId, tris };
+    return cachedSnapped.tris;
   };
 
   const ensureTransformTree = (groupId: number): TransformTree => {
@@ -225,8 +249,6 @@ export function createUnfold2dManager(
       if (m) chain.push(m.clone());
       cur = parentMap.get(cur) ?? null;
     }
-    const rot = rootRotationStore.get(groupId);
-    if (rot) chain.push(rot.clone());
     return chain;
   };
 
@@ -286,24 +308,18 @@ export function createUnfold2dManager(
     });
   };
 
-  const rebuildGroup2D = (groupId: number) => {
-    const faces = getGroupFaces(groupId);
+  const rebuildGroup2D = (groupId: number, force: boolean = false) => {
     clearScene();
-    if (!faces || faces.size === 0) {
+    const tris = buildSnappedTris(groupId, force);
+    if (tris.length === 0) {
       renderer2d.bboxRuler.hide();
       return;
     }
-    clearTransforms();
-    buildRootTransforms(groupId);
-    buildTransformsForGroup(groupId);
     const positions: number[] = [];
     const colors: number[] = [];
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    faces.forEach((fid) => {
-      const tri = faceTo2D(groupId, fid);
-      if (!tri) return;
+    tris.forEach(({ faceId, tri }) => {
       const [a, b, c] = tri;
-      const gid = getFaceGroupMap().get(fid);
+      const gid = getFaceGroupMap().get(faceId);
       const col = gid !== null && gid !== undefined ? getGroupColor(gid) : getGroupColor(groupId);
       const cr = col?.r ?? 255;
       const cg = col?.g ?? 255;
@@ -311,10 +327,6 @@ export function createUnfold2dManager(
       [a, b, c].forEach((v) => {
         positions.push(v.x, v.y, 0);
         colors.push(cr, cg, cb);
-        minX = Math.min(minX, v.x);
-        minY = Math.min(minY, v.y);
-        maxX = Math.max(maxX, v.x);
-        maxY = Math.max(maxY, v.y);
       });
     });
     if (positions.length === 0) {
@@ -338,32 +350,32 @@ export function createUnfold2dManager(
     renderer2d.root.add(mesh);
     renderer2d.root.add(edgeMesh);
 
-    updateCamera(minX, maxX, minY, maxY);
-    updateBBoxRuler(minX, maxX, minY, maxY);
+    renderer2d.root.rotateOnAxis(new Vector3(0, 0, 1), getGroupPlaceAngle(groupId)??0);
+    renderer2d.root.updateMatrixWorld(true);
+    const bounds = getMeshVertexBounds();
+    updateCamera(bounds.minX, bounds.maxX, bounds.minY, bounds.maxY);
+    updateBBoxRuler(bounds.minX, bounds.maxX, bounds.minY, bounds.maxY);
   };
 
-  function updateCamera(minX: number, maxX: number, minY: number, maxY: number, updateZoom: boolean = true) {
+  function updateCamera(minX: number, maxX: number, minY: number, maxY: number, zoomInOnly: boolean = false) {
     const centerX = (minX + maxX) * 0.5;
     const centerY = (minY + maxY) * 0.5;
     renderer2d.camera.position.x = centerX;
     renderer2d.camera.position.y = centerY;
-    // if (updateZoom) {
-      // 根据展开尺寸自动调整正交相机缩放，避免小模型看不到
-      const spanX = Math.max(1e-6, maxX - minX);
-      const spanY = Math.max(1e-6, maxY - minY);
-      const pad = 1.1; // 留出边距
-      const viewW = (renderer2d.renderer.domElement.clientWidth || renderer2d.renderer.domElement.width || 1);
-      const viewH = (renderer2d.renderer.domElement.clientHeight || renderer2d.renderer.domElement.height || 1);
-      const zoomX = viewW / (spanX * pad);
-      const zoomY = viewH / (spanY * pad);
-      const newZoom = Math.min(zoomX, zoomY);
-      renderer2d.camera.zoom = updateZoom ? newZoom : Math.min(newZoom, renderer2d.camera.zoom);
-    // }
+    // 根据展开尺寸自动调整正交相机缩放，避免小模型看不到
+    const spanX = Math.max(1e-6, maxX - minX);
+    const spanY = Math.max(1e-6, maxY - minY);
+    const pad = 1.1; // 留出边距
+    const viewW = (renderer2d.renderer.domElement.clientWidth || renderer2d.renderer.domElement.width || 1);
+    const viewH = (renderer2d.renderer.domElement.clientHeight || renderer2d.renderer.domElement.height || 1);
+    const zoomX = viewW / (spanX * pad);
+    const zoomY = viewH / (spanY * pad);
+    const newZoom = Math.min(zoomX, zoomY);
+    renderer2d.camera.zoom = zoomInOnly ? Math.min(newZoom, renderer2d.camera.zoom) : newZoom;
     renderer2d.camera.updateProjectionMatrix();
   }
 
   function updateBBoxRuler(minX: number, maxX: number, minY: number, maxY: number) {
-    lastBounds = { minX, maxX, minY, maxY };
     // 更新 2D 尺寸线
     const { scale } = getSettings();
     renderer2d.bboxRuler.update(minX, maxX, minY, maxY, scale);
@@ -382,29 +394,17 @@ export function createUnfold2dManager(
   };
 
   const getGroupTrianglesData = (groupId: number): TriangleData[] => {
-    const faces = getGroupFaces(groupId);
-    if (!faces || faces.size === 0) return [];
-    buildRootTransforms(groupId);
-    buildTransformsForGroup(groupId);
+    const tris = buildSnappedTris(groupId);
+    if (!tris.length) return [];
     const faceToEdges = getFaceToEdges();
     const faceIndexMap = getFaceIndexMap();
     const vertexKeyToPos = getVertexKeyToPos();
-    const snap = (v: number) => (Math.abs(v) < 1e-6 ? 0 : v);
-    const tris: Array<TriangleData> = [];
     const { scale } = getSettings();
     const makeVertexKey = (pos: BufferAttribute | InterleavedBufferAttribute, idx: number) =>
       `${pos.getX(idx)},${pos.getY(idx)},${pos.getZ(idx)}`;
-    faces.forEach((fid) => {
-      const tri = faceTo2D(groupId, fid);
-      if (!tri) return;
+    const result: Array<TriangleData> = [];
+    tris.forEach(({ faceId: fid, tri }) => {
       const [a, b, c] = tri;
-      // 数值归零，避免共边顶点因极小误差导致不一致
-      a.x = snap(a.x);
-      a.y = snap(a.y);
-      b.x = snap(b.x);
-      b.y = snap(b.y);
-      c.x = snap(c.x);
-      c.y = snap(c.y);
       const edgeIds = faceToEdges.get(fid) ?? [];
       const keyTo2D = new Map<string, Point2D>();
       const mapping = faceIndexMap.get(fid);
@@ -433,11 +433,11 @@ export function createUnfold2dManager(
           if (p1 && p2 && v1 && v2 && otherFace !== undefined) {
             const otherMapping = faceIndexMap.get(otherFace);
             if (otherMapping) {
-              const geom = otherMapping.mesh.geometry;
-              const posAttr = geom.getAttribute("position");
-              if (posAttr) {
-                const [ia, ib, ic] = getFaceVertexIndices(geom, otherMapping.localFace);
-                const keyForOther = (idx: number) => `${posAttr.getX(idx)},${posAttr.getY(idx)},${posAttr.getZ(idx)}`;
+            const geom = otherMapping.mesh.geometry;
+            const posAttr = geom.getAttribute("position");
+            if (posAttr) {
+              const [ia, ib, ic] = getFaceVertexIndices(geom, otherMapping.localFace);
+              const keyForOther = (idx: number) => `${posAttr.getX(idx)},${posAttr.getY(idx)},${posAttr.getZ(idx)}`;
                 const keys = [keyForOther(ia), keyForOther(ib), keyForOther(ic)];
                 const thirdKey = keys.find((k) => k !== k1 && k !== k2);
                 if (thirdKey) {
@@ -518,7 +518,7 @@ export function createUnfold2dManager(
           });
         }
       }
-      tris.push({
+      result.push({
         tri: [
           [a.x * scale, a.y * scale],
           [b.x * scale, b.y * scale],
@@ -534,24 +534,26 @@ export function createUnfold2dManager(
         ),
       });
     });
-    return tris;
+    return result;
   };
 
   appEventBus.on("modelCleared", () => {
     modelLoaded = false;
     clearScene();
     clearTransforms();
+    cachedSnapped = null;
   });
 
   appEventBus.on("groupFaceAdded", ({ groupId, faceId }: { groupId: number; faceId: number }) => {
     if (!modelLoaded) return;
-    rebuildGroup2D(groupId);
+    cachedSnapped = null;
+    rebuildGroup2D(groupId, true);
   });
   appEventBus.on("groupFaceRemoved", ({ groupId, faceId }: { groupId: number; faceId: number }) => {
     if (!modelLoaded) return;
     const current = getPreviewGroupId();
     if (groupId !== current) return;
-    rebuildGroup2D(groupId);
+    rebuildGroup2D(groupId, true);
   });
   const repaintGroupColor = (groupId: number) => {
     let painted = false;
@@ -580,7 +582,9 @@ export function createUnfold2dManager(
   appEventBus.on("groupColorChanged", ({ groupId }) => {
     if (!modelLoaded) return;
     const ok = repaintGroupColor(groupId);
-    if (!ok) rebuildGroup2D(groupId);
+    if (!ok) {
+      rebuildGroup2D(groupId, true);
+    }
   });
   appEventBus.on("modelLoaded", () => {
     modelLoaded = true;
@@ -611,9 +615,9 @@ export function createUnfold2dManager(
     if (groupId !== getPreviewGroupId()) return;
     const delta = newAngle - oldAngle;
     renderer2d.root.rotateOnAxis(new Vector3(0, 0, 1), delta);
+    renderer2d.root.updateMatrixWorld(true);
     const { minX, maxX, minY, maxY } = getMeshVertexBounds();
-    updateCamera(minX, maxX, minY, maxY, false);
-
+    updateCamera(minX, maxX, minY, maxY, true);
     updateBBoxRuler(minX, maxX, minY, maxY);
   });
 

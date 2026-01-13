@@ -777,9 +777,9 @@ export function createRenderer3D(
     const { scale } = getSettings();
     const size = bboxBox.getSize(new Vector3()).multiplyScalar(scale);
     bboxLabels = [
-      createLabelSprite(`${Math.round(size.x)}`),
-      createLabelSprite(`${Math.round(size.y)}`),
-      createLabelSprite(`${Math.round(size.z)}`),
+      createLabelSprite(size.x.toFixed(1)),
+      createLabelSprite(size.y.toFixed(1)),
+      createLabelSprite(size.z.toFixed(1)),
     ];
     bboxLabels.forEach((s) => gizmosGroup.add(s));
     updateLabelPositions();
@@ -803,8 +803,13 @@ export function createRenderer3D(
     previewModelGroup.clear();
     mesh.material = createPreviewMaterial().clone();
     previewModelGroup.add(mesh);
+    mesh.updateMatrixWorld(true);
     const geomWireframe = mesh.geometry.clone();
     const meshWireframe = new Mesh(geomWireframe, createEdgeMaterial());
+    meshWireframe.position.copy(mesh.position);
+    meshWireframe.quaternion.copy(mesh.quaternion);
+    meshWireframe.scale.copy(mesh.scale);
+    meshWireframe.updateMatrixWorld(true);
     meshWireframe.userData.functional = "edge";
     meshWireframe.castShadow = false;
     meshWireframe.receiveShadow = false;

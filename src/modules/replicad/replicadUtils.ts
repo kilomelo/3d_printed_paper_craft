@@ -31,6 +31,20 @@ export function intersectLines(p1: Point2D, p2: Point2D, p3: Point2D, p4: Point2
   return [px, py];
 }
 
+export function pointLineDistance2D(p: Point2D, a: Point2D, b: Point2D) {
+  const [px, py] = p;
+  const [ax, ay] = a;
+  const [bx, by] = b;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 1e-12) return Math.hypot(px - ax, py - ay); // 退化为点
+  const t = ((px - ax) * dx + (py - ay) * dy) / len2;
+  const projX = ax + t * dx;
+  const projY = ay + t * dy;
+  return Math.hypot(px - projX, py - projY);
+}
+
 // 通过展开后的三角形信息找到外轮廓，并且计算用于参数化建模的一系列数据
 export function triangles2Outer(trianglesWithAngles: TriangleWithEdgeInfo[]): {
   outer: Point2D[];

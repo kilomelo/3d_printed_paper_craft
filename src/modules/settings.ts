@@ -8,6 +8,7 @@ export type Settings = {
   bodyLayers: number;
   earWidth: number;
   earThickness: number;
+  earClipGap: number;
 };
 
 export const SETTINGS_LIMITS = {
@@ -17,6 +18,7 @@ export const SETTINGS_LIMITS = {
   bodyLayers: { min: 1, max: 8 },
   earWidth: { min: 0, max: 20 },
   earThickness: { min: 1, max: 2 },
+  earClipGap: { min: 0.1, max: 0.25 },
 } as const;
 
 const defaultSettings: Settings = {
@@ -26,6 +28,7 @@ const defaultSettings: Settings = {
   bodyLayers: 3,
   earWidth: 4,
   earThickness: 1,
+  earClipGap: 0.15,
 };
 
 let current: Settings = { ...defaultSettings };
@@ -79,6 +82,11 @@ export function setEarThickness(val: number) {
   current = { ...current, earThickness: val };
 }
 
+export function setEarClipGap(val: number) {
+  if (Number.isNaN(val) || val < SETTINGS_LIMITS.earClipGap.min || val > SETTINGS_LIMITS.earClipGap.max) return;
+  current = { ...current, earClipGap: val };
+}
+
 export function resetSettings() {
   current = { ...defaultSettings };
 }
@@ -92,7 +100,8 @@ export function applySettings(next: Partial<Settings>) {
     merged.connectionLayers === current.connectionLayers &&
     merged.bodyLayers === current.bodyLayers &&
     merged.earWidth === current.earWidth &&
-    merged.earThickness === current.earThickness;
+    merged.earThickness === current.earThickness &&
+    merged.earClipGap === current.earClipGap;
   if (unchanged) return;
   current = { ...current, ...next };
   appEventBus.emit("settingsChanged", next);
