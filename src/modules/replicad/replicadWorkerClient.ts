@@ -17,9 +17,9 @@ type MeshPayload = {
 };
 
 type WorkerResponse =
-  | { id: number; ok: true; type: "step"; buffer: ArrayBuffer; mime: string }
-  | { id: number; ok: true; type: "stl"; buffer: ArrayBuffer; mime: string }
-  | { id: number; ok: true; type: "mesh"; buffer: ArrayBuffer; mime: string }
+  | { id: number; ok: true; type: "step"; buffer: ArrayBuffer; mime: string; earClipNumTotal: number }
+  | { id: number; ok: true; type: "stl"; buffer: ArrayBuffer; mime: string; earClipNumTotal: number }
+  | { id: number; ok: true; type: "mesh"; buffer: ArrayBuffer; mime: string; earClipNumTotal: number }
   | { id: number; ok: true; type: "progress"; message: number }
   | { id: number; ok: true; type: "log"; message: string; tone?: "info" | "error" | "success" | "progress" }
   | { id: number; ok: false; error: string };
@@ -104,7 +104,7 @@ export async function buildStepInWorker(
     WorkerResponse,
     { type: "step"; ok: true }
   >;
-  return new Blob([res.buffer], { type: res.mime });
+  return { blob: new Blob([res.buffer], { type: res.mime }), earClipNumTotal: res.earClipNumTotal };
 }
 
 export async function buildStlInWorker(
@@ -116,7 +116,7 @@ export async function buildStlInWorker(
     WorkerResponse,
     { type: "stl"; ok: true }
   >;
-  return new Blob([res.buffer], { type: res.mime });
+  return { blob: new Blob([res.buffer], { type: res.mime }), earClipNumTotal: res.earClipNumTotal };
 }
 
 const stlLoader = new STLLoader();
@@ -135,5 +135,5 @@ export async function buildMeshInWorker(
   geometry.computeBoundingSphere();
   const mesh = new Mesh(geometry);
   mesh.name = "Replicad Mesh";
-  return mesh;
+  return { mesh, earClipNumTotal: res.earClipNumTotal };
 }

@@ -28,7 +28,7 @@ import { buildEarClip } from "./modules/replicad/replicadModeling";
 import { getLastFileName } from "./modules/model";
 
 const VERSION = packageJson.version ?? "0.0.0.0";
-const previewMeshCache = new Map<number, Mesh>();
+const previewMeshCache = new Map<number, { mesh: Mesh, earClipNumTotal: number }>();
 const stlLoader = new STLLoader();
 const defaultSettings = getDefaultSettings();
 const limits = SETTINGS_LIMITS;
@@ -384,10 +384,10 @@ const geometryContext = createGeometryContext();
 const groupController = createGroupController(log, () => geometryContext.geometryIndex.getFaceAdjacency());
 let renameDialogOpen = false;
 
-const getCachedPreviewMesh = (groupId: number): Mesh | null => {
+const getCachedPreviewMesh = (groupId: number): { mesh: Mesh, earClipNumTotal: number } | null => {
   const cached = previewMeshCache.get(groupId);
   if (!cached) return null;
-  const mesh = cached.clone();
+  const mesh = cached.mesh.clone();
   const angle = groupController.getGroupPlaceAngle(groupId) ?? 0;
   if (Math.abs(angle) > 1e-8) {
     mesh.applyMatrix4(new Matrix4().makeRotationZ(angle));
@@ -395,7 +395,7 @@ const getCachedPreviewMesh = (groupId: number): Mesh | null => {
   mesh.updateMatrixWorld(true);
   mesh.geometry?.computeBoundingBox?.();
   mesh.geometry?.computeBoundingSphere?.();
-  return mesh;
+  return { mesh, earClipNumTotal: cached.earClipNumTotal};
 };
 
 const openRenameDialog = () => {
@@ -569,7 +569,7 @@ const unfold2d = createUnfold2dManager(
 const menuButtons = [menuOpenBtn, exportBtn, exportGroupStepBtn, exportGroupStlBtn, exportEarClipBtn, previewGroupModelBtn, settingsOpenBtn];
 const updateMenuState = () => {
   const isPreview = getWorkspaceState() === "previewGroupModel";
-  menuButtons.forEach((btn) => btn.classList.toggle("hidden", isPreview));
+  menuButtons.forEach((btn) => btn?.classList.toggle("hidden", isPreview));
   exitPreviewBtn.classList.toggle("hidden", !isPreview);
   groupPreviewPanel.classList.toggle("hidden", isPreview);
   settingsOpenBtn.classList.toggle("hidden", isPreview);
@@ -725,7 +725,7 @@ exportGroupStepBtn.addEventListener("click", async () => {
       return;
     }
     log("正在导出展开组 STEP...", "info");
-    const blob = await buildStepInWorker(
+    const { blob, earClipNumTotal } = await buildStepInWorker(
       trisWithAngles,
       (progress) => log(progress, "progress"),
       (msg, tone) => log(msg, (tone as any) ?? "error"),
@@ -733,13 +733,13 @@ exportGroupStepBtn.addEventListener("click", async () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `group-${groupName}.step`;
+    a.download = `group-${groupName}-${earClipNumTotal}Clips.step`;
     a.style.display = "none";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    log(`展开组 STEP 已导出：下载目录/group-${groupName}.step`, "success");
+    log(`展开组 STEP 已导出：下载目录/group-${groupName}-${earClipNumTotal}Clips.step`, "success");
   } catch (error) {
     console.error("展开组 STEP 导出失败", error);
     log("展开组 STEP 导出失败，请查看控制台日志。", "error");
@@ -756,8 +756,8 @@ exportGroupStlBtn.addEventListener("click", async () => {
     if (cached) {
       log("使用缓存 mesh 导出展开组 STL...", "info");
       const exporter = new STLExporter();
-      cached.updateMatrixWorld(true);
-      const stlResult = exporter.parse(cached, { binary: true });
+      cached.mesh.updateMatrixWorld(true);
+      const stlResult = exporter.parse(cached.mesh, { binary: true });
       const stlArray =
         stlResult instanceof ArrayBuffer
           ? new Uint8Array(stlResult)
@@ -769,13 +769,13 @@ exportGroupStlBtn.addEventListener("click", async () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `group-${groupName}.stl`;
+      a.download = `group-${groupName}-${cached.earClipNumTotal}Clips.stl`;
       a.style.display = "none";
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      log(`展开组 STL 已导出：下载目录/group-${groupName}.stl`, "success");
+      log(`展开组 STL 已导出：下载目录/group-${groupName}-${cached.earClipNumTotal}Clips.stl`, "success");
     } else {
       const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
       if (!trisWithAngles.length) {
@@ -783,7 +783,7 @@ exportGroupStlBtn.addEventListener("click", async () => {
         return;
       }
       log("正在导出展开组 STL...", "info");
-      const blob = await buildStlInWorker(
+      const { blob, earClipNumTotal } = await buildStlInWorker(
         trisWithAngles,
         (progress) => log(progress, "progress"),
         (msg, tone) => log(msg, (tone as any) ?? "error"),
@@ -794,17 +794,17 @@ exportGroupStlBtn.addEventListener("click", async () => {
       geometry.computeBoundingSphere();
       const mesh = new Mesh(geometry);
       mesh.name = "Replicad Mesh";
-      previewMeshCache.set(targetGroupId, mesh);
+      previewMeshCache.set(targetGroupId, { mesh, earClipNumTotal });
       const url = URL.createObjectURL(new Blob([buffer], { type: "model/stl" }));
       const a = document.createElement("a");
       a.href = url;
-      a.download = `group-${groupName}.stl`;
+      a.download = `group-${groupName}-${earClipNumTotal}Clips.stl`;
       a.style.display = "none";
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      log(`展开组 STL 已导出：下载目录/group-${groupName}.stl`, "success");
+      log(`展开组 STL 已导出：下载目录/group-${groupName}-${earClipNumTotal}Clips.stl`, "success");
     }
   } catch (error) {
     console.error("展开组 STL 导出失败", error);
@@ -813,6 +813,38 @@ exportGroupStlBtn.addEventListener("click", async () => {
     exportGroupStlBtn.disabled = false;
   }
 });
+
+previewGroupModelBtn.addEventListener("click", async () => {
+  previewGroupModelBtn.disabled = true;
+  try {
+    const targetGroupId = groupController.getPreviewGroupId();
+    const cached = getCachedPreviewMesh(targetGroupId);
+    if (cached) {
+      renderer3d.loadPreviewModel(cached.mesh);
+    } else {
+      const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
+      if (!trisWithAngles.length) {
+        log("当前展开组没有三角面，无法导出。", "error");
+        return;
+      }
+      log("正在用 Replicad 生成 mesh...", "info");
+      const { mesh, earClipNumTotal } = await buildMeshInWorker(
+        trisWithAngles,
+        (progress) => log(progress, "progress"),
+        (msg, tone) => log(msg, (tone as any) ?? "error"),
+      );
+      previewMeshCache.set(targetGroupId, { mesh, earClipNumTotal });
+      renderer3d.loadPreviewModel(mesh);
+    }
+    changeWorkspaceState("previewGroupModel");
+  } catch (error) {
+    console.error("Replicad mesh 生成失败", error);
+    log("Replicad mesh 生成失败，请检查控制台日志。", "error");
+  } finally {
+    previewGroupModelBtn.disabled = false;
+  }
+});
+
 exportEarClipBtn?.addEventListener("click", async () => {
   if (!exportEarClipBtn) return;
   exportEarClipBtn.disabled = true;
@@ -840,36 +872,7 @@ exportEarClipBtn?.addEventListener("click", async () => {
     exportEarClipBtn.disabled = false;
   }
 });
-previewGroupModelBtn.addEventListener("click", async () => {
-  previewGroupModelBtn.disabled = true;
-  try {
-    const targetGroupId = groupController.getPreviewGroupId();
-    const cached = getCachedPreviewMesh(targetGroupId);
-    if (cached) {
-      renderer3d.loadPreviewModel(cached);
-    } else {
-      const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
-      if (!trisWithAngles.length) {
-        log("当前展开组没有三角面，无法导出。", "error");
-        return;
-      }
-      log("正在用 Replicad 生成 mesh...", "info");
-      const mesh = await buildMeshInWorker(
-        trisWithAngles,
-        (progress) => log(progress, "progress"),
-        (msg, tone) => log(msg, (tone as any) ?? "error"),
-      );
-      previewMeshCache.set(targetGroupId, mesh);
-      renderer3d.loadPreviewModel(mesh);
-    }
-    changeWorkspaceState("previewGroupModel");
-  } catch (error) {
-    console.error("Replicad mesh 生成失败", error);
-    log("Replicad mesh 生成失败，请检查控制台日志。", "error");
-  } finally {
-    previewGroupModelBtn.disabled = false;
-  }
-});
+
 exitPreviewBtn.addEventListener("click", () => {
   changeWorkspaceState("normal");
 });

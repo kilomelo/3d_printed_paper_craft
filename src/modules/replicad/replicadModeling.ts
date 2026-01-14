@@ -1,5 +1,5 @@
 import { BufferGeometry, Float32BufferAttribute, Uint16BufferAttribute, Uint32BufferAttribute, Mesh } from "three";
-import { Shape3D, setOC, getOC, makeBox, sketchCircle, Point } from "replicad";
+import { Shape3D, setOC, getOC, makeBox, sketchCircle, Point, Plane, Sketcher } from "replicad";
 import type { OpenCascadeInstance } from "replicad-opencascadejs";
 import initOC from "replicad-opencascadejs/src/replicad_single.js";
 import ocWasmUrl from "replicad-opencascadejs/src/replicad_single.wasm?url";
@@ -58,7 +58,7 @@ const buildSolidFromTrianglesWithAngles = async (
   trianglesWithAngles: TriangleWithEdgeInfo[],
   onProgress?: (progress: number) => void,
   onLog?: (msg: string) => void,
-) => {
+): Promise<{ solid: Shape3D; earClipNumTotal: number }> => {
   onProgress?.(0);
   const { layerHeight, connectionLayers, bodyLayers, earWidth, earThickness } = getSettings();
   const bodyThickness = bodyLayers * layerHeight;
@@ -91,6 +91,7 @@ const buildSolidFromTrianglesWithAngles = async (
   const minDistance = 0.2 * connectionLayers;
   // 耳朵外沿倒角
   const chamferSize = earThickness - layerHeight;
+  let earClipNumTotal: number = 0;
   trianglesWithAngles.forEach((triData, i) => {
     const isDefined = <T,>(v: T | undefined | null): v is T => v != null;
     // 收集顶点最小角度信息
@@ -145,7 +146,7 @@ const buildSolidFromTrianglesWithAngles = async (
     triData.edges.forEach((edge, idx) => {
       const pick = (k: 0 | 1 | 2): 0 | 1 | 2 => ((k + (idx % 3) + 3) % 3) as 0 | 1 | 2;
       const [pointA, pointB] = [triData.tri[pick(0)], triData.tri[pick(1)]];
-      const distanceAB = dists[pick(2)];
+      const distAB = dists[pick(2)];
       const edgePerpendicularPlane = planes[pick(2)];
       const adjEdgeCutToolL = edgeCutTools[pick(0)];
       const adjEdgeCutToolR = edgeCutTools[pick(1)];
@@ -173,7 +174,7 @@ const buildSolidFromTrianglesWithAngles = async (
           return;
         }
         // 超量挤出了坡度刀具并切掉两头超出的部分，以更好地应付钝角
-        const slopeTool = slopeToolSketch?.extrude(distanceAB + cutToolMargin).cut(adjEdgeCutToolL.clone()).cut(adjEdgeCutToolR.clone()).simplify();
+        const slopeTool = slopeToolSketch?.extrude(distAB + cutToolMargin).cut(adjEdgeCutToolL.clone()).cut(adjEdgeCutToolR.clone()).simplify();
         if (!slopeTool) {
           onLog?.("创建坡度刀具失败，跳过该边");
           console.warn('[ReplicadModeling] failed to create slope tool for edge, skip this edge', edge);
@@ -210,6 +211,7 @@ const buildSolidFromTrianglesWithAngles = async (
           : earLength < 7 * earClipMinSpacing ? 3
           : earLength < 13 * earClipMinSpacing ? 4
           : Math.max(4, Math.floor(earLength / earClipMaxSpacing));
+        earClipNumTotal += earClipNum;
         const earClipSpacing = earClipNum === 1 ? 0 : (earLength - earClipWingLength) / (earClipNum - 1);
         const earMiddlePoint = isTriangleEar ? minIncenter : [
           (earTrapezoid[2][0] + earTrapezoid[3][0]) / 2,
@@ -245,32 +247,27 @@ const buildSolidFromTrianglesWithAngles = async (
           console.warn('[ReplicadModeling] ear width is too narrow due to geometry constraint, skip this edge', edge);
         }
         else {
-          const earClipGroovingPlane = makeVerticalPlaneThroughAB(earMiddlePoint, [earMiddlePoint[0] + pointA[0] - pointB[0], earMiddlePoint[1] + pointA[1] - pointB[1]]);
-          if (!earClipGroovingPlane) {
-            onLog?.("创建耳朵卡子挖槽平面失败，跳过该边");
-            console.warn('[ReplicadModeling] failed to create ear clip grooving plane for edge, skip this edge', edge);
+          const earClipGroovingPlane = new Plane(earMiddlePoint, [(pointA[0]-pointB[0]) / distAB, (pointA[1]-pointB[1]) / distAB, 0], [0, 0, 1]);
+          const earClipGroovingSketch = new Sketcher(earClipGroovingPlane)
+            .movePointerTo([-earClipKeelThickness / 2 - earClipGrooveClearance, 0])
+            .lineTo([-earClipKeelThickness / 2 - earClipGrooveClearance, -grooveDepth])
+            .lineTo([earClipKeelThickness / 2 + earClipGrooveClearance, -grooveDepth])
+            .lineTo([earClipKeelThickness / 2 + earClipGrooveClearance, 0])
+            .close();
+          if (!earClipGroovingSketch) {
+            onLog?.("创建耳朵卡子挖槽草图失败，跳过该边");
+            console.warn('[ReplicadModeling] failed to create ear clip grooving sketch for edge, skip this edge', edge);
           }
           else {
-            const earClipGroovingSketch = sketchFromContourPoints(
-              [[-earClipKeelThickness / 2 - earClipGrooveClearance, layerHeight], [-earClipKeelThickness / 2 - earClipGrooveClearance, earThickness + earClipWingThickness + layerHeight],
-                [earClipKeelThickness / 2 + earClipGrooveClearance, earThickness + earClipWingThickness + layerHeight], [earClipKeelThickness / 2 + earClipGrooveClearance, layerHeight]],
-              earClipGroovingPlane, -1e-4);
-              earClipGroovingPlane.delete();
-            if (!earClipGroovingSketch) {
-              onLog?.("创建耳朵卡子挖槽草图失败，跳过该边");
-              console.warn('[ReplicadModeling] failed to create ear clip grooving sketch for edge, skip this edge', edge);
+            if (grooveDepth < earWidth + earClipWingExtrWidth - 1e-6)
+              onLog?.("耳朵因几何限制宽度太窄，连接夹安装可能不牢固");
+            const earClipGroovingTool = earClipGroovingSketch.extrude(earThickness + 2 * layerHeight);
+            const dirAB = [(pointA[0] - pointB[0]) / distAB, (pointA[1] - pointB[1]) / distAB];
+            for (let clipIdx = 0; clipIdx < earClipNum; clipIdx++) {
+              const distance2MiddlePoint = (-0.5 * earClipNum +clipIdx + 0.5) * earClipSpacing;
+              earSolid = earSolid.cut(earClipGroovingTool.clone().translate(dirAB[0] * distance2MiddlePoint, dirAB[1] * distance2MiddlePoint, 0)).simplify();
             }
-            else {
-              if (grooveDepth < earWidth + earClipWingExtrWidth - 1e-6)
-                onLog?.("耳朵因几何限制宽度太窄，连接夹安装可能不牢固");
-              const earClipGroovingTool = earClipGroovingSketch.extrude(grooveDepth + 1e-5);
-              const dirAB = [(pointA[0] - pointB[0]) / distanceAB, (pointA[1] - pointB[1]) / distanceAB];
-              for (let clipIdx = 0; clipIdx < earClipNum; clipIdx++) {
-                const distance2MiddlePoint = (-0.5 * earClipNum +clipIdx + 0.5) * earClipSpacing;
-                earSolid = earSolid.cut(earClipGroovingTool.clone().translate(dirAB[0] * distance2MiddlePoint, dirAB[1] * distance2MiddlePoint, 0)).simplify();
-              }
-              earClipGroovingTool.delete();
-            }
+            earClipGroovingTool.delete();
           }
         }
         // 耳朵外侧上沿做一个倒角方便卡子安装
@@ -283,7 +280,7 @@ const buildSolidFromTrianglesWithAngles = async (
           onLog?.("创建耳朵倒角草图失败，跳过倒角");
           console.warn('[ReplicadModeling] failed to create ear chamfer sketch for edge, skip chamfer', edge);
         } else {
-          const earChamferTool = earChamferSketch.extrude(distanceAB + 2);
+          const earChamferTool = earChamferSketch.extrude(distAB + 2);
           earSolid = earSolid.cut(earChamferTool).simplify();
         }
 
@@ -302,7 +299,7 @@ const buildSolidFromTrianglesWithAngles = async (
             // console.log('[ReplicadModeling] edge info for ear anti-interference', { pointAAngle });
             const earAntiInterferenceSketch = sketchFromContourPoints(
               [[0,-cutToolMargin], [0,cutToolMargin], [cutToolMargin,cutToolMargin], [cutToolMargin,-cutToolMargin]],
-              edgePerpendicularPlane.clone(), distanceAB + cutToolMargin);
+              edgePerpendicularPlane.clone(), distAB + cutToolMargin);
             if (earAntiInterferenceSketch) {
               earCutTools.push(earAntiInterferenceSketch.extrude(-(minDistance / 2 + cutToolMargin))
                 .rotate((pointAAngle - 180) / 2, [pointA[0], pointA[1], 0], [0,0,1]));
@@ -385,7 +382,7 @@ const buildSolidFromTrianglesWithAngles = async (
     onLog?.("最终实体不是有效的 OCCT 形状");
     console.warn('[ReplicadModeling] final solid is not valid OCCT shape');
   }
-  return connectionSolid;
+  return { solid: connectionSolid, earClipNumTotal };
 };
 
 export const buildEarClip = async () => {
@@ -428,14 +425,14 @@ export async function buildGroupStepFromTriangles(
   trisWithAngles: TriangleWithEdgeInfo[],
   onProgress?: (msg: number) => void,
   onLog?: (msg: string) => void,
-) {
+): Promise<{ blob: Blob; earClipNumTotal: number }> {
   if (!trisWithAngles.length) {
     onLog?.("没有可用于建模的展开三角形");
     throw new Error("没有可用于建模的展开三角形");
   }
-  const fused = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog);
-  const blob = fused.blobSTEP();
-  return blob;
+  const { solid, earClipNumTotal } = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog);
+  const blob = solid.blobSTEP();
+  return { blob, earClipNumTotal };
 }
 
 const buildMeshTolerance = 0.1;
@@ -444,25 +441,26 @@ export async function buildGroupStlFromTriangles(
   trisWithAngles: TriangleWithEdgeInfo[],
   onProgress?: (msg: number) => void,
   onLog?: (msg: string) => void,
-) {
+): Promise<{ blob: Blob; earClipNumTotal: number }> {
   if (!trisWithAngles.length) {
     onLog?.("没有可用于建模的展开三角形");
     throw new Error("没有可用于建模的展开三角形");
   }
-  const fused = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog);
-  return fused.blobSTL({ binary: true, tolerance: buildMeshTolerance, angularTolerance: buildMeshAngularTolerance });
+  const { solid, earClipNumTotal } = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog);
+  const blob = solid.blobSTL({ binary: true, tolerance: buildMeshTolerance, angularTolerance: buildMeshAngularTolerance });
+  return { blob, earClipNumTotal };
 }
 
 export async function buildGroupMeshFromTriangles(
   trisWithAngles: TriangleWithEdgeInfo[],
   onProgress?: (msg: number) => void,
   onLog?: (msg: string) => void,
-) {
+): Promise<{ mesh: Mesh; earClipNumTotal: number }> {
   if (!trisWithAngles.length) {
     onLog?.("没有可用于建模的展开三角形");
     throw new Error("没有可用于建模的展开三角形");
   }
-  const solid = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog);
+  const { solid, earClipNumTotal } = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog);
   const mesh = solid.mesh({ tolerance: buildMeshTolerance, angularTolerance: buildMeshAngularTolerance });
   const geometry = new BufferGeometry();
   const position = new Float32BufferAttribute(mesh.vertices, 3);
@@ -478,5 +476,5 @@ export async function buildGroupMeshFromTriangles(
   geometry.computeBoundingSphere();
   const expotMesh = new Mesh(geometry);
   expotMesh.name = "group_preview_mesh";
-  return expotMesh;
+  return { mesh: expotMesh, earClipNumTotal };
 }
