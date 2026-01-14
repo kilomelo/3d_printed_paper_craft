@@ -249,10 +249,12 @@ const buildSolidFromTrianglesWithAngles = async (
         else {
           const earClipGroovingPlane = new Plane(earMiddlePoint, [(pointA[0]-pointB[0]) / distAB, (pointA[1]-pointB[1]) / distAB, 0], [0, 0, 1]);
           const earClipGroovingSketch = new Sketcher(earClipGroovingPlane)
-            .movePointerTo([-earClipKeelThickness / 2 - earClipGrooveClearance, 0])
-            .lineTo([-earClipKeelThickness / 2 - earClipGrooveClearance, -grooveDepth])
-            .lineTo([earClipKeelThickness / 2 + earClipGrooveClearance, -grooveDepth])
-            .lineTo([earClipKeelThickness / 2 + earClipGrooveClearance, 0])
+            .movePointerTo([-1.5 * earClipKeelThickness / 2 - earClipGrooveClearance, 0])
+            .lineTo([-earClipKeelThickness / 2 - earClipGrooveClearance, -1.5 * earClipKeelThickness / 2])
+            .lineTo([-earClipKeelThickness / 2 - earClipGrooveClearance, -grooveDepth + 1e-5])
+            .lineTo([earClipKeelThickness / 2 + earClipGrooveClearance, -grooveDepth + 1e-5])
+            .lineTo([earClipKeelThickness / 2 + earClipGrooveClearance, -1.5 * earClipKeelThickness / 2])
+            .lineTo([1.5 * earClipKeelThickness / 2 + earClipGrooveClearance, 0])
             .close();
           if (!earClipGroovingSketch) {
             onLog?.("创建耳朵卡子挖槽草图失败，跳过该边");
