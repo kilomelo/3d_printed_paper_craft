@@ -424,7 +424,7 @@ textarea {
 }
 
 .settings-modal {
-  width: 550px;
+  width: 650px;
   max-height: 80vh;
   background: #0b1020;
   border: 1px solid var(--border);
@@ -463,9 +463,9 @@ textarea {
   flex: 1;
   padding: 12px;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 12px;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .rename-body {
@@ -499,6 +499,48 @@ textarea {
   gap: 4px;
 }
 
+.settings-nav {
+  width: 100px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-nav-item {
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  border-left: 3px solid transparent;
+}
+
+.settings-nav-item.active {
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.16), rgba(56, 189, 248, 0.05));
+  border-color: var(--border);
+  border-left-color: rgba(56, 189, 248, 0.9);
+  color: #e8f7ff;
+  font-weight: 700;
+}
+
+.settings-content {
+  flex: 1;
+  display: flex;
+  position: relative;
+}
+
+.settings-panel {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-panel.active {
+  display: flex;
+}
+
 .setting-label-row {
   display: flex;
   align-items: flex-end;
@@ -509,6 +551,29 @@ textarea {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.settings-toggle-group {
+  display: inline-flex;
+  gap: 6px;
+  flex: 1;
+}
+
+.settings-toggle-group .active {
+  background: var(--panel-muted);
+  color: var(--text);
+  border-color: rgba(56, 189, 248, 0.9);
+}
+
+.setting-row.disabled .setting-label,
+.setting-row.disabled .setting-desc {
+  color: #888;
+}
+
+.setting-row.disabled input,
+.setting-row.disabled .btn {
+  opacity: 0.6;
+  pointer-events: none;
 }
 
 .setting-counter-group {

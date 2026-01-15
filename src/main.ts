@@ -6,7 +6,7 @@ import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { type WorkspaceState, getWorkspaceState, setWorkspaceState } from "./types/workspaceState.js";
 import { createLog } from "./modules/log";
-import { createRenderer3D } from "./modules/renderer3d";
+import { createRenderer3D, snapGeometryPositions } from "./modules/renderer3d";
 import { createGroupController } from "./modules/groupController";
 import { appEventBus } from "./modules/eventBus";
 import { createGroupUI } from "./modules/groupUI";
@@ -111,82 +111,115 @@ app.innerHTML = `
         <div class="settings-title">项目设置</div>
       </div>
       <div class="settings-body">
-        <div class="setting-row">
-          <div class="setting-label-row">
-            <label for="setting-scale" class="setting-label">缩放比例</label>
-            <span class="setting-desc">模型整体缩放比例，太小会导致打印文件生成失败</span>
-          </div>
-          <div class="setting-field">
-            <input id="setting-scale" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
-            <button id="setting-scale-reset" class="btn ghost settings-inline-btn">恢复默认</button>
-          </div>
+        <div class="settings-nav">
+          <button class="settings-nav-item active" id="settings-nav-basic">基础设置</button>
+          <button class="settings-nav-item" id="settings-nav-experiment">实验设置</button>
         </div>
-        <div class="setting-row">
-          <div class="setting-label-row">
-            <label for="setting-layer-height" class="setting-label">打印层高</label>
-            <span class="setting-desc">实际打印时的层高设置，最大${limits.layerHeight.max}，默认${defaultSettings.layerHeight}，单位mm</span>
-          </div>
-          <div class="setting-field">
-            <input id="setting-layer-height" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
-            <button id="setting-layer-height-reset" class="btn ghost settings-inline-btn">恢复默认</button>
-          </div>
-        </div>
-        <div class="setting-row">
-          <div class="setting-label-row">
-            <span class="setting-label">连接层数</span>
-            <span class="setting-desc">面之间连接处的层数，${limits.connectionLayers.min}-${limits.connectionLayers.max}，默认${defaultSettings.connectionLayers}</span>
-          </div>
-          <div class="setting-field">
-            <div class="setting-counter-group">
-              <button id="setting-connection-layers-dec" class="btn ghost settings-inline-btn">-</button>
-              <span id="setting-connection-layers-value" class="setting-range-value"></span>
-              <button id="setting-connection-layers-inc" class="btn ghost settings-inline-btn">+</button>
+        <div class="settings-content">
+          <div class="settings-panel active" id="settings-panel-basic">
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <label for="setting-scale" class="setting-label">缩放比例</label>
+                <span class="setting-desc">模型整体缩放比例，太小会导致打印文件生成失败</span>
+              </div>
+              <div class="setting-field">
+                <input id="setting-scale" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-scale-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+              </div>
             </div>
-            <button id="setting-connection-layers-reset" class="btn ghost settings-inline-btn">恢复默认</button>
-          </div>
-        </div>
-        <div class="setting-row">
-          <div class="setting-label-row">
-            <span class="setting-label">主体额外层数</span>
-            <span class="setting-desc">面主体的额外层数，${limits.bodyLayers.min}-${limits.bodyLayers.max}，默认${defaultSettings.bodyLayers}</span>
-          </div>
-          <div class="setting-field">
-            <div class="setting-counter-group">
-              <button id="setting-body-layers-dec" class="btn ghost settings-inline-btn">-</button>
-              <span id="setting-body-layers-value" class="setting-range-value"></span>
-              <button id="setting-body-layers-inc" class="btn ghost settings-inline-btn">+</button>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <label for="setting-layer-height" class="setting-label">打印层高</label>
+                <span class="setting-desc">实际打印时的层高设置，最大${limits.layerHeight.max}，默认${defaultSettings.layerHeight}，单位mm</span>
+              </div>
+              <div class="setting-field">
+                <input id="setting-layer-height" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-layer-height-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+              </div>
             </div>
-            <button id="setting-body-layers-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <span class="setting-label">连接层数</span>
+                <span class="setting-desc">面之间连接处的层数，${limits.connectionLayers.min}-${limits.connectionLayers.max}，默认${defaultSettings.connectionLayers}</span>
+              </div>
+              <div class="setting-field">
+                <div class="setting-counter-group">
+                  <button id="setting-connection-layers-dec" class="btn ghost settings-inline-btn">-</button>
+                  <span id="setting-connection-layers-value" class="setting-range-value"></span>
+                  <button id="setting-connection-layers-inc" class="btn ghost settings-inline-btn">+</button>
+                </div>
+                <button id="setting-connection-layers-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <span class="setting-label">主体额外层数</span>
+                <span class="setting-desc">面主体的额外层数，${limits.bodyLayers.min}-${limits.bodyLayers.max}，默认${defaultSettings.bodyLayers}</span>
+              </div>
+              <div class="setting-field">
+                <div class="setting-counter-group">
+                  <button id="setting-body-layers-dec" class="btn ghost settings-inline-btn">-</button>
+                  <span id="setting-body-layers-value" class="setting-range-value"></span>
+                  <button id="setting-body-layers-inc" class="btn ghost settings-inline-btn">+</button>
+                </div>
+                <button id="setting-body-layers-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <label for="setting-ear-width" class="setting-label">拼接边耳朵宽度</label>
+                <span class="setting-desc">用于拼接边粘接的耳朵宽度，${limits.earWidth.min}-${limits.earWidth.max}，默认${defaultSettings.earWidth}，单位mm</span>
+              </div>
+              <div class="setting-field">
+                <input id="setting-ear-width" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-ear-width-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <label for="setting-ear-thickness" class="setting-label">拼接边耳朵厚度</label>
+                <span class="setting-desc">用于拼接边粘接的耳朵厚度，${limits.earThickness.min}-${limits.earThickness.max}，默认${defaultSettings.earThickness}，单位mm</span>
+              </div>
+              <div class="setting-field">
+                <input id="setting-ear-thickness" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-ear-thickness-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <label for="setting-ear-clip-gap" class="setting-label">夹子配合间隙</label>
+                <span class="setting-desc">连接耳朵的夹子松紧程度，值越大越容易安装，${limits.earClipGap.min}-${limits.earClipGap.max}，默认${defaultSettings.earClipGap}</span>
+              </div>
+              <div class="setting-field">
+                <input id="setting-ear-clip-gap" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-ear-clip-gap-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+              </div>
+            </div>
           </div>
-        </div>
-        <div class="setting-row">
-          <div class="setting-label-row">
-            <label for="setting-ear-width" class="setting-label">拼接边耳朵宽度</label>
-            <span class="setting-desc">用于拼接边粘接的耳朵宽度，${limits.earWidth.min}-${limits.earWidth.max}，默认${defaultSettings.earWidth}，单位mm</span>
-          </div>
-          <div class="setting-field">
-            <input id="setting-ear-width" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
-            <button id="setting-ear-width-reset" class="btn ghost settings-inline-btn">恢复默认</button>
-          </div>
-        </div>
-        <div class="setting-row">
-          <div class="setting-label-row">
-            <label for="setting-ear-thickness" class="setting-label">拼接边耳朵厚度</label>
-            <span class="setting-desc">用于拼接边粘接的耳朵厚度，${limits.earThickness.min}-${limits.earThickness.max}，默认${defaultSettings.earThickness}，单位mm</span>
-          </div>
-          <div class="setting-field">
-            <input id="setting-ear-thickness" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
-            <button id="setting-ear-thickness-reset" class="btn ghost settings-inline-btn">恢复默认</button>
-          </div>
-        </div>
-        <div class="setting-row">
-          <div class="setting-label-row">
-            <label for="setting-ear-clip-gap" class="setting-label">夹子配合间隙</label>
-            <span class="setting-desc">连接耳朵的夹子松紧程度，值越大越容易安装，${limits.earClipGap.min}-${limits.earClipGap.max}，默认${defaultSettings.earClipGap}</span>
-          </div>
-          <div class="setting-field">
-            <input id="setting-ear-clip-gap" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
-            <button id="setting-ear-clip-gap-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+          <div class="settings-panel" id="settings-panel-experiment">
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <span class="setting-label">镂空风格</span>
+                <span class="setting-desc">去除三角面的中间部分，默认关闭</span>
+              </div>
+              <div class="setting-field">
+                <div class="settings-toggle-group">
+                  <button id="setting-hollow-off" class="btn ghost settings-inline-btn">关闭</button>
+                  <button id="setting-hollow-on" class="btn ghost settings-inline-btn">开启</button>
+                </div>
+                <button id="setting-hollow-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <label for="setting-wireframe-thickness" class="setting-label">线框粗细</label>
+                <span class="setting-desc">镂空风格下线框的粗细，单位mm，${limits.wireframeThickness.min}-${limits.wireframeThickness.max}，默认${defaultSettings.wireframeThickness}</span>
+              </div>
+              <div class="setting-field">
+                <input id="setting-wireframe-thickness" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-wireframe-thickness-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -238,6 +271,7 @@ const groupAddBtn = document.querySelector<HTMLButtonElement>("#group-add");
 const groupPreview = document.querySelector<HTMLDivElement>("#group-preview");
 const groupPreviewEmpty = document.querySelector<HTMLDivElement>("#group-preview-empty");
 const settingsOverlay = document.querySelector<HTMLDivElement>("#settings-overlay");
+const settingsContent = settingsOverlay?.querySelector<HTMLDivElement>(".settings-content") || null;
 const renameOverlay = document.querySelector<HTMLDivElement>("#rename-overlay");
 const renameModal = document.querySelector<HTMLDivElement>("#rename-modal");
 const renameInput = document.querySelector<HTMLInputElement>("#rename-input");
@@ -263,6 +297,16 @@ const settingEarThicknessInput = document.querySelector<HTMLInputElement>("#sett
 const settingEarThicknessResetBtn = document.querySelector<HTMLButtonElement>("#setting-ear-thickness-reset");
 const settingEarClipGapInput = document.querySelector<HTMLInputElement>("#setting-ear-clip-gap");
 const settingEarClipGapResetBtn = document.querySelector<HTMLButtonElement>("#setting-ear-clip-gap-reset");
+const settingHollowOffBtn = document.querySelector<HTMLButtonElement>("#setting-hollow-off");
+const settingHollowOnBtn = document.querySelector<HTMLButtonElement>("#setting-hollow-on");
+const settingHollowResetBtn = document.querySelector<HTMLButtonElement>("#setting-hollow-reset");
+const settingWireframeThicknessInput = document.querySelector<HTMLInputElement>("#setting-wireframe-thickness");
+const settingWireframeThicknessResetBtn = document.querySelector<HTMLButtonElement>("#setting-wireframe-thickness-reset");
+const settingWireframeRow = settingWireframeThicknessInput?.closest(".setting-row") as HTMLDivElement | null;
+const settingNavBasic = document.querySelector<HTMLButtonElement>("#settings-nav-basic");
+const settingNavExperiment = document.querySelector<HTMLButtonElement>("#settings-nav-experiment");
+const settingPanelBasic = document.querySelector<HTMLDivElement>("#settings-panel-basic");
+const settingPanelExperiment = document.querySelector<HTMLDivElement>("#settings-panel-experiment");
 const groupPreviewPanel = groupPreview?.closest(".preview-panel") as HTMLDivElement | null;
 const groupFacesCountLabel = document.querySelector<HTMLSpanElement>("#group-faces-count");
 const groupColorBtn = document.querySelector<HTMLButtonElement>("#group-color-btn");
@@ -329,7 +373,18 @@ if (
   !settingEarThicknessResetBtn ||
   !settingEarClipGapInput ||
   !settingEarClipGapResetBtn ||
-  !settingsOpenBtn
+  !settingHollowOffBtn ||
+  !settingHollowOnBtn ||
+  !settingHollowResetBtn ||
+  !settingWireframeThicknessInput ||
+  !settingWireframeThicknessResetBtn ||
+  !settingWireframeRow ||
+  !settingNavBasic ||
+  !settingNavExperiment ||
+  !settingPanelBasic ||
+  !settingPanelExperiment ||
+  !settingsOpenBtn ||
+  !settingsContent
 ) {
   throw new Error("初始化界面失败，缺少必要的元素");
 }
@@ -355,6 +410,7 @@ document.addEventListener("contextmenu", (e) => e.preventDefault());
 const settingsUI = createSettingsUI(
   {
     overlay: settingsOverlay,
+    content: settingsContent,
     openBtn: settingsOpenBtn,
     cancelBtn: settingsCancelBtn,
     confirmBtn: settingsConfirmBtn,
@@ -366,6 +422,16 @@ const settingsUI = createSettingsUI(
     earThicknessResetBtn: settingEarThicknessResetBtn,
     earClipGapInput: settingEarClipGapInput,
     earClipGapResetBtn: settingEarClipGapResetBtn,
+    hollowOnBtn: settingHollowOnBtn,
+    hollowOffBtn: settingHollowOffBtn,
+    hollowResetBtn: settingHollowResetBtn,
+    wireframeThicknessInput: settingWireframeThicknessInput,
+    wireframeThicknessResetBtn: settingWireframeThicknessResetBtn,
+    wireframeRow: settingWireframeRow,
+    navBasic: settingNavBasic,
+    navExperiment: settingNavExperiment,
+    panelBasic: settingPanelBasic,
+    panelExperiment: settingPanelExperiment,
     layerHeightInput: settingLayerHeightInput,
     layerHeightResetBtn: settingLayerHeightResetBtn,
     connectionLayersDecBtn: settingConnectionLayersDecBtn,
@@ -749,15 +815,9 @@ exportGroupStepBtn.addEventListener("click", async () => {
 });
 exportGroupStlBtn.addEventListener("click", async () => {
   exportGroupStlBtn.disabled = true;
-  try {
-    const targetGroupId = groupController.getPreviewGroupId();
-    const groupName = groupController.getGroupName(targetGroupId) ?? `group-${targetGroupId}`;
-    const cached = getCachedPreviewMesh(targetGroupId);
-    if (cached) {
-      log("使用缓存 mesh 导出展开组 STL...", "info");
+  const downloadMesh = (groupName: string, mesh: Mesh, earClipNumTotal: number) => {
       const exporter = new STLExporter();
-      cached.mesh.updateMatrixWorld(true);
-      const stlResult = exporter.parse(cached.mesh, { binary: true });
+      const stlResult = exporter.parse(mesh, { binary: true });
       const stlArray =
         stlResult instanceof ArrayBuffer
           ? new Uint8Array(stlResult)
@@ -765,18 +825,22 @@ exportGroupStlBtn.addEventListener("click", async () => {
             ? new Uint8Array(stlResult.buffer)
             : new Uint8Array();
       const stlCopy = new Uint8Array(stlArray); // force into ArrayBuffer-backed copy
-      const blob = new Blob([stlCopy.buffer], { type: "model/stl" });
-      const url = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(new Blob([stlCopy.buffer], { type: "model/stl" }));
       const a = document.createElement("a");
       a.href = url;
-      a.download = `group-${groupName}-${cached.earClipNumTotal}Clips.stl`;
+      a.download = `group-${groupName}-${earClipNumTotal}Clips.stl`;
       a.style.display = "none";
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      log(`展开组 STL 已导出：下载目录/group-${groupName}-${cached.earClipNumTotal}Clips.stl`, "success");
-    } else {
+      log(`展开组 STL 已导出：下载目录/group-${groupName}-${earClipNumTotal}Clips.stl`, "success");
+    };
+  try {
+    const targetGroupId = groupController.getPreviewGroupId();
+    const groupName = groupController.getGroupName(targetGroupId) ?? `group-${targetGroupId}`;
+    const cached = getCachedPreviewMesh(targetGroupId);
+    if (!cached) {
       const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
       if (!trisWithAngles.length) {
         log("当前展开组没有三角面，无法导出。", "error");
@@ -790,21 +854,15 @@ exportGroupStlBtn.addEventListener("click", async () => {
       );
       const buffer = await blob.arrayBuffer();
       const geometry = stlLoader.parse(buffer);
-      geometry.computeBoundingBox();
-      geometry.computeBoundingSphere();
+      snapGeometryPositions(geometry);
       const mesh = new Mesh(geometry);
       mesh.name = "Replicad Mesh";
       previewMeshCache.set(targetGroupId, { mesh, earClipNumTotal });
-      const url = URL.createObjectURL(new Blob([buffer], { type: "model/stl" }));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `group-${groupName}-${earClipNumTotal}Clips.stl`;
-      a.style.display = "none";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      log(`展开组 STL 已导出：下载目录/group-${groupName}-${earClipNumTotal}Clips.stl`, "success");
+      const cached = getCachedPreviewMesh(targetGroupId);
+      if (cached) downloadMesh(groupName, cached.mesh, cached.earClipNumTotal);
+    } else {
+      log("使用缓存 mesh 导出展开组 STL...", "info");
+      downloadMesh(groupName, cached.mesh, cached.earClipNumTotal);
     }
   } catch (error) {
     console.error("展开组 STL 导出失败", error);
@@ -833,6 +891,7 @@ previewGroupModelBtn.addEventListener("click", async () => {
         (progress) => log(progress, "progress"),
         (msg, tone) => log(msg, (tone as any) ?? "error"),
       );
+      snapGeometryPositions(mesh.geometry);
       previewMeshCache.set(targetGroupId, { mesh, earClipNumTotal });
       renderer3d.loadPreviewModel(mesh);
     }

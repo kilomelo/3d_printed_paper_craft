@@ -7,7 +7,9 @@ import type { Point2D, TriangleWithEdgeInfo } from "../../types/triangles";
 import { getSettings } from "../settings";
 import {
   pointKey, radToDeg, degToRad,
-  pointLineDistance2D, trapezoid, triangles2Outer, solveE,
+  pointLineDistance2D, trapezoid, triangles2Outer, solveE, offsetTriangleSafe, OffsetTriangleResult, OffsetFailReason
+} from "../mathUtils";
+import {
   makeVerticalPlaneThroughAB,
   makeVerticalPlaneNormalAB,
   sketchFromContourPoints,
@@ -60,7 +62,7 @@ const buildSolidFromTrianglesWithAngles = async (
   onLog?: (msg: string) => void,
 ): Promise<{ solid: Shape3D; earClipNumTotal: number }> => {
   onProgress?.(0);
-  const { layerHeight, connectionLayers, bodyLayers, earWidth, earThickness } = getSettings();
+  const { layerHeight, connectionLayers, bodyLayers, earWidth, earThickness, hollowStyle, wireframeThickness } = getSettings();
   const bodyThickness = bodyLayers * layerHeight;
   const connectionThickness = connectionLayers * layerHeight;
   onProgress?.(1);
@@ -163,11 +165,15 @@ const buildSolidFromTrianglesWithAngles = async (
         // 需要确保斜坡首层（layerHeight/2处）的最小间距，以保证两边的斜坡的首层不融合
         // 切片软甲中的“切片间隙闭合半径”需要设置得尽量小以减少该问题，但仍然需要从数据上保证间距
         // 注意这里公式求得的是确保首层的偏移为minDistance / 2时的坡底偏移
-        const slopeFirstLayerOffset = 1e-5 + (edge.isOuter ? 0 : Math.max(0, slopeTopOffset - slopeZDelta * (slopeTopOffset - minDistance / 2) / (slopeZDelta - layerHeight / 2)));
+        const slopeFirstLayerOffset = 1e-4 + Math.max(0, slopeTopOffset - slopeZDelta * (slopeTopOffset - minDistance / 2) / (slopeZDelta - layerHeight / 2));
 
-        const slopeToolSketch = sketchFromContourPoints([
-          [-slopeFirstLayerOffset, slopeStartZ], [0,slopeStartZ],
-          [0, slopToolHeight], [-slopeTopOffset, slopToolHeight]], edgePerpendicularPlane, -cutToolMargin);
+        const slopeToolSketch = sketchFromContourPoints(edge.isOuter ? [
+            [0,slopeStartZ],
+            [0, slopToolHeight], [-slopeTopOffset, slopToolHeight],
+          ] : [
+            [-slopeFirstLayerOffset, slopeStartZ], [0,slopeStartZ],
+            [0, slopToolHeight], [-slopeTopOffset, slopToolHeight]],
+          edgePerpendicularPlane, -cutToolMargin);
         if (!slopeToolSketch) {
           onLog?.("创建坡度刀具草图失败，跳过该边");
           console.warn('[ReplicadModeling] failed to create slope tool sketch for edge, skip this edge', edge);
@@ -251,8 +257,8 @@ const buildSolidFromTrianglesWithAngles = async (
           const earClipGroovingSketch = new Sketcher(earClipGroovingPlane)
             .movePointerTo([-1.5 * earClipKeelThickness / 2 - earClipGrooveClearance, 0])
             .lineTo([-earClipKeelThickness / 2 - earClipGrooveClearance, -1.5 * earClipKeelThickness / 2])
-            .lineTo([-earClipKeelThickness / 2 - earClipGrooveClearance, -grooveDepth + 1e-5])
-            .lineTo([earClipKeelThickness / 2 + earClipGrooveClearance, -grooveDepth + 1e-5])
+            .lineTo([-earClipKeelThickness / 2 - earClipGrooveClearance, -grooveDepth + 1e-4])
+            .lineTo([earClipKeelThickness / 2 + earClipGrooveClearance, -grooveDepth + 1e-4])
             .lineTo([earClipKeelThickness / 2 + earClipGrooveClearance, -1.5 * earClipKeelThickness / 2])
             .lineTo([1.5 * earClipKeelThickness / 2 + earClipGrooveClearance, 0])
             .close();
@@ -328,6 +334,29 @@ const buildSolidFromTrianglesWithAngles = async (
     planes.forEach((plane) => { if (plane) plane.delete(); });
 
     onProgress?.(Math.floor(2 + progressPerTriangle * (i + 1)));
+
+    if (hollowStyle) {
+      const msg: Record<OffsetFailReason, string> = {
+        DEGENERATE_INPUT: "原三角形退化（点重合或面积过小）",
+        PARALLEL_SHIFTED_LINES: "偏移后边线无法相交（偏移过大或近乎平行）",
+        DEGENERATE_RESULT: "偏移结果退化（新三角形面积过小）",
+        FLIPPED: "偏移导致三角形翻转（偏移过大）",
+        OUTSIDE_ORIGINAL: "偏移结果跑到原三角形外（不满足内偏移）",
+        INFEASIBLE_OFFSETS: "偏移导致三角形翻转（偏移过大）",
+      };
+        console.log('[ReplicadModeling] offsetTriangleSafe for hollowing', { triData, wireframeThickness });
+        // 镂空
+        const offsetResult = offsetTriangleSafe(triData.tri, [wireframeThickness, wireframeThickness, wireframeThickness]);
+        if (!offsetResult.tri) {
+          onLog?.(`三角形内偏移失败，跳过内偏移操作，原因：${msg[offsetResult.reason!]}`);
+        }
+        else
+        {
+          const voronoiCutToolSketch = sketchFromContourPoints(offsetResult.tri, "XY", -1);
+          if (voronoiCutToolSketch)
+            connectionSolid = connectionSolid.cut(voronoiCutToolSketch.extrude(connectionThickness + bodyThickness + 1 + 1e-4)).simplify();
+        }
+    }
   });
 
   if (!isOcctValid(connectionSolid)) {
@@ -350,26 +379,26 @@ const buildSolidFromTrianglesWithAngles = async (
 
   onProgress?.(80);
   // 第五步：消除干涉
-  const progressPerPoint = 19 / vertexAngleMap.size;
-  let itor = 0;
-  vertexAngleMap.forEach((data, key) => {
-    if (data.minAngle < Math.PI) {
-      const coneHeight =  Math.max(earCutToolMarginMin, bodyThickness + 1);
-      const radius = 1.415 * Math.max(0.01, coneHeight * Math.tan((Math.PI - data.minAngle) * 0.5));
-      const base = sketchCircle(radius, { plane: "XY", origin: coneHeight + connectionThickness });
-      const bottom = sketchCircle(0.05, { plane: "XY", origin: connectionThickness });
-      const cone = base.loftWith(bottom)
-      // const cone = base.loftWith([], { endPoint: [0, 0, connectionThickness + 1e-2], ruled: true })
-        .translate([data.position[0], data.position[1], 0]);
-      connectionSolid = connectionSolid.cut(cone).simplify();
-    }
-    onProgress?.(Math.floor(80 + progressPerPoint * (itor + 1)));
-    itor++;
-  });
-  if (!isOcctValid(connectionSolid)) {
-    onLog?.("消除干涉后实体不是有效的 OCCT 形状");
-    console.warn('[ReplicadModeling] after interference removal, solid is not valid OCCT shape');
-  }
+  // const progressPerPoint = 19 / vertexAngleMap.size;
+  // let itor = 0;
+  // vertexAngleMap.forEach((data, key) => {
+  //   if (data.minAngle < Math.PI) {
+  //     const coneHeight =  Math.max(earCutToolMarginMin, bodyThickness + 1);
+  //     const radius = 1.415 * Math.max(0.01, coneHeight * Math.tan((Math.PI - data.minAngle) * 0.5));
+  //     const base = sketchCircle(radius, { plane: "XY", origin: coneHeight + connectionThickness });
+  //     const bottom = sketchCircle(0.05, { plane: "XY", origin: connectionThickness });
+  //     const cone = base.loftWith(bottom)
+  //     // const cone = base.loftWith([], { endPoint: [0, 0, connectionThickness + 1e-2], ruled: true })
+  //       .translate([data.position[0], data.position[1], 0]);
+  //     connectionSolid = connectionSolid.cut(cone).simplify();
+  //   }
+  //   onProgress?.(Math.floor(80 + progressPerPoint * (itor + 1)));
+  //   itor++;
+  // });
+  // if (!isOcctValid(connectionSolid)) {
+  //   onLog?.("消除干涉后实体不是有效的 OCCT 形状");
+  //   console.warn('[ReplicadModeling] after interference removal, solid is not valid OCCT shape');
+  // }
 
   // 第六步，削平底部
   const margin = earWidth + 1;

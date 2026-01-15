@@ -19,12 +19,13 @@ import {
   Sprite,
   SpriteMaterial,
   CanvasTexture,
+  BufferAttribute,
 } from "three";
 import type { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import { getModel, setModel, setLastFileName, prepareGeometryData } from "./model";
+import { getModel, setModel, setLastFileName } from "./model";
 import { load3dppc, type PPCFile } from "./ppc";
 import { applySettings, resetSettings, getSettings } from "./settings";
 import { createScene, fitCameraToObject } from "./scene";
@@ -43,7 +44,7 @@ import { createSeamManager } from "./seamManager";
 import { createSpecialEdgeManager } from "./specialEdgeManager";
 import { appEventBus } from "./eventBus";
 import { type GeometryContext, createGeometryContext } from "./geometry";
-import { WorkspaceState, getWorkspaceState } from "@/types/workspaceState";
+import { getWorkspaceState } from "@/types/workspaceState";
 import { isSafari } from "./utils";
 import { disposeGroupDeep } from "./threeUtils";
 
@@ -55,6 +56,21 @@ export type GroupApi = {
   getFaceGroupMap: () => Map<number, number | null>;
   applyImportedGroups: (groups: PPCFile["groups"], groupColorCursor?: number) => void;
 };
+
+export function snapGeometryPositions(geometry: THREE.BufferGeometry, decimals = 5) {
+  const factor = 10 ** decimals;
+  const pos = geometry.getAttribute("position") as BufferAttribute | undefined;
+  if (!pos) return;
+  for (let i = 0; i < pos.count; i += 1) {
+    const x = Math.round(pos.getX(i) * factor) / factor;
+    const y = Math.round(pos.getY(i) * factor) / factor;
+    const z = Math.round(pos.getZ(i) * factor) / factor;
+    pos.setXYZ(i, x, y, z);
+  }
+  pos.needsUpdate = true;
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+}
 
 export function createRenderer3D(
   log: (msg: string, tone?: "info" | "error" | "success") => void,
@@ -513,11 +529,11 @@ export function createRenderer3D(
     hoverState.hoveredFaceId = null;
   }
 
-  function setHoverLinesVisible(visible: boolean) {
-    hoverLines.forEach((line) => {
-      if (line) line.visible = visible;
-    });
-  }
+  // function setHoverLinesVisible(visible: boolean) {
+  //   hoverLines.forEach((line) => {
+  //     if (line) line.visible = visible;
+  //   });
+  // }
 
   const resetView = () => {
     const model = getWorkspaceState() === "previewGroupModel" ? previewModelGroup : modelGroup;
@@ -709,6 +725,7 @@ export function createRenderer3D(
         loaded.traverse((child) => {
           if ((child as Mesh).isMesh) {
             (child as Mesh).material = mat.clone();
+            snapGeometryPositions((child as Mesh).geometry);
           }
         });
         object = loaded;
@@ -719,12 +736,14 @@ export function createRenderer3D(
         loaded.traverse((child) => {
           if ((child as Mesh).isMesh) {
             (child as Mesh).material = mat.clone();
+            snapGeometryPositions((child as Mesh).geometry);
           }
         });
         object = loaded;
         resetSettings();
       } else if (ext === "stl") {
         const geometry = await stlLoader.loadAsync(url);
+        snapGeometryPositions(geometry);
         const material = createFrontMaterial();
         object = new Mesh(geometry, material);
         resetSettings();
@@ -859,7 +878,6 @@ export function createRenderer3D(
     renderAxesInset();
     lastTriCount = tris;
   }
-
   animate();
 
   return {

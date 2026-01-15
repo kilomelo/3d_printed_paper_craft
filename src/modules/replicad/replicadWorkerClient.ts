@@ -1,20 +1,7 @@
 import { TriangleWithEdgeInfo } from "../../types/triangles";
 import { getSettings } from "../settings";
-import {
-  BufferGeometry,
-  Float32BufferAttribute,
-  Uint16BufferAttribute,
-  Uint32BufferAttribute,
-  Mesh,
-} from "three";
+import { Mesh } from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-
-type MeshPayload = {
-  positions: ArrayBuffer;
-  normals: ArrayBuffer;
-  indices: ArrayBuffer | null;
-  indexType: "uint16" | "uint32" | null;
-};
 
 type WorkerResponse =
   | { id: number; ok: true; type: "step"; buffer: ArrayBuffer; mime: string; earClipNumTotal: number }
