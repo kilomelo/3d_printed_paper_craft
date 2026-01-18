@@ -1,5 +1,6 @@
 // 全局事件总线：为模型加载、拼缝重建、组数据变更等提供订阅/发布机制，解耦模块间调用。
 import { type WorkspaceState } from "../types/workspaceState.js";
+import type { Point3D } from "../types/geometryTypes.js";
 type Handler<T> = (payload: T) => void;
 
 export type EventBus<Events extends Record<string, unknown>> = {
@@ -43,6 +44,11 @@ export type AppEvents = {
   groupPlaceAngleChanged: { groupId: number; newAngle: number; oldAngle: number };
   workerBusyChange: boolean;
   settingsChanged: Partial<import("./settings.js").Settings>;
+  edgeHover2D: { groupId: number; edgeId: number; p1: Point3D; p2: Point3D };
+  edgeHover2DClear: void;
+  // faceHover3D: { tri: [Point3D, Point3D, Point3D] };
+  faceHover3D: number | null;
+  faceHover3DClear: void;
 };
 
 export const appEventBus = createEventBus<AppEvents>();

@@ -20,8 +20,10 @@ import {
   SpriteMaterial,
   CanvasTexture,
   BufferAttribute,
+  Vector2 as ThreeVector2,
 } from "three";
-import type { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
@@ -29,7 +31,7 @@ import { getModel, setModel, setLastFileName } from "./model";
 import { load3dppc, type PPCFile } from "./ppc";
 import { applySettings, resetSettings, getSettings } from "./settings";
 import { createScene, fitCameraToObject } from "./scene";
-import { FACE_DEFAULT_COLOR, createFrontMaterial, createPreviewMaterial, createEdgeMaterial } from "./materials";
+import { FACE_DEFAULT_COLOR, createFrontMaterial, createPreviewMaterial, createEdgeMaterial, createHoverLineMaterial } from "./materials";
 import {
   createHoverLines,
   disposeHoverLines,
@@ -112,6 +114,12 @@ export function createRenderer3D(
   let bboxHelper: Box3Helper | null = null;
   let bboxBox: Box3 | null = null;
   let bboxLabels: Sprite[] = [];
+  const hoverEdgeGeom = new LineSegmentsGeometry();
+  hoverEdgeGeom.setPositions(new Float32Array(6));
+  const hoverEdgeMat = createHoverLineMaterial({ width: getViewport().width, height: getViewport().height });
+  const hoverEdgeLine = new LineSegments2(hoverEdgeGeom, hoverEdgeMat);
+  hoverEdgeLine.visible = false;
+  scene.add(hoverEdgeLine);
 
   const drawLabelTexture = (text: string, canvas?: HTMLCanvasElement) => {
     const cvs = canvas ?? document.createElement("canvas");
@@ -499,6 +507,8 @@ export function createRenderer3D(
     camera.updateProjectionMatrix();
     axesCamera.aspect = 1;
     axesCamera.updateProjectionMatrix();
+    const mat = hoverEdgeLine.material as any;
+    mat.resolution?.set(w, h);
   }
 
   window.addEventListener("resize", resizeRenderer3D);
@@ -651,6 +661,16 @@ export function createRenderer3D(
       (mat.map as CanvasTexture).needsUpdate = true;
     });
   });
+  appEventBus.on("edgeHover2D", ({ p1, p2 }) => {
+    if (hoverState.hoveredFaceId !== null) return;
+    (hoverEdgeLine.geometry as LineSegmentsGeometry).setPositions(
+      new Float32Array([p1[0], p1[1], p1[2], p2[0], p2[1], p2[2]]),
+    );
+    hoverEdgeLine.visible = true;
+  });
+  appEventBus.on("edgeHover2DClear", () => {
+    hoverEdgeLine.visible = false;
+  });
 
   interactionController = initInteractionController({
     renderer,
@@ -666,6 +686,19 @@ export function createRenderer3D(
     onAddFace: groupApi.handleAddFace,
     onRemoveFace: groupApi.handleRemoveFace,
     hoverState,
+    emitFaceHover: (faceId) => {
+      if (faceId === null) {
+        appEventBus.emit("faceHover3DClear", undefined);
+        return;
+      }
+      appEventBus.emit("faceHover3D", faceId);
+      //   tri: [
+      //     [tri[0].x, tri[0].y, tri[0].z],
+      //     [tri[1].x, tri[1].y, tri[1].z],
+      //     [tri[2].x, tri[2].y, tri[2].z],
+      //   ],
+      // });
+    },
   });
 
   function stopGroupBreath() {

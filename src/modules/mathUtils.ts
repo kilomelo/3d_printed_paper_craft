@@ -49,7 +49,7 @@ export function norm3(v: Vec3): number { return Math.hypot(v[0], v[1], v[2]); }
 export function mul3(v: Vec3, s: number): Vec3 { return [v[0] * s, v[1] * s, v[2] * s]; }
 function add3(u: Vec3, v: Vec3): Vec3 { return [u[0] + v[0], u[1] + v[1], u[2] + v[2]]; }
 
-function rotate2(v: Vec2, ang: number): Vec2 {
+export function rotate2(v: Vec2, ang: number): Vec2 {
   const c = Math.cos(ang);
   const s = Math.sin(ang);
   return [v[0] * c - v[1] * s, v[0] * s + v[1] * c];
@@ -87,6 +87,43 @@ export function pointLineDistance2D(p: Point2D, a: Point2D, b: Point2D) {
   const projX = ax + t * dx;
   const projY = ay + t * dy;
   return Math.hypot(px - projX, py - projY);
+}
+
+// 点到线段的距离（2D）
+export function distancePointToSegment2(p: Point2D, a: Point2D, b: Point2D): number {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len2 = dx * dx + dy * dy;
+  if (len2 < 1e-12) return Math.hypot(p[0] - a[0], p[1] - a[1]);
+  const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2));
+  const qx = a[0] + t * dx;
+  const qy = a[1] + t * dy;
+  return Math.hypot(p[0] - qx, p[1] - qy);
+}
+
+// 判断点是否落在线段为中轴、长度为边长+2*margin、宽度为2*margin 的矩形内
+export function pointInSegmentRectangle2(p: Point2D, a: Point2D, b: Point2D, margin: number): boolean {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len = Math.hypot(dx, dy);
+  const halfLen = len * 0.5 + margin;
+  const halfWidth = margin;
+  if (halfLen < 1e-12) {
+    // 退化为点附近的矩形
+    return Math.abs(p[0] - a[0]) <= halfWidth && Math.abs(p[1] - a[1]) <= halfWidth;
+  }
+  // 以线段中点为原点建立局部坐标系
+  const cx = (a[0] + b[0]) * 0.5;
+  const cy = (a[1] + b[1]) * 0.5;
+  const ux = dx / len; // 轴向单位向量
+  const uy = dy / len;
+  const vx = -uy; // 垂直单位向量
+  const vy = ux;
+  const px = p[0] - cx;
+  const py = p[1] - cy;
+  const projAlong = px * ux + py * uy;
+  const projPerp = px * vx + py * vy;
+  return Math.abs(projAlong) <= halfLen && Math.abs(projPerp) <= halfWidth;
 }
 
 /** 点 p 是否在三角形 tri 内，sign 表示三角形的方向（1:CCW, -1:CW） */

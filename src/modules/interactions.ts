@@ -31,6 +31,7 @@ export type InteractionOptions = {
   onAddFace: (faceId: number) => void;
   onRemoveFace: (faceId: number) => void;
   hoverState: HoverState;
+  emitFaceHover?: (faceId: number | null) => void;
 };
 export function createHoverLines(view: { width: number; height: number }, scene: THREE.Scene, hoverLines: LineSegments2[]) {
   if (hoverLines.length) return;
@@ -70,19 +71,29 @@ export function hideHoverLines(state: HoverState) {
   state.hoveredFaceId = null;
 }
 
-export function updateHoverLines(mesh: Mesh | null, faceIndex: number | null, faceId: number | null, state: HoverState) {
+export function updateHoverLines(
+  mesh: Mesh | null,
+  faceIndex: number | null,
+  faceId: number | null,
+  state: HoverState,
+  emitFace?: (faceId: number | null) => void,
+) {
   if (!mesh || faceIndex === null || faceIndex < 0 || faceId === null) {
     hideHoverLines(state);
+    emitFace?.(null);
     return;
   }
   const geometry = mesh.geometry;
   const position = geometry.getAttribute("position");
   if (!position) {
     hideHoverLines(state);
+    emitFace?.(null);
     return;
   }
   const indices = getFaceVertexIndices(geometry, faceIndex);
   const verts = indices.map((idx) => v3([position.getX(idx), position.getY(idx), position.getZ(idx)]).applyMatrix4(mesh.matrixWorld));
+  // emitFace?.([verts[0], verts[1], verts[2]]);
+  emitFace?.(faceId);
   const edges = [
     [0, 1],
     [1, 2],
@@ -156,6 +167,7 @@ export function initInteractionController(opts: InteractionOptions): Interaction
   const onPointerMove = (event: PointerEvent) => {
     if (opts.isPointerLocked()) {
       hideHoverLines(opts.hoverState);
+      opts.emitFaceHover?.(null);
       return;
     }
     const model = opts.getModel();
@@ -173,6 +185,7 @@ export function initInteractionController(opts: InteractionOptions): Interaction
     });
 
     hideHoverLines(opts.hoverState);
+    opts.emitFaceHover?.(null);
 
     if (!intersects.length) {
       if (brushMode) lastBrushedFace = null;
@@ -190,7 +203,7 @@ export function initInteractionController(opts: InteractionOptions): Interaction
       lastBrushedFace = faceId;
     }
     if (faceId === null) return;
-    updateHoverLines(mesh, faceIndex, faceId, opts.hoverState);
+    updateHoverLines(mesh, faceIndex, faceId, opts.hoverState, opts.emitFaceHover);
   };
 
   const forceHoverCheck = () => {
@@ -203,6 +216,7 @@ export function initInteractionController(opts: InteractionOptions): Interaction
 
   const onPointerLeave = () => {
     hideHoverLines(opts.hoverState);
+    opts.emitFaceHover?.(null);
   };
 
   const onPointerDown = (event: PointerEvent) => {

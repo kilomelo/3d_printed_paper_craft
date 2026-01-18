@@ -24,6 +24,8 @@ import { getSettings } from "./settings";
 type TransformTree = Map<number, Matrix4>;
 type TransformStore = Map<number, TransformTree>;
 
+export type EdgeCache = { origPos: [Vector3, Vector3]; unfoldedPos: [Vector3, Vector3] };
+
 export function createUnfold2dManager(
   angleIndex: AngleIndex,
   renderer2d: Renderer2DContext,
@@ -44,16 +46,18 @@ export function createUnfold2dManager(
   const transformStore: TransformStore = new Map();
   const transformCache: Map<string, Matrix4> = new Map();
   let cachedSnapped: { groupId: number; tris: SnappedTri[] } | null = null;
-  const groupEdgesCache: Map<number, Map<number, { origPos: [Vector3, Vector3]; unfoldedPos: [Vector3, Vector3] }>> =
-    new Map();
+  const groupEdgesCache: Map<
+    number,
+    { edges: Map<number, EdgeCache>; medianEdgeLength: number }
+  > = new Map();
   const tmpVec = new Vector3();
   const tmpA = new Vector3();
   const tmpB = new Vector3();
   const tmpC = new Vector3();
   const tmpD = new Vector3();
   const tmpE = new Vector3();
-  const basisU = new Vector3();
-  const basisV = new Vector3();
+  // const basisU = new Vector3();
+  // const basisV = new Vector3();
   const normal = new Vector3();
   const targetNormal = new Vector3(0, 0, 1);
   const quat = new Quaternion();
@@ -175,6 +179,8 @@ export function createUnfold2dManager(
     lastBounds = { minX, maxX, minY, maxY };
     return lastBounds;
   };
+
+  const getLastBounds = () => lastBounds;
 
   const buildTransformsForGroup = (groupId: number) => {
     const parentMap = getGroupTreeParent(groupId);
@@ -357,7 +363,8 @@ export function createUnfold2dManager(
     renderer2d.root.add(edgeMesh);
 
     // 缓存展开边信息（未应用 placeAngle）
-    const edgeCache = new Map<number, { origPos: [Vector3, Vector3]; unfoldedPos: [Vector3, Vector3] }>();
+    const edgeCache = new Map<number, EdgeCache>();
+    const edgeLengths: number[] = [];
     const edgesArray = getEdgesArray();
     const vertexKeyToPos = getVertexKeyToPos();
     const faceToEdges = getFaceToEdges();
@@ -394,9 +401,16 @@ export function createUnfold2dManager(
           origPos: [v1.clone(), v2.clone()],
           unfoldedPos: [p1.clone(), p2.clone()],
         });
+        edgeLengths.push(p1.distanceTo(p2));
       });
     });
-    groupEdgesCache.set(groupId, edgeCache);
+    const medianEdgeLength = (() => {
+      if (!edgeLengths.length) return 0;
+      const sorted = edgeLengths.slice().sort((m, n) => m - n);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) * 0.5 : sorted[mid];
+    })();
+    groupEdgesCache.set(groupId, { edges: edgeCache, medianEdgeLength });
 
     renderer2d.root.rotateOnAxis(new Vector3(0, 0, 1), getGroupPlaceAngle(groupId)??0);
     renderer2d.root.updateMatrixWorld(true);
@@ -754,6 +768,7 @@ export function createUnfold2dManager(
   return {
     getGroupTrianglesData,
     getEdges2D: () => groupEdgesCache,
+    getLastBounds,
   };
 }
 

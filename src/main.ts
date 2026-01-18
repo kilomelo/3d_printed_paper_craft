@@ -615,6 +615,7 @@ const renderer2d = createRenderer2D(() => {
     return { width: rect.width, height: rect.height };
   },
   (canvas) => groupPreview.appendChild(canvas),
+  () => { return groupController.getGroupPlaceAngle(groupController.getPreviewGroupId()) ?? 0; },
   groupController.updateCurrentGroupPlaceAngle,
 );
 const unfold2d = createUnfold2dManager(
@@ -634,6 +635,12 @@ const unfold2d = createUnfold2dManager(
   (edgeId, faceId) => geometryContext.geometryIndex.getThirdVertexKeyOnFace(edgeId, faceId),
   groupController.getGroupPlaceAngle,
 );
+renderer2d.setEdgeQueryProviders({
+  getEdges: unfold2d.getEdges2D,
+  getBounds: unfold2d.getLastBounds,
+  getFaceIdToEdges: () => geometryContext.geometryIndex.getFaceToEdges(),
+  getPreviewGroupId: groupController.getPreviewGroupId,
+});
 const menuButtons = [menuOpenBtn, exportBtn, exportGroupStepBtn, exportGroupStlBtn, exportEarClipBtn, previewGroupModelBtn, settingsOpenBtn];
 const updateMenuState = () => {
   const isPreview = getWorkspaceState() === "previewGroupModel";

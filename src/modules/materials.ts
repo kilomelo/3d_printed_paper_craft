@@ -1,5 +1,7 @@
 // 材质工厂：提供前/背面、线框、hover 等 Three.js 材质实例生成，集中管理颜色与透明度。
 import { BackSide, Color, FrontSide, MeshBasicMaterial, MeshStandardMaterial } from "three";
+import { Vector2 } from "three";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 
 export const FACE_DEFAULT_COLOR = new Color(0xffffff);
 const BACK_DEFAULT_COLOR = new Color(0xa77f7d);
@@ -57,5 +59,17 @@ export function createPreviewMaterial() {
     metalness: 0.05,
     roughness: 0.7,
     side: FrontSide,
+  });
+}
+
+// Hover 线材质（与 3D hover 使用一致）
+export function createHoverLineMaterial(resolution: { width: number; height: number }) {
+  return new LineMaterial({
+    color: 0xffa500,
+    linewidth: 5,
+    resolution: new Vector2(resolution.width, resolution.height),
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -3,
   });
 }
