@@ -1,4 +1,4 @@
-import { TriangleWithEdgeInfo } from "../../types/triangles";
+import { TriangleWithEdgeInfo } from "../../types/geometryTypes";
 import { getSettings } from "../settings";
 import { Mesh } from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";

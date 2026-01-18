@@ -1,4 +1,4 @@
-// 拼缝管理器：桥接 seamsLogic 与运行态依赖（scene/viewer/geometry 索引等），提供全量/按组/按面重建、可见性与分辨率更新，并负责拼缝资源释放。
+// 拼缝管理器：管理模型中的拼缝线的创建、更新和显示
 import { Vector3, Vector2, Object3D, Group } from "three";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
@@ -20,7 +20,6 @@ export function createSeamManager(
 
   const rebuildFull = () => {
     const edges = getEdges();
-    // console.debug("[seamManager] rebuilding all seams, edges.length:", edges.length);
     edges.forEach((_, edgeId) => {
       const isSeam = edgeIsSeam(edgeId);
       updateSeamLine(edgeId, edges, isSeam, isSeamsVisible());

@@ -1,4 +1,4 @@
-import type { Point2D, Triangle2D, TriangleWithEdgeInfo } from "../types/triangles";
+import type { Point2D, Point3D, Vec3, Triangle2D, Vec2, Plane3D, TriangleWithEdgeInfo } from "../types/geometryTypes";
 
 export function radToDeg(rad: number) { return (rad * 180) / Math.PI; }
 export function degToRad(deg: number) { return (deg * Math.PI) / 180;}
@@ -8,8 +8,13 @@ export function edgeKey(a: Point2D, b: Point2D) {
   const kb = pointKey(b);
   return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
 }
+export function pointKey3D([x, y, z]: Point3D) { return `${x.toFixed(5)},${y.toFixed(5)},${z.toFixed(5)}`; }
+export function edgeKey3D(a: Point3D, b: Point3D) {
+  const ka = pointKey3D(a);
+  const kb = pointKey3D(b);
+  return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+}
 
-type Vec2 = [number, number];
 const EPS = 1e-12;
 
 function sub(a: Point2D, b: Point2D): Vec2 {
@@ -31,7 +36,26 @@ function norm2(v: Vec2): number {
   return dot(v, v);
 }
 
-export function polygonArea(pts: Point2D[]) {
+export function sub3(p: Point3D, q: Point3D): Vec3 { return [p[0] - q[0], p[1] - q[1], p[2] - q[2]]; }
+export function dot3(u: Vec3, v: Vec3): number { return u[0] * v[0] + u[1] * v[1] + u[2] * v[2]; }
+export function cross3(u: Vec3, v: Vec3): Vec3 {
+  return [
+    u[1] * v[2] - u[2] * v[1],
+    u[2] * v[0] - u[0] * v[2],
+    u[0] * v[1] - u[1] * v[0],
+  ];
+}
+export function norm3(v: Vec3): number { return Math.hypot(v[0], v[1], v[2]); }
+export function mul3(v: Vec3, s: number): Vec3 { return [v[0] * s, v[1] * s, v[2] * s]; }
+function add3(u: Vec3, v: Vec3): Vec3 { return [u[0] + v[0], u[1] + v[1], u[2] + v[2]]; }
+
+function rotate2(v: Vec2, ang: number): Vec2 {
+  const c = Math.cos(ang);
+  const s = Math.sin(ang);
+  return [v[0] * c - v[1] * s, v[0] * s + v[1] * c];
+}
+
+export function polygonArea(pts: Point2D[]): number {
   let area = 0;
   for (let i = 0, j = pts.length - 1; i < pts.length; j = i, i += 1) {
     area += pts[j][0] * pts[i][1] - pts[i][0] * pts[j][1];
@@ -65,6 +89,7 @@ export function pointLineDistance2D(p: Point2D, a: Point2D, b: Point2D) {
   return Math.hypot(px - projX, py - projY);
 }
 
+/** 点 p 是否在三角形 tri 内，sign 表示三角形的方向（1:CCW, -1:CW） */
 export function pointInTriangle(p: Point2D, tri: Triangle2D, sign: 1 | -1, eps = 1e-10) {
   const [a, b, c] = tri;
 
@@ -213,105 +238,6 @@ export function triangles2Outer(trianglesWithAngles: TriangleWithEdgeInfo[]): {
     pointAngleMap.set(pointKey(curr), angleDeg);
   }
   return { outer, min, max, maxEdgeLen, pointAngleMap };
-}
-
-// 根据三条边的二面角对三角形做内偏移（每条边向内平移 offset，取平移后的交点作为新三角）
-// zDelta: 放样面的高度，非负数，表示要求的三角形所在平面相对于xy平面的距离
-// minDistance: 最小偏移量，非负数，0 表示3d打印中两个相邻的外墙间可设置的最小间距
-// layerHeight: 3d打印设置的层高，用来确保首层（外墙间隔最近）的间隔大于minDistance
-export function calculateOffset(
-  triData: TriangleWithEdgeInfo,
-  zDelta: number,
-  minDistance: number,
-  layerHeight: number = 0,
-): {topOffsets: number[], bottomOffsets: number[]} {
-  if (zDelta < 0 || minDistance < 0) {
-    console.warn('offsetTriangleWithAngles: invalid zDelta or minDistance, skip offsetting');
-    return {topOffsets: [0, 0, 0], bottomOffsets: [0, 0, 0]};
-  }
-  const { tri, edges } = triData;
-  
-
-  const offsets: number[] = [];
-  const edgeHeights: number[] = [];
-  for (let i = 0; i < 3; i += 1) {
-    const p0 = tri[i];
-    const p1 = tri[(i + 1) % 3];
-    const pOpp = tri[(i + 2) % 3];
-    const vx = p1[0] - p0[0];
-    const vy = p1[1] - p0[1];
-    const ox = pOpp[0] - p0[0];
-    const oy = pOpp[1] - p0[1];
-    const edgeLen = Math.hypot(vx, vy) || 1;
-    const height = Math.abs(vx * oy - vy * ox) / edgeLen;
-    edgeHeights.push(height);
-  }
-  const bottomOffsetValue: number[] = [];
-  for (let i = 0; i < 3; i += 1) {
-    const angleRad = edges[i]?.angle ?? Math.PI; // 非共享边视为 180°
-    const angleDeg = Math.abs(radToDeg(angleRad));
-    // 采用 min 而非 max，保证当二面角 < 180 时产生正偏移；二面角→0 时需裁剪
-    const half = angleDeg * 0.5;
-    const term = Math.min(90, half); // <= 90
-    const raw = 90 - term; // >=0
-    let offset = zDelta * Math.tan(degToRad(raw));
-    if (!Number.isFinite(offset)) offset = 0;
-    const heightCap = edgeHeights[i] * 0.5;
-    if (Math.abs(offset) > heightCap) {
-      offset = Math.sign(offset) * heightCap;
-      console.warn('offsetTriangleWithAngles: offset exceeds height cap, adjusted', offset);
-    }
-    // 对于弯折边，需要保证最小偏移量以防止打印时边缘融合
-    if (!edges[i]?.isOuter) {
-      offset = Math.max(offset, minDistance / 2);
-    }
-    // 不但需要确保zDelta高度的层之间的间距，还需要确保首层（layerHeight/2处）的间距
-    // 切片软甲中的“切片间隙闭合半径”需要设置得尽量小以减少该问题，但仍然需要从数据上保证间距
-    // 注意这里公式求得的是确保首层的偏移为minDistance / 2时的放样底部偏移
-    const bottomOffset = edges[i]?.isOuter ? 0 : Math.max(0, offset - zDelta * (offset - minDistance / 2) / (zDelta - layerHeight / 2));
-    bottomOffsetValue.push(bottomOffset);
-    offsets.push(offset + (edges[i]?.isOuter ? 0 : 0.15));
-  }
-  return {topOffsets: offsets, bottomOffsets: bottomOffsetValue};
-}
-
-// 根据三条边的偏移值对三角形做内偏移（每条边向内平移 offset，取平移后的交点作为新三角）
-export function offsetTriangle(
-  tri: Triangle2D,
-  offsets: number[],
-): Triangle2D {
-  const area = polygonArea(tri);
-  const inwardNormal = (vx: number, vy: number): Point2D => {
-    // CCW: inward is left normal; CW: right normal
-    return area >= 0 ? [-vy, vx] : [vy, -vx];
-  };
-  const shiftedLines: Array<[Point2D, Point2D]> = [];
-  for (let i = 0; i < 3; i += 1) {
-    const p0 = tri[i];
-    const p1 = tri[(i + 1) % 3];
-    const vx = p1[0] - p0[0];
-    const vy = p1[1] - p0[1];
-    const normal = inwardNormal(vx, vy);
-    const len = Math.hypot(normal[0], normal[1]) || 1;
-    const nx = (normal[0] / len) * offsets[i];
-    const ny = (normal[1] / len) * offsets[i];
-    const q0: Point2D = [p0[0] + nx, p0[1] + ny];
-    const q1: Point2D = [p1[0] + nx, p1[1] + ny];
-    shiftedLines.push([q0, q1]);
-  }
-
-  const offsettedTri: Triangle2D = [
-    tri[0],
-    tri[1],
-    tri[2],
-  ];
-  for (let i = 0; i < 3; i += 1) {
-    const l1 = shiftedLines[i];
-    const l2 = shiftedLines[(i + 2) % 3]; // previous edge
-    const inter = intersectLines(l1[0], l1[1], l2[0], l2[1]);
-    offsettedTri[i] = inter ?? tri[i];
-  }
-  return offsettedTri;
 }
 
 export type OffsetFailReason =
@@ -481,6 +407,111 @@ export function trapezoid(
   ];
   return [a, b, f, e];
 }
+/** 求由三角形 ABC 与 ABD（共享边 AB）构成的二面角的角平分面。
+ * 返回的 Plane3D 以 point = a，normal 给出平分面的法向 
+ */
+export function bisectorPlaneOfDihedral(
+  a: Point3D,
+  b: Point3D,
+  c: Point3D,
+  d: Point3D
+): Plane3D | undefined {
+  // console.log('a,b,c,d', a, b, c, d);
+  // --- minimal 3D math ---
+  const sub3 = (p: Point3D, q: Point3D): Vec3 => [p[0] - q[0], p[1] - q[1], p[2] - q[2]];
+  const add3 = (u: Vec3, v: Vec3): Vec3 => [u[0] + v[0], u[1] + v[1], u[2] + v[2]];
+  const mul3 = (v: Vec3, s: number): Vec3 => [v[0] * s, v[1] * s, v[2] * s];
+  const dot3 = (u: Vec3, v: Vec3): number => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+  const cross3 = (u: Vec3, v: Vec3): Vec3 => [
+    u[1] * v[2] - u[2] * v[1],
+    u[2] * v[0] - u[0] * v[2],
+    u[0] * v[1] - u[1] * v[0],
+  ];
+  const norm3 = (v: Vec3): number => Math.hypot(v[0], v[1], v[2]);
+  const unit3 = (v: Vec3): Vec3 | undefined => {
+    const L = norm3(v);
+    if (L < EPS) return undefined;
+    return mul3(v, 1 / L);
+  };
+
+  // --- shared edge AB ---
+  const ab = sub3(b, a);
+  const abUnit = unit3(ab);
+  if (!abUnit) return undefined; // A==B, undefined dihedral
+
+  const ac = sub3(c, a);
+  const ad = sub3(d, a);
+
+  // Face normals (both ⟂ AB). Use same convention: n = unit(AB × AX)
+  const nABC = unit3(cross3(ab, ac));
+  const nABD = unit3(cross3(ab, ad));
+  if (!nABC || !nABD) return undefined; // degenerate triangle(s)
+
+  const cos = dot3(nABC, nABD); // [-1, 1]
+
+  // Robust coplanar thresholds
+  const COPLANAR_EPS = 1e-10;
+
+  // Case 1: dihedral = 0° (same oriented plane) => return the triangle plane
+  if (1 - cos < COPLANAR_EPS) {
+    // Plane of ABC (== plane of ABD)
+    return { normal: nABC, point: a };
+  }
+
+  // Case 2: dihedral = 180° (opposite oriented plane) => return plane ⟂ triangle plane and containing AB
+  if (1 + cos < COPLANAR_EPS) {
+    // Need plane containing AB, and perpendicular to plane(ABC).
+    // Its normal must be ⟂ AB and ⟂ nABC  => m = unit(nABC × abUnit)
+    const m = unit3(cross3(nABC, abUnit));
+    if (!m) return undefined;
+
+    // Optional: choose sign so that C and D tend to be on opposite sides if possible
+    const sc = dot3(m, ac);
+    const sd = dot3(m, ad);
+    const normal = sc * sd > 0 ? mul3(m, -1) : m;
+
+    return { normal, point: a };
+  }
+
+  // General case: two bisector candidates along AB
+  const candPlus = unit3(add3(nABC, nABD));           // unit(n1 + n2)
+  const candMinus = unit3(add3(nABC, mul3(nABD, -1))); // unit(n1 - n2)
+
+  const candidates: Vec3[] = [];
+  if (candPlus) candidates.push(candPlus);
+  if (candMinus) candidates.push(candMinus);
+  if (candidates.length === 0) return undefined;
+
+  // Choose the one that separates C and D: dot(n, AC) and dot(n, AD) have opposite signs
+  const scale = Math.max(norm3(ac), norm3(ad), 1);
+  const sepTol = 1e-10 * scale;
+
+  let best: { n: Vec3; sepScore: number } | undefined;
+
+  for (const n of candidates) {
+    const sc = dot3(n, ac);
+    const sd = dot3(n, ad);
+
+    // separation: product should be negative beyond tolerance
+    const prod = sc * sd;
+    if (prod < -(sepTol * sepTol)) {
+      // more negative => stronger separation
+      if (!best || prod < best.sepScore) best = { n, sepScore: prod };
+    }
+  }
+
+  if (!best) {
+    // 按你的需求：一般情况必须把 C 和 D 分隔两侧
+    // 若由于数值/特殊构型两者都不满足，就返回 undefined
+    return undefined;
+  }
+
+  // Normalize sign for deterministic output (optional): make C on positive side if possible
+  const sC = dot3(best.n, ac);
+  const normal = sC < 0 ? mul3(best.n, -1) : best.n;
+
+  return { normal, point: a };
+}
 
 /**
  * 在顶点 vtx 处，baseDir 指向“共享边方向”（例如在 b 点用 c-b，在 c 点用 b-c）。
@@ -551,4 +582,157 @@ export function solveE(a: Point2D, b: Point2D, c: Point2D, d: Point2D): Point2D 
   if (Math.sign(cross(vBC, sub(e, b))) !== sA) return undefined;
 
   return e;
+}
+
+
+/**
+ * 计算等腰直角三角形的第三个顶点坐标，使得ab为斜边，并按照左侧和右侧的顺序返回
+ * @param a 第一个点坐标
+ * @param b 第二个点坐标  
+ * @returns 返回两个可能的第三个点坐标，按照在向量ab的左侧和右侧的顺序 [左侧点, 右侧点]
+ */
+export function calculateIsoscelesRightTriangle(
+  a: Point2D, 
+  b: Point2D
+): [Point2D, Point2D] {
+  // 计算向量AB
+  const abVector: Point2D = [b[0] - a[0], b[1] - a[1]];
+  
+  // 计算AB的长度
+  const abLength = Math.sqrt(abVector[0] ** 2 + abVector[1] ** 2);
+  
+  // 计算AB的中点M
+  const midpoint: Point2D = [
+    (a[0] + b[0]) / 2,
+    (a[1] + b[1]) / 2
+  ];
+  
+  // 关键修正：直角顶点C到中点M的距离是斜边AB长度的一半
+  const distanceCM = abLength / 2;
+  
+  // 计算垂直于AB的单位向量
+  const perpendicularVector: Point2D = [
+    -abVector[1] / abLength,  // 旋转90度
+    abVector[0] / abLength
+  ];
+  
+  // 计算两个可能的C点位置
+  const c1: Point2D = [
+    midpoint[0] + perpendicularVector[0] * distanceCM,
+    midpoint[1] + perpendicularVector[1] * distanceCM
+  ];
+  
+  const c2: Point2D = [
+    midpoint[0] - perpendicularVector[0] * distanceCM,
+    midpoint[1] - perpendicularVector[1] * distanceCM
+  ];
+  
+  // 判断点相对于向量ab的位置（使用屏幕坐标系，Y轴向下）
+  const isC1OnLeft = isPointOnLeftSideOfVector(a, b, c1);
+  
+  // 按照左侧点在前，右侧点在后的顺序返回
+  if (isC1OnLeft) {
+    return [c1, c2];  // c1在左侧，c2在右侧
+  } else {
+    return [c2, c1];  // c2在左侧，c1在右侧
+  }
+}
+
+/**
+ * 判断点C相对于向量AB的位置（使用左手坐标系，Y轴向下）
+ * @param a 向量起点
+ * @param b 向量终点  
+ * @param c 要判断的点
+ * @returns 如果点C在向量AB的左侧返回true，右侧返回false
+ */
+function isPointOnLeftSideOfVector(a: Point2D, b: Point2D, c: Point2D): boolean {
+  // 计算向量AB和AC
+  const abx = b[0] - a[0];
+  const aby = b[1] - a[1];
+  const acx = c[0] - a[0];
+  const acy = c[1] - a[1];
+  
+  // 计算二维叉积：AB × AC = (Bx-Ax)*(Cy-Ay) - (By-Ay)*(Cx-Ax)
+  const crossProduct = abx * acy - aby * acx;
+  
+  // 在标准数学坐标系（Y轴向上）中，叉积>0表示点在向量左侧
+  // 在屏幕坐标系（Y轴向下）中，叉积<0表示点在向量左侧
+  // 这里假设使用常见的屏幕坐标系（Y轴向下）
+  return crossProduct < 0;
+}
+
+/**
+ * 判断点C相对于向量AB的位置（使用右手坐标系，Y轴向上）
+ * 适用于标准数学坐标系
+ */
+function isPointOnLeftSideOfVectorMath(a: Point2D, b: Point2D, c: Point2D): boolean {
+  const abx = b[0] - a[0];
+  const aby = b[1] - a[1];
+  const acx = c[0] - a[0];
+  const acy = c[1] - a[1];
+  
+  const crossProduct = abx * acy - aby * acx;
+  // 在标准数学坐标系中，叉积>0表示点在向量左侧
+  return crossProduct > 0;
+}
+
+
+/**
+ * 构造三角形 ABC：
+ * - A 点内角 = aAngle
+ * - B 点内角 = bAngle
+ * - side 决定 C 在向量 AB 的左侧或右侧
+ * 角度单位：弧度
+ */
+export function buildTriangleByEdgeAndAngles(
+  a: Point2D,
+  b: Point2D,
+  aAngle: number,
+  bAngle: number,
+  side: "left" | "right" = "right"
+): Point2D | undefined {
+  if (!Number.isFinite(aAngle) || !Number.isFinite(bAngle)) return undefined;
+  if (aAngle <= EPS || bAngle <= EPS) return undefined;
+  if (aAngle + bAngle >= Math.PI - 1e-9) return undefined; // 无解/退化到无穷远
+
+  const ab = sub(b, a);
+  const abLen = Math.hypot(ab[0], ab[1]);
+  if (abLen < EPS) return undefined;
+
+  const u: Vec2 = [ab[0] / abLen, ab[1] / abLen]; // A->B 单位向量
+  const s = side === "left" ? 1 : -1;
+
+  // A 点：从 AB 方向旋转到 AC
+  const dirA = rotate2(u, s * aAngle);
+
+  // B 点：从 BA 方向旋转到 BC（方向由 side 决定）
+  const ba: Vec2 = [-u[0], -u[1]];
+  const dirB = rotate2(ba, -s * bAngle);
+
+  // 求两直线交点
+  const c = intersectLines(a, add(a, dirA), b, add(b, dirB));
+  if (!c) return undefined;
+
+  // 必须在两条射线的正方向
+  const ac = sub(c, a);
+  const bc = sub(c, b);
+  if (dot(ac, dirA) <= EPS) return undefined;
+  if (dot(bc, dirB) <= EPS) return undefined;
+
+  // 必须在 AB 指定侧：left => cross(ab, ac) > 0；right => cross(ab, ac) < 0
+  if (s * cross(ab, ac) <= EPS) return undefined;
+
+  return c;
+}
+
+export function incenter3D(p1: Point2D, p2: Point2D, p3: Point2D): Point2D {
+  const la = Math.hypot(p2[0] - p3[0], p2[1] - p3[1]);
+  const lb = Math.hypot(p1[0] - p3[0], p1[1] - p3[1]);
+  const lc = Math.hypot(p1[0] - p2[0], p1[1] - p2[1]);
+  const sum = la + lb + lc;
+  if (sum < 1e-8) return [p1[0], p1[1]];
+  return [
+    (la * p1[0] + lb * p2[0] + lc * p3[0]) / sum,
+    (la * p1[1] + lb * p2[1] + lc * p3[1]) / sum,
+  ];
 }

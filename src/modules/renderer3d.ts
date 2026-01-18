@@ -575,14 +575,15 @@ export function createRenderer3D(
   let lastTriCount = 0;
   const getTriCount = () => lastTriCount;
 
-  function rebuildSpecialEdges(targetRoot: Group, logSpecialEdges = true) {
+  function rebuildSpecialEdges(targetRoot: Group, logSpecialEdges = true): Group {
     const usePreviewData = targetRoot === previewModelGroup;
+    const specialEdgeGroup = usePreviewData ? new Group() : targetRoot;
     let openCount = 0;
     let nonManifoldCount = 0;
     if (usePreviewData) {
       const previewIdx = previewGeometryContext.geometryIndex;
       const res = specialEdgeManager.rebuild(
-        targetRoot,
+        specialEdgeGroup,
         () => previewIdx.getEdgesArray(),
         (edgeId: number) => previewIdx.getEdgeWorldPositions(edgeId),
         () => previewIdx.getVertexKeyToPos(),
@@ -591,7 +592,7 @@ export function createRenderer3D(
       nonManifoldCount = res.nonManifoldCount;
     } else {
       const res = specialEdgeManager.rebuild(
-        targetRoot,
+        specialEdgeGroup,
         () => edges,
         (edgeId: number) => geometryIndex.getEdgeWorldPositions(edgeId),
         () => vertexKeyToPos,
@@ -610,6 +611,7 @@ export function createRenderer3D(
         }
       }
     }
+    return specialEdgeGroup;
   }
 
   appEventBus.on("workspaceStateChanged", ({previous, current}) => {
@@ -634,7 +636,6 @@ export function createRenderer3D(
       gizmosGroup.visible = false;
       applyFaceVisibility();
       applyEdgeVisibility();
-      rebuildSpecialEdges(previewModelGroup);
     }
   });
   appEventBus.on("groupCurrentChanged", (groupId: number) => syncGroupStateFromData(groupId));
@@ -818,8 +819,8 @@ export function createRenderer3D(
     }
   }
 
-  function loadPreviewModel(mesh: Mesh) {
-    previewModelGroup.clear();
+  function loadPreviewModel(mesh: Mesh, angle: number) {
+    disposeGroupDeep(previewModelGroup);
     mesh.material = createPreviewMaterial().clone();
     previewModelGroup.add(mesh);
     mesh.updateMatrixWorld(true);
@@ -842,7 +843,9 @@ export function createRenderer3D(
     };
     fitCameraToObject(previewModelGroup, camera, controls);
     previewGeometryContext.rebuildFromModel(previewModelGroup);
-    rebuildSpecialEdges(previewModelGroup);
+    const specialEdgesGroup = rebuildSpecialEdges(previewModelGroup);
+    specialEdgesGroup.rotation.set(0,0,-angle);
+    previewModelGroup.add(specialEdgesGroup)
   }
 
   function renderAxesInset() {

@@ -1,5 +1,5 @@
 import { Sketcher, PlaneName, Point, Plane } from "replicad";
-import type { Point2D } from "../../types/triangles";
+import type { Point2D } from "../../types/geometryTypes";
 
 export function makeVerticalPlaneThroughAB(a: Point2D, b: Point2D, z = 0): Plane | undefined {
   const ax = a[0], ay = a[1];

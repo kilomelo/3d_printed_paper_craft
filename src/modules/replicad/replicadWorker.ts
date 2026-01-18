@@ -3,7 +3,7 @@ import {
   buildGroupStepFromTriangles,
   buildGroupStlFromTriangles,
 } from "./replicadModeling";
-import type { TriangleWithEdgeInfo } from "../../types/triangles";
+import type { TriangleWithEdgeInfo } from "../../types/geometryTypes";
 import { applySettings, type Settings } from "../settings";
 import type { LogTone } from "../log";
 

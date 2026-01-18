@@ -4,6 +4,7 @@ import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeome
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Vector2, Vector3, Mesh, Raycaster } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { v3 } from "../types/geometryTypes";
 
 export type HoverState = {
   hoverLines: LineSegments2[];
@@ -81,9 +82,7 @@ export function updateHoverLines(mesh: Mesh | null, faceIndex: number | null, fa
     return;
   }
   const indices = getFaceVertexIndices(geometry, faceIndex);
-  const verts = indices.map((idx) =>
-    new Vector3(position.getX(idx), position.getY(idx), position.getZ(idx)).applyMatrix4(mesh.matrixWorld),
-  );
+  const verts = indices.map((idx) => v3([position.getX(idx), position.getY(idx), position.getZ(idx)]).applyMatrix4(mesh.matrixWorld));
   const edges = [
     [0, 1],
     [1, 2],

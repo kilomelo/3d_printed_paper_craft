@@ -450,18 +450,18 @@ const geometryContext = createGeometryContext();
 const groupController = createGroupController(log, () => geometryContext.geometryIndex.getFaceAdjacency());
 let renameDialogOpen = false;
 
-const getCachedPreviewMesh = (groupId: number): { mesh: Mesh, earClipNumTotal: number } | null => {
+const getCachedPreviewMesh = (groupId: number): { mesh: Mesh, earClipNumTotal: number, angle: number } | null => {
   const cached = previewMeshCache.get(groupId);
   if (!cached) return null;
   const mesh = cached.mesh.clone();
   const angle = groupController.getGroupPlaceAngle(groupId) ?? 0;
   if (Math.abs(angle) > 1e-8) {
-    mesh.applyMatrix4(new Matrix4().makeRotationZ(angle));
+    mesh.applyMatrix4(new Matrix4().makeRotationZ(-angle));
   }
   mesh.updateMatrixWorld(true);
   mesh.geometry?.computeBoundingBox?.();
   mesh.geometry?.computeBoundingSphere?.();
-  return { mesh, earClipNumTotal: cached.earClipNumTotal};
+  return { mesh, earClipNumTotal: cached.earClipNumTotal, angle };
 };
 
 const openRenameDialog = () => {
@@ -630,6 +630,8 @@ const unfold2d = createUnfold2dManager(
   () => geometryContext.geometryIndex.getEdgesArray(),
   () => geometryContext.geometryIndex.getVertexKeyToPos(),
   () => geometryContext.geometryIndex.getFaceIndexMap(),
+  () => geometryContext.geometryIndex.getEdgeKeyToId(),
+  (edgeId, faceId) => geometryContext.geometryIndex.getThirdVertexKeyOnFace(edgeId, faceId),
   groupController.getGroupPlaceAngle,
 );
 const menuButtons = [menuOpenBtn, exportBtn, exportGroupStepBtn, exportGroupStlBtn, exportEarClipBtn, previewGroupModelBtn, settingsOpenBtn];
@@ -671,9 +673,10 @@ const groupUI = createGroupUI(
   },
   {
     onPreviewSelect: (id) => {
+      if (id === groupController.getPreviewGroupId()) return;
       groupController.setPreviewGroupId(id);
       const name = groupController.getGroupName(id) ?? `展开组 ${groupController.getGroupIds().indexOf(id) + 1}`;
-      log(`预览 ${name}`, "info");
+      // log(`预览 ${name}`, "info");
     },
     onColorChange: (color: Color) => groupController.setGroupColor(groupController.getPreviewGroupId(), color),
     onDelete: () => {
@@ -878,14 +881,14 @@ previewGroupModelBtn.addEventListener("click", async () => {
     const targetGroupId = groupController.getPreviewGroupId();
     const cached = getCachedPreviewMesh(targetGroupId);
     if (cached) {
-      renderer3d.loadPreviewModel(cached.mesh);
+      renderer3d.loadPreviewModel(cached.mesh, cached.angle);
     } else {
       const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
       if (!trisWithAngles.length) {
         log("当前展开组没有三角面，无法导出。", "error");
         return;
       }
-      log("正在用 Replicad 生成 mesh...", "info");
+      // log("正在用 Replicad 生成 mesh...", "info");
       const { mesh, earClipNumTotal } = await buildMeshInWorker(
         trisWithAngles,
         (progress) => log(progress, "progress"),
@@ -893,7 +896,8 @@ previewGroupModelBtn.addEventListener("click", async () => {
       );
       snapGeometryPositions(mesh.geometry);
       previewMeshCache.set(targetGroupId, { mesh, earClipNumTotal });
-      renderer3d.loadPreviewModel(mesh);
+      const cached = getCachedPreviewMesh(targetGroupId);
+      if (cached) renderer3d.loadPreviewModel(cached.mesh, cached.angle);
     }
     changeWorkspaceState("previewGroupModel");
   } catch (error) {

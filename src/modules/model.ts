@@ -1,7 +1,8 @@
 // 模型与几何工具：存储当前模型引用、最近文件名，并提供几何预处理（功能 mesh 生成、索引构建）。
 import { BufferGeometry, Group, Mesh, Object3D, Vector3, Float32BufferAttribute } from "three";
 import { createBackMaterial, createEdgeMaterial } from "./materials";
-import { AngleIndex } from "./geometry";
+import { v3 } from "../types/geometryTypes";
+import { pointKey3D } from "./mathUtils";
 export type EdgeRecord = { id: number; key: string; faces: Set<number>; vertices: [string, string] };
 export type GeometryPrep = {
   faceAdjacency: Map<number, Set<number>>;
@@ -121,7 +122,7 @@ export function prepareGeometryData(object: Object3D): GeometryPrep {
   const vertexKeyToPos = new Map<string, Vector3>();
 
   let faceId = 0;
-  const vertexKey = (pos: any, idx: number) => `${pos.getX(idx)},${pos.getY(idx)},${pos.getZ(idx)}`;
+  const vertexKey = (pos: any, idx: number) => pointKey3D([pos.getX(idx), pos.getY(idx), pos.getZ(idx)]);
 
   object.traverse((child) => {
     if (!(child as Mesh).isMesh) return;
@@ -145,9 +146,9 @@ export function prepareGeometryData(object: Object3D): GeometryPrep {
       const va = vertexKey(position, a);
       const vb = vertexKey(position, b);
       const vc = vertexKey(position, c);
-      if (!vertexKeyToPos.has(va)) vertexKeyToPos.set(va, new Vector3(position.getX(a), position.getY(a), position.getZ(a)));
-      if (!vertexKeyToPos.has(vb)) vertexKeyToPos.set(vb, new Vector3(position.getX(b), position.getY(b), position.getZ(b)));
-      if (!vertexKeyToPos.has(vc)) vertexKeyToPos.set(vc, new Vector3(position.getX(c), position.getY(c), position.getZ(c)));
+      if (!vertexKeyToPos.has(va)) vertexKeyToPos.set(va, v3([position.getX(a), position.getY(a), position.getZ(a)]));
+      if (!vertexKeyToPos.has(vb)) vertexKeyToPos.set(vb, v3([position.getX(b), position.getY(b), position.getZ(b)]));
+      if (!vertexKeyToPos.has(vc)) vertexKeyToPos.set(vc, v3([position.getX(c), position.getY(c), position.getZ(c)]));
       const faceEdges: number[] = [];
       const edgePairs = [
         [va, vb],

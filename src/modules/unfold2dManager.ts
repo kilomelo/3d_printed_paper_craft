@@ -9,14 +9,15 @@ import {
   BufferAttribute,
   InterleavedBufferAttribute,
 } from "three";
-import type { GeometryIndex } from "./geometry";
+import { EdgeRecord, getFaceVertexIndices } from "./model";
 import { sharedEdgeIsSeam } from "./groups";
-import { getFaceVertexIndices } from "./model";
+import {  } from "./model";
 import { AngleIndex } from "./geometry";
 import { appEventBus } from "./eventBus";
 import type { Renderer2DContext } from "./renderer2d";
 import { createUnfoldEdgeMaterial, createUnfoldFaceMaterial } from "./materials";
-import type { Point2D, TriangleWithEdgeInfo as TriangleData } from "../types/triangles";
+import type { Point2D, Point3D, Vec3, TriangleWithEdgeInfo as TriangleData } from "../types/geometryTypes";
+import { pointKey3D, edgeKey3D, sub3, cross3, norm3, mul3, dot3, bisectorPlaneOfDihedral } from "./mathUtils";
 import { getSettings } from "./settings";
 
 // 记录“3D → 2D”变换矩阵，后续将按组树关系进行累乘展开。
@@ -33,14 +34,18 @@ export function createUnfold2dManager(
   getGroupColor: (id: number) => THREE.Color | undefined,
   getGroupTreeParent: (id: number) => Map<number, number | null> | undefined,
   getFaceToEdges: () => Map<number, [number, number, number]>,
-  getEdgesArray: () => ReturnType<GeometryIndex["getEdgesArray"]>,
+  getEdgesArray: () => EdgeRecord[],
   getVertexKeyToPos: () => Map<string, Vector3>,
   getFaceIndexMap: () => Map<number, { mesh: Mesh; localFace: number }>,
+  getEdgeKeyToId: () => Map<string, number>,
+  getThirdVertexKeyOnFace: (edgeId: number, faceId: number) => string | undefined,
   getGroupPlaceAngle: (id: number) => number | undefined,
 ) {
   const transformStore: TransformStore = new Map();
   const transformCache: Map<string, Matrix4> = new Map();
   let cachedSnapped: { groupId: number; tris: SnappedTri[] } | null = null;
+  const groupEdgesCache: Map<number, Map<number, { origPos: [Vector3, Vector3]; unfoldedPos: [Vector3, Vector3] }>> =
+    new Map();
   const tmpVec = new Vector3();
   const tmpA = new Vector3();
   const tmpB = new Vector3();
@@ -70,6 +75,7 @@ export function createUnfold2dManager(
     renderer2d.root.clear();
     renderer2d.root.rotation.set(0, 0, 0);
     renderer2d.root.updateMatrixWorld(true);
+    groupEdgesCache.clear();
   };
 
   const computeFaceNormal = (faceId: number, out: Vector3) => {
@@ -350,6 +356,48 @@ export function createUnfold2dManager(
     renderer2d.root.add(mesh);
     renderer2d.root.add(edgeMesh);
 
+    // 缓存展开边信息（未应用 placeAngle）
+    const edgeCache = new Map<number, { origPos: [Vector3, Vector3]; unfoldedPos: [Vector3, Vector3] }>();
+    const edgesArray = getEdgesArray();
+    const vertexKeyToPos = getVertexKeyToPos();
+    const faceToEdges = getFaceToEdges();
+    const faceIndexMap = getFaceIndexMap();
+    const makeVertexKey = (pos: BufferAttribute | InterleavedBufferAttribute, idx: number) =>
+      pointKey3D([pos.getX(idx), pos.getY(idx), pos.getZ(idx)]);
+
+    tris.forEach(({ faceId: fid, tri }) => {
+      const [a, b, c] = tri;
+      const edgeIds = faceToEdges.get(fid) ?? [];
+      const keyTo2D = new Map<string, Vector3>();
+      const mapping = faceIndexMap.get(fid);
+      if (mapping) {
+        const geom = mapping.mesh.geometry;
+        const pos = geom.getAttribute("position");
+        if (pos) {
+          const [ia, ib, ic] = getFaceVertexIndices(geom, mapping.localFace);
+          keyTo2D.set(makeVertexKey(pos, ia), new Vector3(a.x, a.y, 0));
+          keyTo2D.set(makeVertexKey(pos, ib), new Vector3(b.x, b.y, 0));
+          keyTo2D.set(makeVertexKey(pos, ic), new Vector3(c.x, c.y, 0));
+        }
+      }
+      edgeIds.forEach((eid) => {
+        if (edgeCache.has(eid)) return;
+        const edgeRec = edgesArray[eid];
+        if (!edgeRec) return;
+        const [k1, k2] = edgeRec.vertices;
+        const v1 = vertexKeyToPos.get(k1);
+        const v2 = vertexKeyToPos.get(k2);
+        const p1 = keyTo2D.get(k1);
+        const p2 = keyTo2D.get(k2);
+        if (!v1 || !v2 || !p1 || !p2) return;
+        edgeCache.set(eid, {
+          origPos: [v1.clone(), v2.clone()],
+          unfoldedPos: [p1.clone(), p2.clone()],
+        });
+      });
+    });
+    groupEdgesCache.set(groupId, edgeCache);
+
     renderer2d.root.rotateOnAxis(new Vector3(0, 0, 1), getGroupPlaceAngle(groupId)??0);
     renderer2d.root.updateMatrixWorld(true);
     const bounds = getMeshVertexBounds();
@@ -381,27 +429,38 @@ export function createUnfold2dManager(
     renderer2d.bboxRuler.update(minX, maxX, minY, maxY, scale);
   }
 
-  const computeIncenter2D = (p1: Point2D, p2: Point2D, p3: Point2D): Point2D => {
-    const la = Math.hypot(p2[0] - p3[0], p2[1] - p3[1]);
-    const lb = Math.hypot(p1[0] - p3[0], p1[1] - p3[1]);
-    const lc = Math.hypot(p1[0] - p2[0], p1[1] - p2[1]);
-    const sum = la + lb + lc;
-    if (sum < 1e-8) return [p1[0], p1[1]];
-    return [
-      (la * p1[0] + lb * p2[0] + lc * p3[0]) / sum,
-      (la * p1[1] + lb * p2[1] + lc * p3[1]) / sum,
-    ];
-  };
-
+  // 获取指定展开组的三角形数据（含边信息），用于生成 2D 展开图及用于打印的展开3D模型
   const getGroupTrianglesData = (groupId: number): TriangleData[] => {
     const tris = buildSnappedTris(groupId);
     if (!tris.length) return [];
     const faceToEdges = getFaceToEdges();
     const faceIndexMap = getFaceIndexMap();
     const vertexKeyToPos = getVertexKeyToPos();
+    const edgesArray = getEdgesArray();
+    // 预构建：顶点 -> 与之相连的拼接边的另一端点列表（3D）
+    const vertexSeamNeighbors = new Map<string, { key: string; pos: Point3D }[]>();
+    const addNeighbor = (k: string, neighborKey: string, p: Vector3 | undefined) => {
+      if (!p) return;
+      const arr = vertexSeamNeighbors.get(k) ?? [];
+      arr.push({ key: neighborKey, pos: [p.x, p.y, p.z] });
+      vertexSeamNeighbors.set(k, arr);
+    };
+    edgesArray.forEach((edge) => {
+      if (!edge) return;
+      const isSeam = edge?.faces && edge.faces.size === 2 && sharedEdgeIsSeam([...edge.faces][0], [...edge.faces][1]);
+      if (!isSeam) return;
+      const [k1, k2] = edge.vertices;
+      const p1 = vertexKeyToPos.get(k1);
+      const p2 = vertexKeyToPos.get(k2);
+      addNeighbor(k1, k2, p2);
+      addNeighbor(k2, k1, p1);
+    });
+    const edgeKeyToId = getEdgeKeyToId();
+    const makeEndpointKey = (edgeKey: string, vertexKey: string) => `${edgeKey}|${vertexKey}`;
+    // 缓存：拼接边 key -> 角度
+    const seamEdgeAngleMap = new Map<string, number>();
     const { scale } = getSettings();
-    const makeVertexKey = (pos: BufferAttribute | InterleavedBufferAttribute, idx: number) =>
-      `${pos.getX(idx)},${pos.getY(idx)},${pos.getZ(idx)}`;
+    const makeVertexKey = (pos: BufferAttribute | InterleavedBufferAttribute, idx: number) => pointKey3D([pos.getX(idx), pos.getY(idx), pos.getZ(idx)]);
     const result: Array<TriangleData> = [];
     tris.forEach(({ faceId: fid, tri }) => {
       const [a, b, c] = tri;
@@ -422,102 +481,179 @@ export function createUnfold2dManager(
         const edgeRec = getEdgesArray()[eid];
         const isSeam = edgeRec?.faces && edgeRec.faces.size === 2 && sharedEdgeIsSeam([...edgeRec.faces][0], [...edgeRec.faces][1]);
         const isOuter = isSeam || (edgeRec?.faces.size ?? 0) === 1;
-        let seamIncenter: Point2D | undefined;
-        if (isSeam && edgeRec?.faces) {
+        let earAngleA: number | undefined;
+        let earAngleB: number | undefined;
+        if (isSeam && edgeRec?.vertices) {
+          // console.log("Processing seam edge:", edgeRec);
           const [k1, k2] = edgeRec.vertices;
-          const p1 = keyTo2D.get(k1);
-          const p2 = keyTo2D.get(k2);
-          const v1 = vertexKeyToPos.get(k1);
-          const v2 = vertexKeyToPos.get(k2);
-          const otherFace = Array.from(edgeRec.faces).find((f) => f !== fid);
-          if (p1 && p2 && v1 && v2 && otherFace !== undefined) {
-            const otherMapping = faceIndexMap.get(otherFace);
-            if (otherMapping) {
-            const geom = otherMapping.mesh.geometry;
-            const posAttr = geom.getAttribute("position");
-            if (posAttr) {
-              const [ia, ib, ic] = getFaceVertexIndices(geom, otherMapping.localFace);
-              const keyForOther = (idx: number) => `${posAttr.getX(idx)},${posAttr.getY(idx)},${posAttr.getZ(idx)}`;
-                const keys = [keyForOther(ia), keyForOther(ib), keyForOther(ic)];
-                const thirdKey = keys.find((k) => k !== k1 && k !== k2);
-                if (thirdKey) {
-                  const v3 = vertexKeyToPos.get(thirdKey);
-                  if (v3) {
-                    const d1 = v1.distanceTo(v3);
-                    const d2 = v2.distanceTo(v3);
-                    const base2d = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
-                    if (base2d > 1e-8) {
-                      const ex: Point2D = [(p2[0] - p1[0]) / base2d, (p2[1] - p1[1]) / base2d];
-                      const ey: Point2D = [-ex[1], ex[0]];
-                      const x = (d1 * d1 - d2 * d2 + base2d * base2d) / (2 * base2d);
-                      const ySq = d1 * d1 - x * x;
-                      if (ySq >= 0) {
-                        const y = Math.sqrt(ySq);
-                        const cand = (sgn: number): Point2D => [
-                          p1[0] + ex[0] * x + ey[0] * y * sgn,
-                          p1[1] + ex[1] * x + ey[1] * y * sgn,
-                        ];
-                        const c1 = cand(1);
-                        const c2 = cand(-1);
-                        const triThird =
-                          edgeIdx === 0 ? c :
-                          edgeIdx === 1 ? a :
-                          b;
-                        const edgeVec: Point2D = [p2[0] - p1[0], p2[1] - p1[1]];
-                        const side = (pt: Point2D) =>
-                          Math.sign(edgeVec[0] * (pt[1] - p1[1]) - edgeVec[1] * (pt[0] - p1[0]));
-                        const triSide = side([triThird.x, triThird.y]);
-                        const s1 = side(c1);
-                        const s2 = side(c2);
-                        let flatV3 = c1;
-                        if (triSide !== 0) {
-                          if (s1 === -triSide) flatV3 = c1;
-                          else if (s2 === -triSide) flatV3 = c2;
-                          else if (s1 === 0) flatV3 = c2;
-                          else flatV3 = c1;
-                        } else {
-                          flatV3 = s1 !== 0 ? c1 : c2;
-                        }
-                        const inc = computeIncenter2D(p1, p2, flatV3);
-                        seamIncenter = [inc[0] * scale, inc[1] * scale];
-                      }
-                    }
+          const p1Vec = vertexKeyToPos.get(k1);
+          const p2Vec = vertexKeyToPos.get(k2);
+          if (p1Vec && p2Vec) {
+            const p1: Point3D = [p1Vec.x, p1Vec.y, p1Vec.z];
+            const p2: Point3D = [p2Vec.x, p2Vec.y, p2Vec.z];
+            const edgeKeyUndir = edgeKey3D(p1, p2);
+            const endpointKeyA = makeEndpointKey(edgeKeyUndir, k1);
+            const endpointKeyB = makeEndpointKey(edgeKeyUndir, k2);
+            const calculateSeamEndPointAngle = (aKey: string, bKey: string, a: Point3D, b: Point3D) => {
+              // console.log("Calculating seam edge angle for edge:", aKey, bKey);
+              const edgeKeyForward = edgeKey3D(a, b);
+              const relatedSeams = [...(vertexSeamNeighbors.get(aKey) ?? [])];
+              // console.log("  Found related ", relatedSeams.length, "seams:", relatedSeams.map((nb) => nb.key));
+              if (relatedSeams.length < 2) {
+                seamEdgeAngleMap.set(makeEndpointKey(edgeKeyForward, aKey), 45);
+                // console.log("  No related seams found. Defaulting angle to 45°.");
+                return;
+              }
+              const normalOfBisectorPlaneOfDihedral: Map<string, Vec3> = new Map();
+              relatedSeams.forEach((nb) => {
+                // console.log("  Processing neighbor seam:", nb.key);
+                const seamKey = [aKey, nb.key].sort().join("|");
+                const seamEdgeId = edgeKeyToId.get(seamKey);
+                const seamEdge = seamEdgeId !== undefined ? edgesArray[seamEdgeId] : undefined;
+                if (seamEdgeId === undefined || !seamEdge || !seamEdge.faces || seamEdge.faces.size < 2) {
+                  console.warn("Invalid seam edge for key:", { seamKey, seamEdgeId, seamEdge });
+                  return;
+                }
+                const [f1, f2] = Array.from(seamEdge.faces);
+                const third1Key = getThirdVertexKeyOnFace(seamEdgeId, f1);
+                const third2Key = getThirdVertexKeyOnFace(seamEdgeId, f2);
+                if (!third1Key || !third2Key) {
+                  console.warn("Cannot find third vertex on faces", f1, f2, "for seam edge", seamKey);
+                  return;
+                }
+                const t1 = vertexKeyToPos.get(third1Key);
+                const t2 = vertexKeyToPos.get(third2Key);
+                if (!t1 || !t2) {
+                  console.warn("Cannot find third vertex positions for keys", third1Key, third2Key);
+                  return;
+                }
+                const plane = bisectorPlaneOfDihedral(a, nb.pos, [t1.x, t1.y, t1.z], [t2.x, t2.y, t2.z]);
+                if (plane) {
+                  normalOfBisectorPlaneOfDihedral.set(nb.key, plane.normal);
+                }
+                // console.log("  Bisector plane for seam edge", seamKey, ":", plane?.normal);
+              });
+              // 记录二面角平分面两两相交得出的交线与拼接边的夹角的最小值
+              const minAngleBetweenTwoPlaneIntersectionLinesAndSeamEdge: Map<string, number> = new Map();
+              const normals = Array.from(normalOfBisectorPlaneOfDihedral.entries());
+              for (let i = 0; i < normals.length; i += 1) {
+                const [keyI, n1] = normals[i];
+                for (let j = i + 1; j < normals.length; j += 1) {
+                  const [keyJ, n2] = normals[j];
+                  // console.log("    Computing intersection line between planes for keys", keyI, "and", keyJ, "dot value:", Math.abs(dot3(n1, n2)));
+                  const normalsDot = Math.abs(dot3(n1, n2));
+                  const posI = vertexKeyToPos.get(keyI);
+                  const posJ = vertexKeyToPos.get(keyJ);
+                  if (!posI || !posJ) {
+                    console.warn("Cannot find neighbor positions for keys", keyI, keyJ);
+                    continue;
                   }
+                  const edgeDirI = sub3([posI.x, posI.y, posI.z], a);
+                  const edgeDirJ = sub3([posJ.x, posJ.y, posJ.z], a);
+                  const lenI = norm3(edgeDirI);
+                  const lenJ = norm3(edgeDirJ);
+                  if (lenI < 1e-8 || lenJ < 1e-8) continue;
+                  const baseDirI = mul3(edgeDirI, 1 / lenI);
+                  const baseDirJ = mul3(edgeDirJ, 1 / lenJ);
+                  let newI = 45;
+                  let newJ = 45;
+                  // 如果baseDirI与n2接近垂直，或者baseDirJ与n1接近垂直，说明a-i几乎在a-j的平分面上，或a-j几乎在a-i的平分面上
+                  if (Math.abs(dot3(baseDirI, n2)) < 1e-5 || Math.abs(dot3(baseDirJ, n1)) < 1e-5 ||
+                  // 如果两个平分面几乎平行，也无法通过平分面的交线来确定夹角
+                    normalsDot > 1 - 1e-5) {
+                    // 针对这几种情况，取两拼接边夹角的一半作为新角度
+                    const dotVal = Math.min(1, Math.max(-1, dot3(baseDirI, baseDirJ)));
+                    const halfDeg = (Math.acos(dotVal) * 180) / Math.PI / 2;
+                    // console.log(`    Nearly parallel planes for keys ${keyI} and ${keyJ}. Using half angle between seam edges: ${halfDeg.toFixed(2)}°`);
+                    newI = halfDeg;
+                    newJ = halfDeg;
+                  } else {
+                    const lineDir = cross3(n1, n2);
+                    const len = norm3(lineDir);
+                    if (len < 1e-8) {
+                      console.warn("Skipping nearly parallel planes for keys", keyI, keyJ);
+                      continue;
+                    }
+                    let dir = mul3(lineDir, 1 / len);
+                    // 纠正交线方向，使其与任一相关三角面的法线夹角 > 90°
+                    const faceNormals: Vec3[] = [];
+                    const collectNormals = (vk: string) => {
+                      const seamKey = [aKey, vk].sort().join("|");
+                      const seamEdgeId = edgeKeyToId.get(seamKey);
+                      const seamEdge = seamEdgeId !== undefined ? edgesArray[seamEdgeId] : undefined;
+                      if (!seamEdge || !seamEdge.faces) return;
+                      seamEdge.faces.forEach((fid) => {
+                        const n = new Vector3();
+                        if (angleIndex.getFaceNormal(fid, n)) {
+                          faceNormals.push([n.x, n.y, n.z]);
+                        }
+                      });
+                    };
+                    collectNormals(keyI);
+                    collectNormals(keyJ);
+                    if (faceNormals.some((fn) => dot3(dir, fn) > 0)) {
+                      dir = mul3(dir, -1);
+                    }
+                    const posI = vertexKeyToPos.get(keyI);
+                    const posJ = vertexKeyToPos.get(keyJ);
+                    if (!posI || !posJ) {
+                      console.warn("Cannot find neighbor positions for keys", keyI, keyJ);
+                      continue;
+                    }
+                    const edgeDirI = sub3([posI.x, posI.y, posI.z], a);
+                    const edgeDirJ = sub3([posJ.x, posJ.y, posJ.z], a);
+                    const lenI = norm3(edgeDirI);
+                    const lenJ = norm3(edgeDirJ);
+                    if (lenI < 1e-8 || lenJ < 1e-8) {
+                      console.warn("Skipping nearly zero-length seam edge for keys", keyI, keyJ);
+                      continue;
+                    }
+                    const baseDirI = mul3(edgeDirI, 1 / lenI);
+                    const baseDirJ = mul3(edgeDirJ, 1 / lenJ);
+                    const angleI = Math.acos(Math.min(1, Math.max(-1, dot3(dir, baseDirI))));
+                    const angleJ = Math.acos(Math.min(1, Math.max(-1, dot3(dir, baseDirJ))));
+                    newI = (angleI * 180) / Math.PI;
+                    newJ = (angleJ * 180) / Math.PI;
+                    // console.log(`    Angle between intersection line and seam edge to neighbor ${keyI}: ${newI.toFixed(2)}°, to neighbor ${keyJ}: ${newJ.toFixed(2)}°`);
+                  }
+                  if (newI > 45 || newJ > 45) {
+                    newI = 45;
+                    newJ = 45;
+                  }
+                  const prevI = minAngleBetweenTwoPlaneIntersectionLinesAndSeamEdge.get(keyI);
+                  minAngleBetweenTwoPlaneIntersectionLinesAndSeamEdge.set(keyI, prevI === undefined ? newI : Math.min(prevI, newI));
+                  const prevJ = minAngleBetweenTwoPlaneIntersectionLinesAndSeamEdge.get(keyJ);
+                  minAngleBetweenTwoPlaneIntersectionLinesAndSeamEdge.set(keyJ, prevJ === undefined ? newJ : Math.min(prevJ, newJ));
                 }
               }
+              minAngleBetweenTwoPlaneIntersectionLinesAndSeamEdge.forEach((angle, pkey) => {
+                const vec = vertexKeyToPos.get(pkey);
+                if (!vec) return;
+                const baseKey = edgeKey3D(a, [vec.x, vec.y, vec.z]);
+                seamEdgeAngleMap.set(makeEndpointKey(baseKey, aKey), angle);
+              });
+            };
+            if (!seamEdgeAngleMap.has(endpointKeyA)) {
+              calculateSeamEndPointAngle(k1, k2, p1, p2);
             }
+            // else console.log("Seam edge angle cache hit for", endpointKeyA, seamEdgeAngleMap.get(endpointKeyA));
+            if (!seamEdgeAngleMap.has(endpointKeyB)) {
+              calculateSeamEndPointAngle(k2, k1, p2, p1);
+            }
+            // else console.log("Seam edge angle cache hit for", endpointKeyB, seamEdgeAngleMap.get(endpointKeyB));
+
+            earAngleA = Math.min(89, seamEdgeAngleMap.get(endpointKeyA)??89);
+            earAngleB = Math.min(89, seamEdgeAngleMap.get(endpointKeyB)??89);
           }
         }
         return {
           isOuter,
           angle: angleIndex.getAngle(eid),
           isSeam,
-          incenter: seamIncenter,
+          earAngleA,
+          earAngleB,
         };
       });
-      const pointAngleData: TriangleData["pointAngleData"] = [];
-      if (mapping) {
-        const geom = mapping.mesh.geometry;
-        const pos = geom.getAttribute("position");
-        if (pos) {
-          const [ia, ib, ic] = getFaceVertexIndices(geom, mapping.localFace);
-          // 预计算与该三角顶点相关的最小二面角
-          angleIndex.precomputeVertexMinAngle(makeVertexKey(pos, ia));
-          angleIndex.precomputeVertexMinAngle(makeVertexKey(pos, ib));
-          angleIndex.precomputeVertexMinAngle(makeVertexKey(pos, ic));
-          const keys = [
-            { key: makeVertexKey(pos, ia), pos: a },
-            { key: makeVertexKey(pos, ib), pos: b },
-            { key: makeVertexKey(pos, ic), pos: c },
-          ];
-          keys.forEach(({ key, pos }) => {
-            const minAngle = angleIndex.getVertexMinAngle(key);
-            if (minAngle !== undefined) {
-              pointAngleData.push({ vertexKey: key, unfold2dPos: [pos.x * scale, pos.y * scale], minAngle });
-            }
-          });
-        }
-      }
       result.push({
         tri: [
           [a.x * scale, a.y * scale],
@@ -526,12 +662,6 @@ export function createUnfold2dManager(
         ],
         faceId: fid,
         edges: edges,
-        pointAngleData,
-        incenter: computeIncenter2D(
-          [a.x * scale, a.y * scale],
-          [b.x * scale, b.y * scale],
-          [c.x * scale, c.y * scale],
-        ),
       });
     });
     return result;
@@ -623,6 +753,7 @@ export function createUnfold2dManager(
 
   return {
     getGroupTrianglesData,
+    getEdges2D: () => groupEdgesCache,
   };
 }
 

@@ -8,6 +8,7 @@ export class AngleIndex {
   // 顶点 -> 已见到的最小二面角（弧度，取绝对值）
   private vertexMinAngle: Map<string, number> = new Map();
   private geometryIndex: GeometryIndex | null = null;
+  private faceNormalCache: Map<number, Vector3> = new Map();
   private tempA = new Vector3();
   private tempB = new Vector3();
   private tempC = new Vector3();
@@ -20,11 +21,13 @@ export class AngleIndex {
     this.geometryIndex = geometryIndex;
     this.cache.clear();
     this.vertexMinAngle.clear();
+    this.faceNormalCache.clear();
   }
 
   clear() {
     this.cache.clear();
     this.vertexMinAngle.clear();
+    this.faceNormalCache.clear();
     this.geometryIndex = null;
   }
 
@@ -63,8 +66,8 @@ export class AngleIndex {
     this.applyWorld(v2, faceA.mesh, this.tempB);
     this.edgeDir.copy(this.tempB).sub(this.tempA).normalize();
 
-    this.computeFaceNormal(faceA.mesh, faceA.localFace, this.n1);
-    this.computeFaceNormal(faceB.mesh, faceB.localFace, this.n2);
+    this.getFaceNormal(faceAId, this.n1);
+    this.getFaceNormal(faceBId, this.n2);
     this.crossN.crossVectors(this.n1, this.n2);
     const sin = this.edgeDir.dot(this.crossN);
     const cos = Math.min(1, Math.max(-1, this.n1.dot(this.n2)));
@@ -123,6 +126,21 @@ export class AngleIndex {
     this.tempB.set(pos.getX(ib), pos.getY(ib), pos.getZ(ib)).applyMatrix4(mesh.matrixWorld);
     this.tempC.set(pos.getX(ic), pos.getY(ic), pos.getZ(ic)).applyMatrix4(mesh.matrixWorld);
     out.subVectors(this.tempB, this.tempA).cross(this.tempC.sub(this.tempA)).normalize();
+  }
+
+  // 对外提供获取某个面的世界法线（带缓存）
+  getFaceNormal(faceId: number, out: Vector3): boolean {
+    if (!this.geometryIndex) return false;
+    const cached = this.faceNormalCache.get(faceId);
+    if (cached) {
+      out.copy(cached);
+      return true;
+    }
+    const mapping = this.geometryIndex.getFaceIndexMap().get(faceId);
+    if (!mapping) return false;
+    this.computeFaceNormal(mapping.mesh, mapping.localFace, out);
+    this.faceNormalCache.set(faceId, out.clone());
+    return true;
   }
 }
 
@@ -330,6 +348,24 @@ export class GeometryIndex {
   getVertexKeyToPos() {
     return this.vertexKeyToPos;
   }
+  // 给定边和其所在的面，返回该面的第三个顶点 key（不在该边上的那个点）
+  getThirdVertexKeyOnFace(edgeId: number, faceId: number): string | undefined {
+    const faceEdges = this.faceToEdges.get(faceId);
+    const targetEdge = this.edges[edgeId];
+    if (!faceEdges || !targetEdge) return undefined;
+    const allVerts = new Set<string>();
+    faceEdges.forEach((fid) => {
+      const e = this.edges[fid];
+      if (!e) return;
+      e.vertices.forEach((v) => allVerts.add(v));
+    });
+    for (const v of allVerts) {
+      if (!targetEdge.vertices.includes(v)) {
+        return v;
+      }
+    }
+    return undefined;
+  }
   getTriangleCount() {
     return this.triangleCount;
   }
@@ -347,6 +383,7 @@ export function createGeometryContext(): GeometryContext {
   const angleIndex = new AngleIndex();
 
   const rebuildFromModel = (model: Object3D | null) => {
+    // console.log("[GeometryContext] Rebuilding geometry index from model...");
     reset();
     if (!model) return;
     geometryIndex.buildFromObject(model);

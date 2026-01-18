@@ -2,7 +2,6 @@
 import { Group, OrthographicCamera, Scene, WebGLRenderer } from "three";
 import { BBoxRuler, createScene2D } from "./scene";
 import { appEventBus } from "./eventBus";
-import type { Unfold2dManager } from "./unfold2dManager";
 import { getWorkspaceState } from "@/types/workspaceState";
 import { isSafari } from "./utils";
 
