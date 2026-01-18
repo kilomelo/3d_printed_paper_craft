@@ -205,7 +205,9 @@ export function initInteractionController(opts: InteractionOptions): Interaction
     if (faceId === null) return;
     updateHoverLines(mesh, faceIndex, faceId, opts.hoverState, opts.emitFaceHover);
   };
-
+  const onWheel = (event: WheelEvent) => {
+    forceHoverCheck();
+  };
   const forceHoverCheck = () => {
     const fakeEvent = new PointerEvent("pointermove", {
       clientX: lastClientPos.x,
@@ -245,6 +247,7 @@ export function initInteractionController(opts: InteractionOptions): Interaction
   };
 
   opts.renderer.domElement.addEventListener("pointermove", onPointerMove);
+  opts.renderer.domElement.addEventListener("wheel", onWheel, { passive: true });
   opts.renderer.domElement.addEventListener("pointerleave", onPointerLeave);
   opts.renderer.domElement.addEventListener("pointerdown", onPointerDown);
   opts.renderer.domElement.addEventListener("pointerup", onPointerUp);

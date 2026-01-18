@@ -24,7 +24,7 @@ import { getSettings } from "./settings";
 type TransformTree = Map<number, Matrix4>;
 type TransformStore = Map<number, TransformTree>;
 
-export type EdgeCache = { origPos: [Vector3, Vector3]; unfoldedPos: [Vector3, Vector3] };
+export type EdgeCache = { origPos: [Vector3, Vector3]; unfoldedPos: [Vector3, Vector3]; faceId: number };
 
 export function createUnfold2dManager(
   angleIndex: AngleIndex,
@@ -48,7 +48,7 @@ export function createUnfold2dManager(
   let cachedSnapped: { groupId: number; tris: SnappedTri[] } | null = null;
   const groupEdgesCache: Map<
     number,
-    { edges: Map<number, EdgeCache>; medianEdgeLength: number }
+    { edges: Map<number, EdgeCache[]>; medianEdgeLength: number }
   > = new Map();
   const tmpVec = new Vector3();
   const tmpA = new Vector3();
@@ -363,7 +363,7 @@ export function createUnfold2dManager(
     renderer2d.root.add(edgeMesh);
 
     // 缓存展开边信息（未应用 placeAngle）
-    const edgeCache = new Map<number, EdgeCache>();
+    const edgeCache = new Map<number, EdgeCache[]>();
     const edgeLengths: number[] = [];
     const edgesArray = getEdgesArray();
     const vertexKeyToPos = getVertexKeyToPos();
@@ -388,7 +388,7 @@ export function createUnfold2dManager(
         }
       }
       edgeIds.forEach((eid) => {
-        if (edgeCache.has(eid)) return;
+        const edgeCacheList: EdgeCache[] = edgeCache.has(eid) ? edgeCache.get(eid)! : [];
         const edgeRec = edgesArray[eid];
         if (!edgeRec) return;
         const [k1, k2] = edgeRec.vertices;
@@ -397,10 +397,12 @@ export function createUnfold2dManager(
         const p1 = keyTo2D.get(k1);
         const p2 = keyTo2D.get(k2);
         if (!v1 || !v2 || !p1 || !p2) return;
-        edgeCache.set(eid, {
+        edgeCacheList.push({
           origPos: [v1.clone(), v2.clone()],
           unfoldedPos: [p1.clone(), p2.clone()],
+          faceId: fid,
         });
+        edgeCache.set(eid, edgeCacheList);
         edgeLengths.push(p1.distanceTo(p2));
       });
     });

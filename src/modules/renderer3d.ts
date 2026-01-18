@@ -414,7 +414,7 @@ export function createRenderer3D(
       interactionController?.forceHoverCheck();
     }
   };
-  const onGlobalPointerMove = (event: PointerEvent) => {
+  const onWindowPointerMove = (event: PointerEvent) => {
     if (!pointerLocked) return;
     const anglePerPixel = (2 * Math.PI / el.clientHeight) * controls.rotateSpeed;
     if (lockedButton === 0) {
@@ -429,7 +429,7 @@ export function createRenderer3D(
   renderer.domElement.addEventListener("pointerdown", onCanvasPointerDown);
   renderer.domElement.addEventListener("pointerup", onWindowPointerUp);
   renderer.domElement.addEventListener("pointercancel", onWindowPointerUp);
-  renderer.domElement.addEventListener("pointermove", onGlobalPointerMove);
+  renderer.domElement.addEventListener("pointermove", onWindowPointerMove);
   document.addEventListener("pointerlockchange", onPointerLockChange);
 
   const objLoader = new OBJLoader();
@@ -692,12 +692,6 @@ export function createRenderer3D(
         return;
       }
       appEventBus.emit("faceHover3D", faceId);
-      //   tri: [
-      //     [tri[0].x, tri[0].y, tri[0].z],
-      //     [tri[1].x, tri[1].y, tri[1].z],
-      //     [tri[2].x, tri[2].y, tri[2].z],
-      //   ],
-      // });
     },
   });
 
@@ -933,7 +927,7 @@ export function createRenderer3D(
       el.removeEventListener("pointerdown", onCanvasPointerDown);
       window.removeEventListener("pointerup", onWindowPointerUp);
       window.removeEventListener("pointercancel", onWindowPointerUp);
-      window.removeEventListener("pointermove", onGlobalPointerMove);
+      window.removeEventListener("pointermove", onWindowPointerMove);
       document.removeEventListener("pointerlockchange", onPointerLockChange);
     },
   };

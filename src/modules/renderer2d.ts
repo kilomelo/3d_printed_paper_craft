@@ -9,9 +9,10 @@ import { isSafari } from "./utils";
 import { distancePointToSegment2, pointInSegmentRectangle2, rotate2 } from "./mathUtils";
 import type { EdgeCache } from "./unfold2dManager";
 import { createHoverLineMaterial } from "./materials";
+import { disposeGroupDeep } from "./threeUtils";
 
 type EdgeQueryProviders = {
-  getEdges: () => Map<number, { edges: Map<number, EdgeCache>; medianEdgeLength: number }>;
+  getEdges: () => Map<number, { edges: Map<number, EdgeCache[]>; medianEdgeLength: number }>;
   getBounds: () => { minX: number; maxX: number; minY: number; maxY: number } | null | undefined;
   getFaceIdToEdges: () => Map<number, [number, number, number]>;
   getPreviewGroupId: () => number;
@@ -52,6 +53,11 @@ export function createRenderer2D(
   let hoverFaceLines: [LineSegments2, LineSegments2, LineSegments2] | null = null;
   let edgeQueryProviders: EdgeQueryProviders | null = null;
 
+  const cancelHoverLineState = () => {
+    if (hoverLine) hoverLine.visible = false;
+    appEventBus.emit("edgeHover2DClear", undefined);
+    lastHitEdge = null;
+  }
   const resizeRenderer2D = () => {
     const { width, height } = getViewport();
     renderer.setSize(width, height);
@@ -60,12 +66,12 @@ export function createRenderer2D(
     camera.top = height * 0.5;
     camera.bottom = -height * 0.5;
     camera.updateProjectionMatrix();
-    const mat = hoverLine.material as any;
-    mat.resolution?.set(width, height);
-    hoverFaceLines?.forEach((line) => {
-      const m = line.material as any;
-      m.resolution?.set(width, height);
-    });
+    // const mat = hoverLine.material as any;
+    // mat.resolution?.set(width, height);
+    // hoverFaceLines?.forEach((line) => {
+    //   const m = line.material as any;
+    //   m.resolution?.set(width, height);
+    // });
   };
   
   window.addEventListener("resize", resizeRenderer2D);
@@ -78,6 +84,12 @@ export function createRenderer2D(
     const scale = delta > 0 ? 1.1 : 0.9;
     camera.zoom = Math.max(0.0001, camera.zoom * scale);
     camera.updateProjectionMatrix();
+    onPointerMove(new PointerEvent('pointermove', {
+        movementX: 0,
+        movementY: 0,
+        clientX: event.clientX,
+        clientY: event.clientY,
+    }));
   };
   renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
 
@@ -105,9 +117,11 @@ export function createRenderer2D(
       isPanning = true;
       panStart.x = event.clientX;
       panStart.y = event.clientY;
+      cancelHoverLineState();
     } else if (event.button === 0 && getWorkspaceState() === "editingGroup") {
       if (!isSafari()) renderer.domElement.requestPointerLock?.();
       isRotating = true;
+      cancelHoverLineState();
     }
   };
   let lastHitEdge: { groupId: number; edgeId: number; cache: EdgeCache } | null = null;
@@ -132,6 +146,7 @@ export function createRenderer2D(
       if (hoverLine && hoverLine.visible) {
         hoverLine.rotateOnAxis(new Vector3(0, 0, 1), deltaAngle);
       }
+      return;
     }
     if (!edgeQueryProviders) return;
     const bounds = edgeQueryProviders.getBounds();
@@ -154,8 +169,7 @@ export function createRenderer2D(
       wy > maxY + margin
     ) {
       if (lastHitEdge) {
-        hoverLine.visible = false;
-        appEventBus.emit("edgeHover2DClear", undefined);
+        cancelHoverLineState();
       }
       lastHitEdge = null;
       return;
@@ -166,21 +180,23 @@ export function createRenderer2D(
       | null = null;
     let minDist = Infinity;
     for (const [gid, data] of edgeData) {
-      for (const [eid, cache] of data.edges) {
-        const [p1, p2] = cache.unfoldedPos;
+      for (const [eid, edges] of data.edges) {
+        for (const cache of edges) {
+          const [p1, p2] = cache.unfoldedPos;
 
-        const minBx = Math.min(p1.x, p2.x) - margin;
-        const maxBx = Math.max(p1.x, p2.x) + margin;
-        const minBy = Math.min(p1.y, p2.y) - margin;
-        const maxBy = Math.max(p1.y, p2.y) + margin;
-        if (worldX < minBx || worldX > maxBx || worldY < minBy || worldY > maxBy) continue;
+          const minBx = Math.min(p1.x, p2.x) - margin;
+          const maxBx = Math.max(p1.x, p2.x) + margin;
+          const minBy = Math.min(p1.y, p2.y) - margin;
+          const maxBy = Math.max(p1.y, p2.y) + margin;
+          if (worldX < minBx || worldX > maxBx || worldY < minBy || worldY > maxBy) continue;
 
-        if (!pointInSegmentRectangle2([worldX, worldY], [p1.x, p1.y], [p2.x, p2.y], margin)) continue;
+          if (!pointInSegmentRectangle2([worldX, worldY], [p1.x, p1.y], [p2.x, p2.y], margin)) continue;
 
-        const dist = distancePointToSegment2([worldX, worldY], [p1.x, p1.y], [p2.x, p2.y]);
-        if (dist < minDist) {
-          minDist = dist;
-          hitEdge = { groupId: gid, edgeId: eid, cache };
+          const dist = distancePointToSegment2([worldX, worldY], [p1.x, p1.y], [p2.x, p2.y]);
+          if (dist < minDist) {
+            minDist = dist;
+            hitEdge = { groupId: gid, edgeId: eid, cache };
+          }
         }
       }
     }
@@ -204,9 +220,7 @@ export function createRenderer2D(
         p2: [o2.x, o2.y, o2.z],
       });
     } else if (lastHitEdge) {
-      hoverLine.visible = false;
-      appEventBus.emit("edgeHover2DClear", undefined);
-      lastHitEdge = null;
+      cancelHoverLineState();
     }
   };
 
@@ -230,10 +244,16 @@ export function createRenderer2D(
     } else if (event.button === 0) {
       stopRotate();
     }
+    onPointerMove(event);
   };
+
+  const onPointerLeave = (event: PointerEvent) => {
+    cancelHoverLineState();
+  }
 
   renderer.domElement.addEventListener("pointerup", onPointerUp);
   renderer.domElement.addEventListener("pointercancel", onPointerUp);
+  renderer.domElement.addEventListener("pointerleave", onPointerLeave);
   renderer.domElement.addEventListener("pointermove", onPointerMove);
   renderer.domElement.addEventListener("pointerdown", onPointerDown);
 
@@ -252,14 +272,14 @@ export function createRenderer2D(
     const edgeIds = faceIdToEdges.get(faceId);
     edgeIds?.forEach((edgeId, idx) => {
       const rec = cache.get(edgeId);
-      if (!rec) return;
-      const [p1, p2] = rec.unfoldedPos;
+      if (!rec || rec.length === 0) return;
+      const [p1, p2] = rec[0].faceId === faceId ? rec[0].unfoldedPos : rec[rec.length - 1].unfoldedPos;
       const line = hoverFaceLines![idx];
       line.visible = true;
       const geom = line.geometry as LineSegmentsGeometry;
       const p1Rotated = rotate2([p1.x, p1.y], getCurrentGroupPlaceAngle());
       const p2Rotated = rotate2([p2.x, p2.y], getCurrentGroupPlaceAngle());
-      geom.setPositions(new Float32Array([p1Rotated[0], p1Rotated[1], 0, p2Rotated[0], p2Rotated[1], 0]));
+      geom.setPositions(new Float32Array([p1Rotated[0], p1Rotated[1], 1, p2Rotated[0], p2Rotated[1], 1]));
     });
   };
   appEventBus.on("faceHover3D", onHoverFace);
@@ -294,6 +314,14 @@ export function createRenderer2D(
     hoverLine.removeFromParent();
     (hoverLine.geometry as LineSegmentsGeometry).dispose();
     (hoverLine.material as any)?.dispose?.();
+    if (hoverFaceLines) {
+      hoverFaceLines.forEach((line) => {
+        line.removeFromParent();
+        (line.geometry as LineSegmentsGeometry).dispose();
+        (line.material as any)?.dispose?.();
+      });
+    }
+    hoverFaceLines = null;
     renderer.dispose();
     renderer.domElement.remove();
   };
