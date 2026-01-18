@@ -8,7 +8,8 @@ import { getWorkspaceState } from "@/types/workspaceState";
 import { isSafari } from "./utils";
 import { distancePointToSegment2, pointInSegmentRectangle2, rotate2 } from "./mathUtils";
 import type { EdgeCache } from "./unfold2dManager";
-import { createHoverLineMaterial } from "./materials";
+import { createHoverLineMaterial, createSeamConnectLineMaterial } from "./materials";
+import type { Vec2 } from "@/types/geometryTypes";
 import { disposeGroupDeep } from "./threeUtils";
 
 type EdgeQueryProviders = {
@@ -51,13 +52,38 @@ export function createRenderer2D(
   let isRotating = false;
   const panStart = { x: 0, y: 0 };
   let hoverFaceLines: [LineSegments2, LineSegments2, LineSegments2] | null = null;
+  let seamConnectLines: [LineSegments2, LineSegments2, LineSegments2] | null = null;
   let edgeQueryProviders: EdgeQueryProviders | null = null;
 
   const cancelHoverLineState = () => {
     if (hoverLine) hoverLine.visible = false;
     appEventBus.emit("edgeHover2DClear", undefined);
     lastHitEdge = null;
+    showSeamConnectionLine([], 0);
   }
+
+  const showSeamConnectionLine = (rec: EdgeCache[], lineIdx: number) => {
+    seamConnectLines![lineIdx].visible = false;
+    if (!rec || rec.length !== 2) return;
+    const midPointA = [(rec[0].unfoldedPos[0].x + rec[0].unfoldedPos[1].x) / 2, (rec[0].unfoldedPos[0].y + rec[0].unfoldedPos[1].y) / 2];
+    const midPointB = [(rec[1].unfoldedPos[0].x + rec[1].unfoldedPos[1].x) / 2, (rec[1].unfoldedPos[0].y + rec[1].unfoldedPos[1].y) / 2];
+    const dirAB = [midPointA[0] - midPointB[0], midPointA[1] - midPointB[1]];
+    const lenAB = Math.sqrt(dirAB[0] * dirAB[0] + dirAB[1] * dirAB[1]);
+    if (lenAB < 1e-5) return;
+    const normDirAB = [dirAB[0] / lenAB, dirAB[1] / lenAB];
+    const lenA = Math.hypot(rec[0].unfoldedPos[1].x - rec[0].unfoldedPos[0].x, rec[0].unfoldedPos[1].y - rec[0].unfoldedPos[0].y);
+    const lenB = Math.hypot(rec[1].unfoldedPos[1].x - rec[1].unfoldedPos[0].x, rec[1].unfoldedPos[1].y - rec[1].unfoldedPos[0].y);
+    const connectionOffset = Math.min(lenAB, lenA, lenB) * 0.08;
+    const connectPointA = [midPointA[0] - normDirAB[0] * connectionOffset, midPointA[1] - normDirAB[1] * connectionOffset];
+    const connectPointB = [midPointB[0] + normDirAB[0] * connectionOffset, midPointB[1] + normDirAB[1] * connectionOffset];
+    const rotatedA = rotate2(connectPointA as Vec2, getCurrentGroupPlaceAngle());
+    const rotatedB = rotate2(connectPointB as Vec2, getCurrentGroupPlaceAngle());
+    const connectionLine = seamConnectLines![lineIdx];
+    connectionLine.visible = true;
+    const connGeom = connectionLine.geometry as LineSegmentsGeometry;
+    connGeom.setPositions(new Float32Array([rotatedA[0], rotatedA[1], 2, rotatedB[0], rotatedB[1], 2]));
+  };
+
   const resizeRenderer2D = () => {
     const { width, height } = getViewport();
     renderer.setSize(width, height);
@@ -219,6 +245,9 @@ export function createRenderer2D(
         p1: [o1.x, o1.y, o1.z],
         p2: [o2.x, o2.y, o2.z],
       });
+
+      const rec = edgeData.get(hitEdge.groupId)?.edges.get(hitEdge.edgeId);
+      if (rec) showSeamConnectionLine(rec, 0);
     } else if (lastHitEdge) {
       cancelHoverLineState();
     }
@@ -249,7 +278,7 @@ export function createRenderer2D(
 
   const onPointerLeave = (event: PointerEvent) => {
     cancelHoverLineState();
-  }
+  };
 
   renderer.domElement.addEventListener("pointerup", onPointerUp);
   renderer.domElement.addEventListener("pointercancel", onPointerUp);
@@ -260,6 +289,8 @@ export function createRenderer2D(
   const onHoverFace = (faceId: number | null) => {
     if (!hoverFaceLines) return;
     hoverFaceLines.forEach((l) => (l.visible = false));
+    if (!seamConnectLines) return;
+    seamConnectLines.forEach((l) => (l.visible = false));
     if (faceId === null) {
       return;
     }
@@ -280,6 +311,10 @@ export function createRenderer2D(
       const p1Rotated = rotate2([p1.x, p1.y], getCurrentGroupPlaceAngle());
       const p2Rotated = rotate2([p2.x, p2.y], getCurrentGroupPlaceAngle());
       geom.setPositions(new Float32Array([p1Rotated[0], p1Rotated[1], 1, p2Rotated[0], p2Rotated[1], 1]));
+      // 如果有两个2d边对应一条3d边，则绘制拼接关系线
+      if (rec.length === 2) {
+        showSeamConnectionLine(rec, idx);
+      }
     });
   };
   appEventBus.on("faceHover3D", onHoverFace);
@@ -322,6 +357,14 @@ export function createRenderer2D(
       });
     }
     hoverFaceLines = null;
+    if (seamConnectLines) {
+      seamConnectLines.forEach((line) => {
+        line.removeFromParent();
+        (line.geometry as LineSegmentsGeometry).dispose();
+        (line.material as any)?.dispose?.();
+      });
+    }
+    seamConnectLines = null;
     renderer.dispose();
     renderer.domElement.remove();
   };
@@ -342,6 +385,21 @@ export function createRenderer2D(
     hoverFaceLines = [makeLine(), makeLine(), makeLine()];
   };
   initHoverFaceLines();
+
+  const initSeamConnectLines = () => {
+    if (seamConnectLines) return;
+    const makeLine = () => {
+      const geom = new LineSegmentsGeometry();
+      geom.setPositions(new Float32Array(6));
+      const mat = createSeamConnectLineMaterial({ width, height });
+      const line = new LineSegments2(geom, mat);
+      line.visible = false;
+      scene.add(line);
+      return line;
+    };
+    seamConnectLines = [makeLine(), makeLine(), makeLine()];
+  };
+  initSeamConnectLines();
 
   return {
     scene,

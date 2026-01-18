@@ -73,3 +73,12 @@ export function createHoverLineMaterial(resolution: { width: number; height: num
     polygonOffsetUnits: -3,
   });
 }
+
+// 2D 视图显示拼接边拼接关系的线的材质
+export function createSeamConnectLineMaterial(resolution: { width: number; height: number }) {
+  return new LineMaterial({
+    color: 0x00ff88,
+    linewidth: 2,
+    resolution: new Vector2(resolution.width, resolution.height),
+  });
+}

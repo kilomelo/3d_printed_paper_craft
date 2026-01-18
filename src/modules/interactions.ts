@@ -11,13 +11,9 @@ export type HoverState = {
   hoveredFaceId: number | null;
 };
 
-export type InteractionController = {
-  endBrush: () => void;
-  forceHoverCheck: () => void;
-  dispose: () => void;
-};
-
 export type InteractionOptions = {
+  view: { width: number; height: number },
+  scene: THREE.Scene
   renderer: THREE.WebGLRenderer;
   camera: THREE.PerspectiveCamera;
   controls: OrbitControls;
@@ -30,91 +26,10 @@ export type InteractionOptions = {
   pickFace: (event: PointerEvent) => number | null;
   onAddFace: (faceId: number) => void;
   onRemoveFace: (faceId: number) => void;
-  hoverState: HoverState;
+  // hoverState: HoverState;
   emitFaceHover?: (faceId: number | null) => void;
 };
-export function createHoverLines(view: { width: number; height: number }, scene: THREE.Scene, hoverLines: LineSegments2[]) {
-  if (hoverLines.length) return;
-  for (let i = 0; i < 3; i++) {
-    const geom = new LineSegmentsGeometry();
-    geom.setPositions(new Float32Array(6));
-    const mat = new LineMaterial({
-      color: 0xffa500,
-      linewidth: 5,
-      resolution: new Vector2(view.width, view.height),
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -3,
-    });
-    const line = new LineSegments2(geom, mat);
-    line.computeLineDistances();
-    line.visible = false;
-    line.userData.functional = "hover";
-    hoverLines.push(line);
-    scene.add(line);
-  }
-}
 
-export function disposeHoverLines(hoverLines: LineSegments2[]) {
-  hoverLines.forEach((line) => {
-    line.removeFromParent();
-    (line.geometry as LineSegmentsGeometry).dispose();
-    (line.material as LineMaterial).dispose();
-  });
-  hoverLines.length = 0;
-}
-
-export function hideHoverLines(state: HoverState) {
-  state.hoverLines.forEach((line) => {
-    line.visible = false;
-  });
-  state.hoveredFaceId = null;
-}
-
-export function updateHoverLines(
-  mesh: Mesh | null,
-  faceIndex: number | null,
-  faceId: number | null,
-  state: HoverState,
-  emitFace?: (faceId: number | null) => void,
-) {
-  if (!mesh || faceIndex === null || faceIndex < 0 || faceId === null) {
-    hideHoverLines(state);
-    emitFace?.(null);
-    return;
-  }
-  const geometry = mesh.geometry;
-  const position = geometry.getAttribute("position");
-  if (!position) {
-    hideHoverLines(state);
-    emitFace?.(null);
-    return;
-  }
-  const indices = getFaceVertexIndices(geometry, faceIndex);
-  const verts = indices.map((idx) => v3([position.getX(idx), position.getY(idx), position.getZ(idx)]).applyMatrix4(mesh.matrixWorld));
-  // emitFace?.([verts[0], verts[1], verts[2]]);
-  emitFace?.(faceId);
-  const edges = [
-    [0, 1],
-    [1, 2],
-    [2, 0],
-  ] as const;
-  edges.forEach(([a, b], i) => {
-    const line = state.hoverLines[i];
-    if (!line) return;
-    const arr = new Float32Array([
-      verts[a].x,
-      verts[a].y,
-      verts[a].z,
-      verts[b].x,
-      verts[b].y,
-      verts[b].z,
-    ]);
-    (line.geometry as LineSegmentsGeometry).setPositions(arr);
-    line.visible = true;
-  });
-  state.hoveredFaceId = faceId;
-}
 
 export function createRaycaster() {
   return { raycaster: new Raycaster(), pointer: new Vector2() };
@@ -133,12 +48,35 @@ function getFaceVertexIndices(geometry: THREE.BufferGeometry, faceIndex: number)
 }
 
 // 交互控制器：统一管理 pointer 事件、刷子状态、拾取与面添加/移除回调，解耦渲染器与 DOM 事件。
-export function initInteractionController(opts: InteractionOptions): InteractionController {
+export function initInteractionController(opts: InteractionOptions) {
   let brushMode = false;
   let brushButton: number | null = null;
   let lastBrushedFace: number | null = null;
   let controlsEnabledBeforeBrush = true;
   let lastClientPos = { x: 0, y: 0 };
+  const hoverState = { hoverLines: [], hoveredFaceId: null } as HoverState;
+
+  const createHoverLines = () => {
+    for (let i = 0; i < 3; i++) {
+      const geom = new LineSegmentsGeometry();
+      geom.setPositions(new Float32Array(6));
+      const mat = new LineMaterial({
+        color: 0xffa500,
+        linewidth: 5,
+        resolution: new Vector2(opts.view.width, opts.view.height),
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -3,
+      });
+      const line = new LineSegments2(geom, mat);
+      line.computeLineDistances();
+      line.visible = false;
+      line.userData.functional = "hover";
+      hoverState.hoverLines.push(line);
+      opts.scene.add(line);
+    }
+  }
+  createHoverLines();
 
   const startBrush = (button: number, initialFace: number | null) => {
     if (!opts.canEdit()) return;
@@ -164,10 +102,72 @@ export function initInteractionController(opts: InteractionOptions): Interaction
     opts.controls.enabled = controlsEnabledBeforeBrush;
   };
 
+  const disposeHoverLines = () => {
+    hoverState.hoverLines.forEach((line) => {
+      line.removeFromParent();
+      (line.geometry as LineSegmentsGeometry).dispose();
+      (line.material as LineMaterial).dispose();
+    });
+    hoverState.hoverLines.length = 0;
+  }
+
+  const hideHoverLines = () => {
+    hoverState.hoverLines.forEach((line) => {
+      line.visible = false;
+    });
+    if (hoverState.hoveredFaceId !== null) {
+      opts.emitFaceHover?.(null);
+      hoverState.hoveredFaceId = null;
+    }
+  }
+
+  const getHoveredFaceId = () => {
+    return hoverState.hoveredFaceId;
+  }
+
+  const updateHoverLines = (
+    mesh: Mesh | null,
+    faceIndex: number | null,
+    faceId: number | null,
+  ) => {
+    if (!mesh || faceIndex === null || faceIndex < 0 || faceId === null) {
+      hideHoverLines();
+      return;
+    }
+    const geometry = mesh.geometry;
+    const position = geometry.getAttribute("position");
+    if (!position) {
+      hideHoverLines();
+      return;
+    }
+    const indices = getFaceVertexIndices(geometry, faceIndex);
+    const verts = indices.map((idx) => v3([position.getX(idx), position.getY(idx), position.getZ(idx)]).applyMatrix4(mesh.matrixWorld));
+    const edges = [
+      [0, 1],
+      [1, 2],
+      [2, 0],
+    ] as const;
+    edges.forEach(([a, b], i) => {
+      const line = hoverState.hoverLines[i];
+      if (!line) return;
+      const arr = new Float32Array([
+        verts[a].x,
+        verts[a].y,
+        verts[a].z,
+        verts[b].x,
+        verts[b].y,
+        verts[b].z,
+      ]);
+      (line.geometry as LineSegmentsGeometry).setPositions(arr);
+      line.visible = true;
+    });
+    hoverState.hoveredFaceId = faceId;
+    opts.emitFaceHover?.(faceId);
+  }
+
   const onPointerMove = (event: PointerEvent) => {
     if (opts.isPointerLocked()) {
-      hideHoverLines(opts.hoverState);
-      opts.emitFaceHover?.(null);
+      hideHoverLines();
       return;
     }
     const model = opts.getModel();
@@ -184,26 +184,29 @@ export function initInteractionController(opts: InteractionOptions): Interaction
       return mesh.isMesh && !mesh.userData.functional;
     });
 
-    hideHoverLines(opts.hoverState);
-    opts.emitFaceHover?.(null);
-
     if (!intersects.length) {
       if (brushMode) lastBrushedFace = null;
+      hideHoverLines();
       return;
     }
     const hit = intersects[0];
     const mesh = hit.object as Mesh;
     const faceIndex = hit.faceIndex ?? -1;
     const faceId = opts.pickFace(event);
-    if (brushMode && faceId !== lastBrushedFace) {
-      if (faceId !== null) {
+    if (faceId === null) {
+      hideHoverLines();
+      return;
+    }
+    if (brushMode) {
+      if (faceId !== lastBrushedFace) {
         if (brushButton === 0) opts.onAddFace(faceId);
         else if (brushButton === 2) opts.onRemoveFace(faceId);
+        lastBrushedFace = faceId;
       }
-      lastBrushedFace = faceId;
     }
-    if (faceId === null) return;
-    updateHoverLines(mesh, faceIndex, faceId, opts.hoverState, opts.emitFaceHover);
+    else if (hoverState.hoveredFaceId !== faceId) {
+      updateHoverLines(mesh, faceIndex, faceId);
+    }
   };
   const onWheel = (event: WheelEvent) => {
     forceHoverCheck();
@@ -217,7 +220,7 @@ export function initInteractionController(opts: InteractionOptions): Interaction
   };
 
   const onPointerLeave = () => {
-    hideHoverLines(opts.hoverState);
+    hideHoverLines();
     opts.emitFaceHover?.(null);
   };
 
@@ -259,6 +262,9 @@ export function initInteractionController(opts: InteractionOptions): Interaction
   return {
     endBrush,
     forceHoverCheck,
+    createHoverLines,
+    hideHoverLines,
+    getHoveredFaceId,
     dispose: () => {
       endBrush();
       opts.renderer.domElement.removeEventListener("pointermove", onPointerMove);
@@ -266,6 +272,7 @@ export function initInteractionController(opts: InteractionOptions): Interaction
       opts.renderer.domElement.removeEventListener("pointerdown", onPointerDown);
       opts.renderer.domElement.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("pointerup", onWindowPointerUp);
+      disposeHoverLines();
     },
   };
 }
