@@ -12,9 +12,8 @@ export type Plane3D = { normal: Vec3; point: Point3D };
 export type TriangleWithEdgeInfo = {
   tri: Triangle2D;
   faceId: number;
-  edges: { isOuter: boolean; angle: number; isSeam?: boolean; earAngleA?: number; earAngleB?: number; }[];
+  edges: { isOuter: boolean; angle: number; isSeam?: boolean; earAngle: number[] }[];
   pointAngleData?: { vertexKey: string; unfold2dPos: Point2D; minAngle: number }[];
-  incenter?: Point2D;
 };
 
 export const v2 = (p: Point2D) => new THREE.Vector2(p[0], p[1]);

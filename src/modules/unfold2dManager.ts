@@ -17,7 +17,8 @@ import { appEventBus } from "./eventBus";
 import type { Renderer2DContext } from "./renderer2d";
 import { createUnfoldEdgeMaterial, createUnfoldFaceMaterial } from "./materials";
 import type { Point2D, Point3D, Vec3, TriangleWithEdgeInfo as TriangleData } from "../types/geometryTypes";
-import { pointKey3D, edgeKey3D, sub3, cross3, norm3, mul3, dot3, bisectorPlaneOfDihedral } from "./mathUtils";
+import { p3, v3 } from "../types/geometryTypes";
+import { isCounterClockwiseFromFront, pointKey3D, edgeKey3D, sub3, cross3, norm3, mul3, dot3, bisectorPlaneOfDihedral } from "./mathUtils";
 import { getSettings } from "./settings";
 
 // 记录“3D → 2D”变换矩阵，后续将按组树关系进行累乘展开。
@@ -480,6 +481,12 @@ export function createUnfold2dManager(
     const result: Array<TriangleData> = [];
     tris.forEach(({ faceId: fid, tri }) => {
       const [a, b, c] = tri;
+      // const pointKey3DArray = [a, b, c].map((v) => pointKey3D([v.x, v.y, v.z]));
+      // console.log("Processing face:", fid, "with points:", pointKey3DArray);
+      const triNormal = new Vector3();
+      angleIndex.getFaceNormal(fid, triNormal);
+      // const isCCW = isCounterClockwiseFromFront(p3(a), p3(b), p3(c), [faceNormal.x, faceNormal.y, faceNormal.z]);
+      // console.log("Processing face:", fid, "isCCW:", isCCW);
       const edgeIds = faceToEdges.get(fid) ?? [];
       const keyTo2D = new Map<string, Point2D>();
       const mapping = faceIndexMap.get(fid);
@@ -493,15 +500,14 @@ export function createUnfold2dManager(
           keyTo2D.set(makeVertexKey(pos, ic), [c.x, c.y]);
         }
       }
-      const edges = edgeIds.map((eid, edgeIdx) => {
+      const edgeInfo = edgeIds.map((eid, edgeIdx) => {
         const edgeRec = getEdgesArray()[eid];
         const isSeam = edgeRec?.faces && edgeRec.faces.size === 2 && sharedEdgeIsSeam([...edgeRec.faces][0], [...edgeRec.faces][1]);
         const isOuter = isSeam || (edgeRec?.faces.size ?? 0) === 1;
-        let earAngleA: number | undefined;
-        let earAngleB: number | undefined;
+        const earAngle: number[] = [];
         if (isSeam && edgeRec?.vertices) {
-          // console.log("Processing seam edge:", edgeRec);
           const [k1, k2] = edgeRec.vertices;
+          // console.log("Processing seam edge:", edgeRec.id, k1, k2);
           const p1Vec = vertexKeyToPos.get(k1);
           const p2Vec = vertexKeyToPos.get(k2);
           if (p1Vec && p2Vec) {
@@ -511,15 +517,16 @@ export function createUnfold2dManager(
             const endpointKeyA = makeEndpointKey(edgeKeyUndir, k1);
             const endpointKeyB = makeEndpointKey(edgeKeyUndir, k2);
             const calculateSeamEndPointAngle = (aKey: string, bKey: string, a: Point3D, b: Point3D) => {
-              // console.log("Calculating seam edge angle for edge:", aKey, bKey);
+              // console.log("Calculating seam edge angle for edge:", edgeKeyToId.get(edgeKey3D(a,b)), "endpoint:", aKey);
               const edgeKeyForward = edgeKey3D(a, b);
               const relatedSeams = [...(vertexSeamNeighbors.get(aKey) ?? [])];
-              // console.log("  Found related ", relatedSeams.length, "seams:", relatedSeams.map((nb) => nb.key));
+              // console.log("  Found related ", relatedSeams.length, "seams:", relatedSeams.map((nb) => edgeKeyToId.get(edgeKey3D(a, p3(vertexKeyToPos.get(nb.key)??new Vector3())))));
               if (relatedSeams.length < 2) {
                 seamEdgeAngleMap.set(makeEndpointKey(edgeKeyForward, aKey), 45);
                 // console.log("  No related seams found. Defaulting angle to 45°.");
                 return;
               }
+              // key是端点的pointKey
               const normalOfBisectorPlaneOfDihedral: Map<string, Vec3> = new Map();
               relatedSeams.forEach((nb) => {
                 // console.log("  Processing neighbor seam:", nb.key);
@@ -554,9 +561,11 @@ export function createUnfold2dManager(
               const normals = Array.from(normalOfBisectorPlaneOfDihedral.entries());
               for (let i = 0; i < normals.length; i += 1) {
                 const [keyI, n1] = normals[i];
+                const seamKeyAI = edgeKeyToId.get(edgeKey3D(a, p3(vertexKeyToPos.get(keyI)??new Vector3())));
                 for (let j = i + 1; j < normals.length; j += 1) {
                   const [keyJ, n2] = normals[j];
-                  // console.log("    Computing intersection line between planes for keys", keyI, "and", keyJ, "dot value:", Math.abs(dot3(n1, n2)));
+                  const seamKeyAJ = edgeKeyToId.get(edgeKey3D(a, p3(vertexKeyToPos.get(keyJ)??new Vector3())));
+                  // console.log("    Computing intersection line between planes for seam", seamKeyAI, "and", seamKeyAJ, "dot value:", Math.abs(dot3(n1, n2)));
                   const normalsDot = Math.abs(dot3(n1, n2));
                   const posI = vertexKeyToPos.get(keyI);
                   const posJ = vertexKeyToPos.get(keyJ);
@@ -607,6 +616,9 @@ export function createUnfold2dManager(
                     };
                     collectNormals(keyI);
                     collectNormals(keyJ);
+                    // faceNormals.forEach(fn => {
+                    //   console.log("      Related face normal:", dot3(dir, fn) > 0 ? "same direction" : "opposite direction");
+                    // });
                     if (faceNormals.some((fn) => dot3(dir, fn) > 0)) {
                       dir = mul3(dir, -1);
                     }
@@ -630,7 +642,7 @@ export function createUnfold2dManager(
                     const angleJ = Math.acos(Math.min(1, Math.max(-1, dot3(dir, baseDirJ))));
                     newI = (angleI * 180) / Math.PI;
                     newJ = (angleJ * 180) / Math.PI;
-                    // console.log(`    Angle between intersection line and seam edge to neighbor ${keyI}: ${newI.toFixed(2)}°, to neighbor ${keyJ}: ${newJ.toFixed(2)}°`);
+                    // console.log(`    Angle between intersection line and seam`, seamKeyAI, `is`, newI, `°, seam`, seamKeyAJ, `is`, newJ, `°`);
                   }
                   if (newI > 45 || newJ > 45) {
                     newI = 45;
@@ -646,6 +658,7 @@ export function createUnfold2dManager(
                 const vec = vertexKeyToPos.get(pkey);
                 if (!vec) return;
                 const baseKey = edgeKey3D(a, [vec.x, vec.y, vec.z]);
+                // console.log("  Setting seam edge angle for edge:", edgeKeyToId.get(baseKey), "endpoint:", aKey, "angle:", angle);
                 seamEdgeAngleMap.set(makeEndpointKey(baseKey, aKey), angle);
               });
             };
@@ -657,17 +670,35 @@ export function createUnfold2dManager(
               calculateSeamEndPointAngle(k2, k1, p2, p1);
             }
             // else console.log("Seam edge angle cache hit for", endpointKeyB, seamEdgeAngleMap.get(endpointKeyB));
-
-            earAngleA = Math.min(89, seamEdgeAngleMap.get(endpointKeyA)??89);
-            earAngleB = Math.min(89, seamEdgeAngleMap.get(endpointKeyB)??89);
+            earAngle.push(seamEdgeAngleMap.get(endpointKeyA) ?? 45);
+            earAngle.push(seamEdgeAngleMap.get(endpointKeyB) ?? 45);
+            // const thirdVertexKey = pointKey3DArray.find((pk) => pk !== k1 && pk !== k2);
+            const thirdVertexKey = getThirdVertexKeyOnFace(eid, fid);
+            if (thirdVertexKey) {
+              // console.log("[geometry] Found third vertex", thirdVertexKey, "for face", fid, "when processing seam edge", edgeRec.id);
+              const thirdVertexPos = vertexKeyToPos.get(thirdVertexKey);
+              if (thirdVertexPos) {
+                const isCCW = isCounterClockwiseFromFront(p1Vec, p2Vec, thirdVertexPos, [triNormal.x, triNormal.y, triNormal.z]);
+                if (!isCCW) {
+                  // console.log("Reversing ear angle order for edge:", edgeRec.id, "due to CW face winding", p1Vec, p2Vec, thirdVertexPos);
+                  earAngle.reverse();
+                }
+                // else console.log("Keeping ear angle order for edge:", edgeRec.id, "due to CCW face winding", p1Vec, p2Vec, thirdVertexPos);
+              }
+              else {
+                console.warn("Cannot find third vertex position for face", fid, "when processing seam edge", k1, k2);
+              }
+            }
+            else {
+              console.warn("Cannot find third vertex for face", fid, "when processing seam edge", edgeRec.id);
+            }
           }
         }
         return {
-          isOuter,
+          isOuter: isOuter,
           angle: angleIndex.getAngle(eid),
-          isSeam,
-          earAngleA,
-          earAngleB,
+          isSeam: isSeam,
+          earAngle: earAngle,
         };
       });
       result.push({
@@ -677,7 +708,7 @@ export function createUnfold2dManager(
           [c.x * scale, c.y * scale],
         ],
         faceId: fid,
-        edges: edges,
+        edges: edgeInfo,
       });
     });
     return result;

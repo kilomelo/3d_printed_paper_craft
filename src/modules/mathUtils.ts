@@ -1,3 +1,4 @@
+import { Vector3 } from "three";
 import type { Point2D, Point3D, Vec3, Triangle2D, Vec2, Plane3D, TriangleWithEdgeInfo } from "../types/geometryTypes";
 
 export function radToDeg(rad: number) { return (rad * 180) / Math.PI; }
@@ -166,7 +167,7 @@ export function triangles2Outer(trianglesWithAngles: TriangleWithEdgeInfo[]): {
   min: Point2D;
   max: Point2D;
   maxEdgeLen: number; // 所有三角形的边中最长的边长
-  pointAngleMap: Map<string, number>;
+  outerPointAngleMap: Map<string, number>;
 } | undefined {
   if (!trianglesWithAngles.length) return undefined;
   const edgeMap = new Map<string, { a: Point2D; b: Point2D; isSeam: boolean }>();
@@ -274,7 +275,7 @@ export function triangles2Outer(trianglesWithAngles: TriangleWithEdgeInfo[]): {
     const angleDeg = isReflex ? 360 - baseDeg : baseDeg;
     pointAngleMap.set(pointKey(curr), angleDeg);
   }
-  return { outer, min, max, maxEdgeLen, pointAngleMap };
+  return { outer, min, max, maxEdgeLen, outerPointAngleMap: pointAngleMap };
 }
 
 export type OffsetFailReason =
@@ -772,4 +773,39 @@ export function incenter3D(p1: Point2D, p2: Point2D, p3: Point2D): Point2D {
     (la * p1[0] + lb * p2[0] + lc * p3[0]) / sum,
     (la * p1[1] + lb * p2[1] + lc * p3[1]) / sum,
   ];
+}
+
+/**
+ * 判断从正面看过去三角形顶点顺序
+ * @param a 顶点A坐标
+ * @param b 顶点B坐标  
+ * @param c 顶点C坐标
+ * @param frontNormal 三角形正面法向量（单位向量）
+ * @returns 如果从正面看是逆时针返回true，顺时针返回false
+ */
+export function isCounterClockwiseFromFront(
+  a: Vector3,
+  b: Vector3,
+  c: Vector3,
+  frontNormal: Vec3
+): boolean {
+  // 计算向量AB和AC
+  const ab: Vec3 = [b.x - a.x, b.y - a.y, b.z - a.z];
+  const ac: Vec3 = [c.x - a.x, c.y - a.y, c.z - a.z];
+
+  // 计算三角形法向量（通过叉积）
+  const normal: Vec3 = [
+    ab[1] * ac[2] - ab[2] * ac[1],  // y1*z2 - z1*y2
+    ab[2] * ac[0] - ab[0] * ac[2],  // z1*x2 - x1*z2
+    ab[0] * ac[1] - ab[1] * ac[0]   // x1*y2 - y1*x2
+  ];
+  
+  // 计算法向量与正面法向量的点积
+  const dot = normal[0] * frontNormal[0] + 
+              normal[1] * frontNormal[1] + 
+              normal[2] * frontNormal[2];
+  
+  // 点积>0表示法向量方向一致，从正面看是逆时针
+  // 点积<0表示法向量方向相反，从正面看是顺时针
+  return dot > 0;
 }

@@ -448,7 +448,6 @@ const settingsUI = createSettingsUI(
 
 const geometryContext = createGeometryContext();
 const groupController = createGroupController(log, () => geometryContext.geometryIndex.getFaceAdjacency());
-let renameDialogOpen = false;
 
 const getCachedPreviewMesh = (groupId: number): { mesh: Mesh, earClipNumTotal: number, angle: number } | null => {
   const cached = previewMeshCache.get(groupId);
@@ -471,14 +470,12 @@ const openRenameDialog = () => {
   const currentName = groupController.getGroupName(previewId) ?? `展开组 ${previewId}`;
   renameInput.value = currentName;
   renameOverlay.classList.remove("hidden");
-  renameDialogOpen = true;
   renameInput.focus();
 };
 
 const closeRenameDialog = () => {
   if (!renameOverlay) return;
   renameOverlay.classList.add("hidden");
-  renameDialogOpen = false;
 };
 
 renameCancelBtn.addEventListener("click", closeRenameDialog);
@@ -729,11 +726,15 @@ appEventBus.on("groupCurrentChanged", (groupId: number) => groupUI.render(buildG
 appEventBus.on("groupColorChanged", ({ groupId, color }) => groupUI.render(buildGroupUIState()));
 appEventBus.on("groupNameChanged", ({ groupId, name }) => groupUI.render(buildGroupUIState()));
 appEventBus.on("groupFaceAdded", ({ groupId }) => {
-  previewMeshCache.delete(groupId);
+  // previewMeshCache.delete(groupId);
+  // 一个组的拓扑变化可能会影响到其他组拼接边的耳朵角度，所以需要全部清理
+  previewMeshCache.clear();
   groupUI.render(buildGroupUIState());
 });
 appEventBus.on("groupFaceRemoved", ({ groupId }) => {
-  previewMeshCache.delete(groupId);
+  // previewMeshCache.delete(groupId);
+  // 一个组的拓扑变化可能会影响到其他组拼接边的耳朵角度，所以需要全部清理
+  previewMeshCache.clear();
   groupUI.render(buildGroupUIState());
 });
 appEventBus.on("workspaceStateChanged", () => groupUI.render(buildGroupUIState()));

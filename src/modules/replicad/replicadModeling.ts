@@ -194,8 +194,8 @@ const buildSolidFromTrianglesWithAngles = async (
       // 设置的耳朵宽度过小时不创建耳朵
       if (edge.isSeam && earWidth > bodyThickness + connectionThickness) {
         // 第三步：生成耳朵
-        const earAngleA = edge.earAngleA??45;
-        const earAngleB = edge.earAngleB??45;
+        const earAngleA = edge.earAngle[0];
+        const earAngleB = edge.earAngle[1];
         const earPointByAngle = buildTriangleByEdgeAndAngles(pointA, pointB, degToRad(earAngleA), degToRad(earAngleB));
         if (!earPointByAngle) {
           onLog?.("根据边角度创建耳朵顶点失败，采用默认45度");
@@ -299,11 +299,11 @@ const buildSolidFromTrianglesWithAngles = async (
           onLog?.("创建耳朵倒角草图失败，跳过倒角");
           console.warn('[ReplicadModeling] failed to create ear chamfer sketch for edge, skip chamfer', edge);
         } else {
-          const earChamferTool = earChamferSketch.extrude(distAB);
-          earSolid = earSolid.cut(earChamferTool).simplify();
-          const earEndChamferSolid = earEndChamferSketch.extrude(distAB + 2 * earExtendMargin);
-          earSolid = earSolid.cut(earEndChamferSolid.clone().rotate(-earAngleA, [pointA[0], pointA[1], 0], [0,0,1])).simplify();
-          earSolid = earSolid.cut(earEndChamferSolid.rotate(earAngleB, [pointB[0], pointB[1], 0], [0,0,1])).simplify();
+          // const earChamferTool = earChamferSketch.extrude(distAB);
+          // earSolid = earSolid.cut(earChamferTool).simplify();
+          // const earEndChamferSolid = earEndChamferSketch.extrude(distAB + 2 * earExtendMargin);
+          // earSolid = earSolid.cut(earEndChamferSolid.clone().rotate(-earAngleA, [pointA[0], pointA[1], 0], [0,0,1])).simplify();
+          // earSolid = earSolid.cut(earEndChamferSolid.rotate(earAngleB, [pointB[0], pointB[1], 0], [0,0,1])).simplify();
           booleanOperations += 3;
         }
 
@@ -314,8 +314,8 @@ const buildSolidFromTrianglesWithAngles = async (
         if (edge.angle > Math.PI) {
           const pointAKey = pointKey(pointA);
           const pointBKey = pointKey(pointB);
-          const pointAAngle = outerResult.pointAngleMap.get(pointAKey);
-          const pointBAngle = outerResult.pointAngleMap.get(pointBKey);
+          const pointAAngle = outerResult.outerPointAngleMap.get(pointAKey);
+          const pointBAngle = outerResult.outerPointAngleMap.get(pointBKey);
           // console.log('[ReplicadModeling] edge info for ear', { pointAAngle, pointBAngle });
           // 只有拼接边与拼接边相邻，且拼接边与拼接边相邻的顶点角度小于180度（阴角）时才需要进行防干涉
           if (pointAAngle && pointAAngle > 180) {

@@ -328,6 +328,12 @@ export function createRenderer2D(
   appEventBus.on("groupFaceRemoved", ({ groupId, faceId }) => {
     updateHoverFaceByFaceIdNextFrame = faceId;
   });
+  appEventBus.on("modelCleared", () => {
+    hoverFaceLines?.forEach((l) => (l.visible = false));
+    seamConnectLines?.forEach((l) => (l.visible = false));
+    if (hoverLine) hoverLine.visible = false;
+    lastHitEdge = null;
+  });
 
   const animate = () => {
     renderer.render(scene, camera);
