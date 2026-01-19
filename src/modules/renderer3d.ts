@@ -19,20 +19,20 @@ import {
   Sprite,
   SpriteMaterial,
   CanvasTexture,
+  BufferAttribute,
+  Vector2 as ThreeVector2,
 } from "three";
-import type { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import { getModel, setModel, setLastFileName, prepareGeometryData } from "./model";
+import { getModel, setModel, setLastFileName } from "./model";
 import { load3dppc, type PPCFile } from "./ppc";
 import { applySettings, resetSettings, getSettings } from "./settings";
 import { createScene, fitCameraToObject } from "./scene";
-import { FACE_DEFAULT_COLOR, createFrontMaterial, createPreviewMaterial, createEdgeMaterial } from "./materials";
+import { FACE_DEFAULT_COLOR, createFrontMaterial, createPreviewMaterial, createEdgeMaterial, createHoverLineMaterial } from "./materials";
 import {
-  createHoverLines,
-  disposeHoverLines,
-  hideHoverLines,
   createRaycaster,
   initInteractionController,
   type HoverState,
@@ -43,7 +43,7 @@ import { createSeamManager } from "./seamManager";
 import { createSpecialEdgeManager } from "./specialEdgeManager";
 import { appEventBus } from "./eventBus";
 import { type GeometryContext, createGeometryContext } from "./geometry";
-import { WorkspaceState, getWorkspaceState } from "@/types/workspaceState";
+import { getWorkspaceState } from "@/types/workspaceState";
 import { isSafari } from "./utils";
 import { disposeGroupDeep } from "./threeUtils";
 
@@ -55,6 +55,21 @@ export type GroupApi = {
   getFaceGroupMap: () => Map<number, number | null>;
   applyImportedGroups: (groups: PPCFile["groups"], groupColorCursor?: number) => void;
 };
+
+export function snapGeometryPositions(geometry: THREE.BufferGeometry, decimals = 5) {
+  const factor = 10 ** decimals;
+  const pos = geometry.getAttribute("position") as BufferAttribute | undefined;
+  if (!pos) return;
+  for (let i = 0; i < pos.count; i += 1) {
+    const x = Math.round(pos.getX(i) * factor) / factor;
+    const y = Math.round(pos.getY(i) * factor) / factor;
+    const z = Math.round(pos.getZ(i) * factor) / factor;
+    pos.setXYZ(i, x, y, z);
+  }
+  pos.needsUpdate = true;
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+}
 
 export function createRenderer3D(
   log: (msg: string, tone?: "info" | "error" | "success") => void,
@@ -81,9 +96,6 @@ export function createRenderer3D(
   let edgeKeyToId = geometryIndex.getEdgeKeyToId();
   let vertexKeyToPos = geometryIndex.getVertexKeyToPos();
   const { raycaster, pointer } = createRaycaster();
-  const hoverLines: LineSegments2[] = [];
-  const hoverState: HoverState = { hoverLines, hoveredFaceId: null };
-  let interactionController: ReturnType<typeof initInteractionController> | null = null;
   let breathGroupId: number | null = null;
   let breathStart = 0;
   let breathRaf: number | null = null;
@@ -96,6 +108,37 @@ export function createRenderer3D(
   let bboxHelper: Box3Helper | null = null;
   let bboxBox: Box3 | null = null;
   let bboxLabels: Sprite[] = [];
+  const hoverEdgeGeom = new LineSegmentsGeometry();
+  hoverEdgeGeom.setPositions(new Float32Array(6));
+  const hoverEdgeMat = createHoverLineMaterial({ width: getViewport().width, height: getViewport().height });
+  const hoverEdgeLine = new LineSegments2(hoverEdgeGeom, hoverEdgeMat);
+  hoverEdgeLine.visible = false;
+  scene.add(hoverEdgeLine);
+
+  const interactionController = initInteractionController({
+    view: getViewport(),
+    scene,
+    renderer,
+    camera,
+    controls,
+    raycaster,
+    pointer,
+    getModel,
+    facesVisible: () => facesVisible,
+    canEdit: () => getWorkspaceState() === "editingGroup",
+    isPointerLocked: () => pointerLocked,
+    pickFace,
+    onAddFace: groupApi.handleAddFace,
+    onRemoveFace: groupApi.handleRemoveFace,
+    // hoverState,
+    emitFaceHover: (faceId) => {
+      if (faceId === null) {
+        appEventBus.emit("faceHover3DClear", undefined);
+        return;
+      }
+      appEventBus.emit("faceHover3D", faceId);
+    },
+  });
 
   const drawLabelTexture = (text: string, canvas?: HTMLCanvasElement) => {
     const cvs = canvas ?? document.createElement("canvas");
@@ -253,7 +296,7 @@ export function createRenderer3D(
     const isPrimaryButton = event.button === 0 || event.button === 2;
     if (!isPrimaryButton) return false;
     // 编辑展开组时，若当前 hover 到可刷的面，优先进入刷子逻辑，避免误触发相机控制
-    if (getWorkspaceState() === "editingGroup" && hoverState.hoveredFaceId !== null) return false;
+    if (getWorkspaceState() === "editingGroup" && interactionController.getHoveredFaceId() !== null) return false;
     return true;
   };
   const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
@@ -383,14 +426,14 @@ export function createRenderer3D(
     pointerLocked = document.pointerLockElement === el;
     // console.debug("[pointer] lock change", pointerLocked);
     if (pointerLocked) {
-      hideHoverLines(hoverState);
+      interactionController.hideHoverLines();
     }
     if (!pointerLocked) {
       lockedButton = null;
       interactionController?.forceHoverCheck();
     }
   };
-  const onGlobalPointerMove = (event: PointerEvent) => {
+  const onWindowPointerMove = (event: PointerEvent) => {
     if (!pointerLocked) return;
     const anglePerPixel = (2 * Math.PI / el.clientHeight) * controls.rotateSpeed;
     if (lockedButton === 0) {
@@ -405,7 +448,7 @@ export function createRenderer3D(
   renderer.domElement.addEventListener("pointerdown", onCanvasPointerDown);
   renderer.domElement.addEventListener("pointerup", onWindowPointerUp);
   renderer.domElement.addEventListener("pointercancel", onWindowPointerUp);
-  renderer.domElement.addEventListener("pointermove", onGlobalPointerMove);
+  renderer.domElement.addEventListener("pointermove", onWindowPointerMove);
   document.addEventListener("pointerlockchange", onPointerLockChange);
 
   const objLoader = new OBJLoader();
@@ -419,7 +462,6 @@ export function createRenderer3D(
     disposeGroupDeep(previewModelGroup);
     disposeGroupDeep(gizmosGroup);
     previewModelGroup.visible = false;
-    disposeHoverLinesLocal();
     setModel(null);
     
     faceAdjacency.clear();
@@ -435,7 +477,7 @@ export function createRenderer3D(
     vertexKeyToPos = geometryIndex.getVertexKeyToPos();
     seamManager?.dispose();
     specialEdgeManager?.dispose();
-    hideHoverLines(hoverState);
+    interactionController.hideHoverLines();
     appEventBus.emit("modelCleared", undefined);
   }
 
@@ -483,6 +525,8 @@ export function createRenderer3D(
     camera.updateProjectionMatrix();
     axesCamera.aspect = 1;
     axesCamera.updateProjectionMatrix();
+    const mat = hoverEdgeLine.material as any;
+    mat.resolution?.set(w, h);
   }
 
   window.addEventListener("resize", resizeRenderer3D);
@@ -502,21 +546,6 @@ export function createRenderer3D(
   function setSeamsVisibility(seamsVisible: boolean) {
     if (!getModel()) return;
     seamManager.setVisibility(seamsVisible);
-  }
-
-  function initHoverLinesLocal() {
-    createHoverLines(getViewport(), scene, hoverLines);
-  }
-
-  function disposeHoverLinesLocal() {
-    disposeHoverLines(hoverLines);
-    hoverState.hoveredFaceId = null;
-  }
-
-  function setHoverLinesVisible(visible: boolean) {
-    hoverLines.forEach((line) => {
-      if (line) line.visible = visible;
-    });
   }
 
   const resetView = () => {
@@ -559,14 +588,15 @@ export function createRenderer3D(
   let lastTriCount = 0;
   const getTriCount = () => lastTriCount;
 
-  function rebuildSpecialEdges(targetRoot: Group, logSpecialEdges = true) {
+  function rebuildSpecialEdges(targetRoot: Group, logSpecialEdges = true): Group {
     const usePreviewData = targetRoot === previewModelGroup;
+    const specialEdgeGroup = usePreviewData ? new Group() : targetRoot;
     let openCount = 0;
     let nonManifoldCount = 0;
     if (usePreviewData) {
       const previewIdx = previewGeometryContext.geometryIndex;
       const res = specialEdgeManager.rebuild(
-        targetRoot,
+        specialEdgeGroup,
         () => previewIdx.getEdgesArray(),
         (edgeId: number) => previewIdx.getEdgeWorldPositions(edgeId),
         () => previewIdx.getVertexKeyToPos(),
@@ -575,7 +605,7 @@ export function createRenderer3D(
       nonManifoldCount = res.nonManifoldCount;
     } else {
       const res = specialEdgeManager.rebuild(
-        targetRoot,
+        specialEdgeGroup,
         () => edges,
         (edgeId: number) => geometryIndex.getEdgeWorldPositions(edgeId),
         () => vertexKeyToPos,
@@ -594,6 +624,7 @@ export function createRenderer3D(
         }
       }
     }
+    return specialEdgeGroup;
   }
 
   appEventBus.on("workspaceStateChanged", ({previous, current}) => {
@@ -612,13 +643,12 @@ export function createRenderer3D(
       rebuildSpecialEdges(modelGroup, false);
     }
     if (current === "previewGroupModel") {
-      hideHoverLines(hoverState);
+      interactionController.hideHoverLines();
       gizmosVisibleBeforePreview = gizmosVisible;
       gizmosVisible = false;
       gizmosGroup.visible = false;
       applyFaceVisibility();
       applyEdgeVisibility();
-      rebuildSpecialEdges(previewModelGroup);
     }
   });
   appEventBus.on("groupCurrentChanged", (groupId: number) => syncGroupStateFromData(groupId));
@@ -634,21 +664,15 @@ export function createRenderer3D(
       (mat.map as CanvasTexture).needsUpdate = true;
     });
   });
-
-  interactionController = initInteractionController({
-    renderer,
-    camera,
-    controls,
-    raycaster,
-    pointer,
-    getModel,
-    facesVisible: () => facesVisible,
-    canEdit: () => getWorkspaceState() === "editingGroup",
-    isPointerLocked: () => pointerLocked,
-    pickFace,
-    onAddFace: groupApi.handleAddFace,
-    onRemoveFace: groupApi.handleRemoveFace,
-    hoverState,
+  appEventBus.on("edgeHover2D", ({ p1, p2 }) => {
+    // if (hoverState.hoveredFaceId !== null) return;
+    (hoverEdgeLine.geometry as LineSegmentsGeometry).setPositions(
+      new Float32Array([p1[0], p1[1], p1[2], p2[0], p2[1], p2[2]]),
+    );
+    hoverEdgeLine.visible = true;
+  });
+  appEventBus.on("edgeHover2DClear", () => {
+    hoverEdgeLine.visible = false;
   });
 
   function stopGroupBreath() {
@@ -709,6 +733,7 @@ export function createRenderer3D(
         loaded.traverse((child) => {
           if ((child as Mesh).isMesh) {
             (child as Mesh).material = mat.clone();
+            snapGeometryPositions((child as Mesh).geometry);
           }
         });
         object = loaded;
@@ -719,12 +744,14 @@ export function createRenderer3D(
         loaded.traverse((child) => {
           if ((child as Mesh).isMesh) {
             (child as Mesh).material = mat.clone();
+            snapGeometryPositions((child as Mesh).geometry);
           }
         });
         object = loaded;
         resetSettings();
       } else if (ext === "stl") {
         const geometry = await stlLoader.loadAsync(url);
+        snapGeometryPositions(geometry);
         const material = createFrontMaterial();
         object = new Mesh(geometry, material);
         resetSettings();
@@ -766,7 +793,6 @@ export function createRenderer3D(
     applyFaceVisibility();
     applyEdgeVisibility();
     modelGroup.add(model);
-    initHoverLinesLocal();
     fitCameraToObject(model, camera, controls);
     log(`已加载：${name} · 三角面 ${geometryIndex.getTriangleCount()}`, "success");
     appEventBus.emit("modelLoaded", undefined);
@@ -799,8 +825,8 @@ export function createRenderer3D(
     }
   }
 
-  function loadPreviewModel(mesh: Mesh) {
-    previewModelGroup.clear();
+  function loadPreviewModel(mesh: Mesh, angle: number) {
+    disposeGroupDeep(previewModelGroup);
     mesh.material = createPreviewMaterial().clone();
     previewModelGroup.add(mesh);
     mesh.updateMatrixWorld(true);
@@ -823,7 +849,9 @@ export function createRenderer3D(
     };
     fitCameraToObject(previewModelGroup, camera, controls);
     previewGeometryContext.rebuildFromModel(previewModelGroup);
-    rebuildSpecialEdges(previewModelGroup);
+    const specialEdgesGroup = rebuildSpecialEdges(previewModelGroup);
+    specialEdgesGroup.rotation.set(0,0,-angle);
+    previewModelGroup.add(specialEdgesGroup)
   }
 
   function renderAxesInset() {
@@ -859,7 +887,6 @@ export function createRenderer3D(
     renderAxesInset();
     lastTriCount = tris;
   }
-
   animate();
 
   return {
@@ -879,7 +906,7 @@ export function createRenderer3D(
       el.removeEventListener("pointerdown", onCanvasPointerDown);
       window.removeEventListener("pointerup", onWindowPointerUp);
       window.removeEventListener("pointercancel", onWindowPointerUp);
-      window.removeEventListener("pointermove", onGlobalPointerMove);
+      window.removeEventListener("pointermove", onWindowPointerMove);
       document.removeEventListener("pointerlockchange", onPointerLockChange);
     },
   };

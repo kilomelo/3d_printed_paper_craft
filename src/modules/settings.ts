@@ -9,6 +9,8 @@ export type Settings = {
   earWidth: number;
   earThickness: number;
   earClipGap: number;
+  hollowStyle: boolean;
+  wireframeThickness: number;
 };
 
 export const SETTINGS_LIMITS = {
@@ -19,6 +21,7 @@ export const SETTINGS_LIMITS = {
   earWidth: { min: 0, max: 20 },
   earThickness: { min: 1, max: 2 },
   earClipGap: { min: 0.1, max: 0.25 },
+  wireframeThickness: { min: 4, max: 10 },
 } as const;
 
 const defaultSettings: Settings = {
@@ -29,6 +32,8 @@ const defaultSettings: Settings = {
   earWidth: 4,
   earThickness: 1,
   earClipGap: 0.15,
+  hollowStyle: false,
+  wireframeThickness: 5,
 };
 
 let current: Settings = { ...defaultSettings };
@@ -87,6 +92,15 @@ export function setEarClipGap(val: number) {
   current = { ...current, earClipGap: val };
 }
 
+export function setHollowStyle(val: boolean) {
+  current = { ...current, hollowStyle: !!val };
+}
+
+export function setWireframeThickness(val: number) {
+  if (Number.isNaN(val) || val < SETTINGS_LIMITS.wireframeThickness.min || val > SETTINGS_LIMITS.wireframeThickness.max) return;
+  current = { ...current, wireframeThickness: val };
+}
+
 export function resetSettings() {
   current = { ...defaultSettings };
 }
@@ -101,7 +115,9 @@ export function applySettings(next: Partial<Settings>) {
     merged.bodyLayers === current.bodyLayers &&
     merged.earWidth === current.earWidth &&
     merged.earThickness === current.earThickness &&
-    merged.earClipGap === current.earClipGap;
+    merged.earClipGap === current.earClipGap &&
+    merged.hollowStyle === current.hollowStyle &&
+    merged.wireframeThickness === current.wireframeThickness;
   if (unchanged) return;
   current = { ...current, ...next };
   appEventBus.emit("settingsChanged", next);

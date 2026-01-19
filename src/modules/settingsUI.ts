@@ -3,6 +3,7 @@ import { getSettings, applySettings, getDefaultSettings, SETTINGS_LIMITS } from 
 
 type SettingsUIRefs = {
   overlay: HTMLDivElement;
+  content: HTMLDivElement;
   openBtn: HTMLButtonElement;
   cancelBtn: HTMLButtonElement;
   confirmBtn: HTMLButtonElement;
@@ -14,6 +15,12 @@ type SettingsUIRefs = {
   earThicknessResetBtn: HTMLButtonElement;
   earClipGapInput: HTMLInputElement;
   earClipGapResetBtn: HTMLButtonElement;
+  hollowOnBtn: HTMLButtonElement;
+  hollowOffBtn: HTMLButtonElement;
+  hollowResetBtn: HTMLButtonElement;
+  wireframeThicknessInput: HTMLInputElement;
+  wireframeThicknessResetBtn: HTMLButtonElement;
+  wireframeRow: HTMLDivElement;
   layerHeightInput: HTMLInputElement;
   layerHeightResetBtn: HTMLButtonElement;
   connectionLayersDecBtn: HTMLButtonElement;
@@ -24,6 +31,10 @@ type SettingsUIRefs = {
   bodyLayersIncBtn: HTMLButtonElement;
   bodyLayersValue: HTMLSpanElement;
   bodyLayersResetBtn: HTMLButtonElement;
+  navBasic: HTMLButtonElement;
+  navExperiment: HTMLButtonElement;
+  panelBasic: HTMLDivElement;
+  panelExperiment: HTMLDivElement;
 };
 
 type SettingsUIDeps = {
@@ -47,6 +58,52 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     settingsSnapshot = null;
   };
 
+  const updateHollowButtons = () => {
+    refs.hollowOnBtn.classList.toggle("active", settingsDraft.hollowStyle);
+    refs.hollowOffBtn.classList.toggle("active", !settingsDraft.hollowStyle);
+  };
+
+  const updateWireframeEnabled = () => {
+    const enabled = settingsDraft.hollowStyle;
+    refs.wireframeThicknessInput.disabled = !enabled;
+    refs.wireframeThicknessResetBtn.disabled = !enabled;
+    refs.wireframeRow.classList.toggle("disabled", !enabled);
+  };
+
+  const activateTab = (tab: "basic" | "experiment") => {
+    const isBasic = tab === "basic";
+    refs.navBasic.classList.toggle("active", isBasic);
+    refs.navExperiment.classList.toggle("active", !isBasic);
+    refs.panelBasic.classList.toggle("active", isBasic);
+    refs.panelExperiment.classList.toggle("active", !isBasic);
+  };
+
+  const measurePanelHeight = (panel: HTMLDivElement) => {
+    const prevDisplay = panel.style.display;
+    const prevVisibility = panel.style.visibility;
+    const prevPosition = panel.style.position;
+    panel.style.visibility = "hidden";
+    panel.style.position = "absolute";
+    panel.style.display = "block";
+    const h = panel.scrollHeight;
+    panel.style.display = prevDisplay;
+    panel.style.visibility = prevVisibility;
+    panel.style.position = prevPosition;
+    return h;
+  };
+
+  const adjustContentHeight = () => {
+    const basicH = measurePanelHeight(refs.panelBasic);
+    const expH = measurePanelHeight(refs.panelExperiment);
+    const maxContent = Math.max(basicH, expH);
+    const maxAllowed = Math.floor(window.innerHeight * 0.8);
+    const target = Math.min(maxContent, maxAllowed);
+    if (target > 0) {
+      refs.content.style.minHeight = `${target}px`;
+      refs.content.style.height = `${target}px`;
+    }
+  };
+
   const updateInputColor = (el: HTMLInputElement, valid: boolean) => {
     el.style.color = valid ? "" : "red";
   };
@@ -67,6 +124,10 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
       !Number.isNaN(val) && val >= SETTINGS_LIMITS.earWidth.min && val < SETTINGS_LIMITS.earWidth.max,
     earClipGap: (val: number) =>
       !Number.isNaN(val) && val >= SETTINGS_LIMITS.earClipGap.min && val <= SETTINGS_LIMITS.earClipGap.max,
+    wireframeThickness: (val: number) =>
+      !Number.isNaN(val) &&
+      val >= SETTINGS_LIMITS.wireframeThickness.min &&
+      val <= SETTINGS_LIMITS.wireframeThickness.max,
   };
 
   const blockKeysWhenSettingsOpen = (e: KeyboardEvent) => {
@@ -91,10 +152,39 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.earWidthInput.value = String(settingsDraft.earWidth);
     refs.earThicknessInput.value = String(settingsDraft.earThickness);
     refs.earClipGapInput.value = String(settingsDraft.earClipGap);
-    [refs.scaleInput, refs.layerHeightInput, refs.earWidthInput, refs.earThicknessInput, refs.earClipGapInput].forEach((el) =>
+    refs.wireframeThicknessInput.value = String(settingsDraft.wireframeThickness);
+    updateHollowButtons();
+    updateWireframeEnabled();
+    [refs.scaleInput, refs.layerHeightInput, refs.earWidthInput, refs.earThicknessInput, refs.earClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
       updateInputColor(el, true),
     );
+    updateWireframeEnabled();
+    activateTab("basic");
+    adjustContentHeight();
     refs.overlay.classList.remove("hidden");
+  });
+
+  refs.hollowOnBtn.addEventListener("click", () => {
+    settingsDraft.hollowStyle = true;
+    updateHollowButtons();
+    updateWireframeEnabled();
+  });
+  refs.hollowOffBtn.addEventListener("click", () => {
+    settingsDraft.hollowStyle = false;
+    updateHollowButtons();
+    updateWireframeEnabled();
+  });
+  refs.hollowResetBtn.addEventListener("click", () => {
+    const def = getDefaultSettings().hollowStyle;
+    settingsDraft.hollowStyle = def;
+    updateHollowButtons();
+    updateWireframeEnabled();
+  });
+  refs.navBasic.addEventListener("click", () => {
+    activateTab("basic");
+  });
+  refs.navExperiment.addEventListener("click", () => {
+    activateTab("experiment");
   });
 
   const bindNumericInput = (
@@ -183,6 +273,15 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     validators.earClipGap,
     () => getDefaultSettings().earClipGap,
   );
+  bindNumericInput(
+    refs.wireframeThicknessInput,
+    refs.wireframeThicknessResetBtn,
+    (raw) => parseFloat(raw),
+    () => settingsDraft.wireframeThickness,
+    (v) => (settingsDraft.wireframeThickness = v),
+    validators.wireframeThickness,
+    () => getDefaultSettings().wireframeThickness,
+  );
 
   const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
   const updateConnectionValue = (val: number) => {
@@ -215,7 +314,9 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.earWidthInput.value = String(settingsDraft.earWidth);
     refs.earThicknessInput.value = String(settingsDraft.earThickness);
     refs.earClipGapInput.value = String(settingsDraft.earClipGap);
-    [refs.scaleInput, refs.layerHeightInput, refs.earWidthInput, refs.earThicknessInput, refs.earClipGapInput].forEach((el) =>
+    refs.wireframeThicknessInput.value = String(settingsDraft.wireframeThickness);
+    updateHollowButtons();
+    [refs.scaleInput, refs.layerHeightInput, refs.earWidthInput, refs.earThicknessInput, refs.earClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
       updateInputColor(el, true),
     );
   });
@@ -241,14 +342,17 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     if (settingsDraft.bodyLayers !== settingsSnapshot.bodyLayers) {
       changes.push(`设置值 [主体层数] 已修改为 ${settingsDraft.bodyLayers}`);
     }
-    if (settingsDraft.earWidth !== settingsSnapshot.earWidth) {
-      changes.push(`设置值 [拼接边耳朵宽度] 已修改为 ${settingsDraft.earWidth}`);
-    }
     if (settingsDraft.earThickness !== settingsSnapshot.earThickness) {
       changes.push(`设置值 [拼接边耳朵厚度] 已修改为 ${settingsDraft.earThickness}`);
     }
     if (settingsDraft.earClipGap !== settingsSnapshot.earClipGap) {
       changes.push(`设置值 [夹子配合间隙] 已修改为 ${settingsDraft.earClipGap}`);
+    }
+    if (settingsDraft.hollowStyle !== settingsSnapshot.hollowStyle) {
+      changes.push(`设置值 [镂空风格] 已修改为 ${settingsDraft.hollowStyle ? "开启" : "关闭"}`);
+    }
+    if (settingsDraft.wireframeThickness !== settingsSnapshot.wireframeThickness) {
+      changes.push(`设置值 [线框粗细] 已修改为 ${settingsDraft.wireframeThickness}`);
     }
     applySettings(settingsDraft);
     closeSettings();
