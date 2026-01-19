@@ -1,15 +1,21 @@
 import { Vector3 } from "three";
 import type { Point2D, Point3D, Vec3, Triangle2D, Vec2, Plane3D, TriangleWithEdgeInfo } from "../types/geometryTypes";
 
+// 弧度转角度
 export function radToDeg(rad: number) { return (rad * 180) / Math.PI; }
+// 角度转弧度
 export function degToRad(deg: number) { return (deg * Math.PI) / 180;}
+// 生成二维点的稳定 key
 export function pointKey([x, y]: Point2D) { return `${x.toFixed(5)},${y.toFixed(5)}`; }
+// 生成无向二维边 key
 export function edgeKey(a: Point2D, b: Point2D) {
   const ka = pointKey(a);
   const kb = pointKey(b);
   return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
 }
+// 生成三维点的稳定 key
 export function pointKey3D([x, y, z]: Point3D) { return `${x.toFixed(5)},${y.toFixed(5)},${z.toFixed(5)}`; }
+// 生成无向三维边 key
 export function edgeKey3D(a: Point3D, b: Point3D) {
   const ka = pointKey3D(a);
   const kb = pointKey3D(b);
@@ -36,9 +42,16 @@ function cross(u: Vec2, v: Vec2): number {
 function norm2(v: Vec2): number {
   return dot(v, v);
 }
+// 2D 叉积（返回标量）
+function cross2(u: Vec2, v: Vec2): number {
+  return u[0] * v[1] - u[1] * v[0];
+}
 
+// 三维向量相减
 export function sub3(p: Point3D, q: Point3D): Vec3 { return [p[0] - q[0], p[1] - q[1], p[2] - q[2]]; }
+// 三维点积
 export function dot3(u: Vec3, v: Vec3): number { return u[0] * v[0] + u[1] * v[1] + u[2] * v[2]; }
+// 三维叉积
 export function cross3(u: Vec3, v: Vec3): Vec3 {
   return [
     u[1] * v[2] - u[2] * v[1],
@@ -46,16 +59,20 @@ export function cross3(u: Vec3, v: Vec3): Vec3 {
     u[0] * v[1] - u[1] * v[0],
   ];
 }
+// 三维模长
 export function norm3(v: Vec3): number { return Math.hypot(v[0], v[1], v[2]); }
+// 三维向量缩放
 export function mul3(v: Vec3, s: number): Vec3 { return [v[0] * s, v[1] * s, v[2] * s]; }
 function add3(u: Vec3, v: Vec3): Vec3 { return [u[0] + v[0], u[1] + v[1], u[2] + v[2]]; }
 
+// 二维向量旋转
 export function rotate2(v: Vec2, ang: number): Vec2 {
   const c = Math.cos(ang);
   const s = Math.sin(ang);
   return [v[0] * c - v[1] * s, v[0] * s + v[1] * c];
 }
 
+// 多边形面积（有符号，CCW 为正）
 export function polygonArea(pts: Point2D[]): number {
   let area = 0;
   for (let i = 0, j = pts.length - 1; i < pts.length; j = i, i += 1) {
@@ -64,6 +81,7 @@ export function polygonArea(pts: Point2D[]): number {
   return area * 0.5;
 }
 
+// 求两直线交点（二维）
 export function intersectLines(p1: Point2D, p2: Point2D, p3: Point2D, p4: Point2D): Point2D | null {
   const [x1, y1] = p1;
   const [x2, y2] = p2;
@@ -76,6 +94,7 @@ export function intersectLines(p1: Point2D, p2: Point2D, p3: Point2D, p4: Point2
   return [px, py];
 }
 
+// 点到直线距离（二维）
 export function pointLineDistance2D(p: Point2D, a: Point2D, b: Point2D) {
   const [px, py] = p;
   const [ax, ay] = a;
@@ -125,6 +144,130 @@ export function pointInSegmentRectangle2(p: Point2D, a: Point2D, b: Point2D, mar
   const projAlong = px * ux + py * uy;
   const projPerp = px * vx + py * vy;
   return Math.abs(projAlong) <= halfLen && Math.abs(projPerp) <= halfWidth;
+}
+
+// 线段相交（含端点、共线重叠）
+export function segmentsIntersect2D(p1: Point2D, q1: Point2D, p2: Point2D, q2: Point2D, eps = 1e-10): boolean {
+  const cross = (p: Point2D, q: Point2D, r: Point2D) =>
+    (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  const onSeg = (p: Point2D, q: Point2D, r: Point2D) =>
+    q[0] >= Math.min(p[0], r[0]) - eps &&
+    q[0] <= Math.max(p[0], r[0]) + eps &&
+    q[1] >= Math.min(p[1], r[1]) - eps &&
+    q[1] <= Math.max(p[1], r[1]) + eps;
+  const o1 = cross(p1, q1, p2);
+  const o2 = cross(p1, q1, q2);
+  const o3 = cross(p2, q2, p1);
+  const o4 = cross(p2, q2, q1);
+  if (o1 * o2 < -eps && o3 * o4 < -eps) return true;
+  if (Math.abs(o1) < eps && onSeg(p1, p2, q1)) return true;
+  if (Math.abs(o2) < eps && onSeg(p1, q2, q1)) return true;
+  if (Math.abs(o3) < eps && onSeg(p2, p1, q2)) return true;
+  if (Math.abs(o4) < eps && onSeg(p2, q1, q2)) return true;
+  return false;
+}
+
+// 三角形相交检测（仅二维），含边/点接触；可选 log 输出中间数据。会忽略仅共享单一点的情况。
+export function triIntersect2D(
+  t1: [Point2D, Point2D, Point2D],
+  t2: [Point2D, Point2D, Point2D],
+  eps = 1e-8,
+): boolean {
+  const bbox = (t: [Point2D, Point2D, Point2D]) => {
+    const xs = [t[0][0], t[1][0], t[2][0]];
+    const ys = [t[0][1], t[1][1], t[2][1]];
+    return {
+      minX: Math.min(...xs),
+      maxX: Math.max(...xs),
+      minY: Math.min(...ys),
+      maxY: Math.max(...ys),
+    };
+  };
+  const b1 = bbox(t1);
+  const b2 = bbox(t2);
+  if (
+    b1.maxX < b2.minX - eps || b1.minX > b2.maxX + eps ||
+    b1.maxY < b2.minY - eps || b1.minY > b2.maxY + eps
+  ) return false;
+
+  const axes: Point2D[] = [];
+  const pushAxis = (a: Point2D, b: Point2D) => {
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const len2 = dx * dx + dy * dy;
+    if (len2 < eps * eps) return;
+    axes.push([-dy, dx]);
+  };
+  pushAxis(t1[0], t1[1]); pushAxis(t1[1], t1[2]); pushAxis(t1[2], t1[0]);
+  pushAxis(t2[0], t2[1]); pushAxis(t2[1], t2[2]); pushAxis(t2[2], t2[0]);
+
+  const project = (axis: Point2D, tri: [Point2D, Point2D, Point2D]) => {
+    const len = Math.hypot(axis[0], axis[1]);
+    const ax = axis[0] / len;
+    const ay = axis[1] / len;
+    let min = Infinity;
+    let max = -Infinity;
+    for (const p of tri) {
+      const d = p[0] * ax + p[1] * ay;
+      if (d < min) min = d;
+      if (d > max) max = d;
+    }
+    return { min, max };
+  };
+
+  for (const axis of axes) {
+    const p1 = project(axis, t1);
+    const p2 = project(axis, t2);
+    if (p1.max < p2.min - eps || p2.max < p1.min - eps) return false;
+  }
+
+  // SAT 通过，进一步区分仅顶点接触的情况
+  const dist2 = (p: Point2D, q: Point2D) => (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2;
+  const shared = t1.flatMap((p) => t2.filter((q) => dist2(p, q) <= eps * eps));
+
+  const areaSign = (tri: [Point2D, Point2D, Point2D]) => (polygonArea(tri) >= 0 ? 1 : -1) as 1 | -1;
+  const strictInside = (p: Point2D, tri: [Point2D, Point2D, Point2D]) => {
+    const s = areaSign(tri);
+    const [a, b, c] = tri;
+    const ab = sub(b, a);
+    const bc = sub(c, b);
+    const ca = sub(a, c);
+    const ap = sub(p, a);
+    const bp = sub(p, b);
+    const cp = sub(p, c);
+    const s1 = s * cross2(ab, ap);
+    const s2 = s * cross2(bc, bp);
+    const s3 = s * cross2(ca, cp);
+    return s1 > eps && s2 > eps && s3 > eps;
+  };
+  if (t1.some((p) => strictInside(p, t2))) return true;
+  if (t2.some((p) => strictInside(p, t1))) return true;
+
+  const edges1: Array<[Point2D, Point2D]> = [[t1[0], t1[1]], [t1[1], t1[2]], [t1[2], t1[0]]];
+  const edges2: Array<[Point2D, Point2D]> = [[t2[0], t2[1]], [t2[1], t2[2]], [t2[2], t2[0]]];
+  const cross = (p: Point2D, q: Point2D, r: Point2D) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  const onSeg = (p: Point2D, q: Point2D, r: Point2D) =>
+    q[0] >= Math.min(p[0], r[0]) - eps &&
+    q[0] <= Math.max(p[0], r[0]) + eps &&
+    q[1] >= Math.min(p[1], r[1]) - eps &&
+    q[1] <= Math.max(p[1], r[1]) + eps;
+  for (const [a1, b1] of edges1) {
+    for (const [a2, b2] of edges2) {
+      const o1 = cross(a1, b1, a2);
+      const o2 = cross(a1, b1, b2);
+      const o3 = cross(a2, b2, a1);
+      const o4 = cross(a2, b2, b1);
+      const proper = o1 * o2 < -eps && o3 * o4 < -eps;
+      if (proper) return true;
+      const colinearOverlap =
+        Math.abs(o1) < eps && Math.abs(o2) < eps && onSeg(a1, a2, b1) && onSeg(a1, b2, b1);
+      if (colinearOverlap) return true;
+      // 单端点接触：若仅共享一点且无其他交叉，则忽略
+    }
+  }
+
+  if (shared.length <= 1) return false;
+  return true;
 }
 
 /** 点 p 是否在三角形 tri 内，sign 表示三角形的方向（1:CCW, -1:CW） */
@@ -763,6 +906,7 @@ export function buildTriangleByEdgeAndAngles(
   return c;
 }
 
+// 计算三角形的内心（二维）
 export function incenter3D(p1: Point2D, p2: Point2D, p3: Point2D): Point2D {
   const la = Math.hypot(p2[0] - p3[0], p2[1] - p3[1]);
   const lb = Math.hypot(p1[0] - p3[0], p1[1] - p3[1]);

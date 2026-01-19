@@ -631,6 +631,7 @@ const unfold2d = createUnfold2dManager(
   () => geometryContext.geometryIndex.getEdgeKeyToId(),
   (edgeId, faceId) => geometryContext.geometryIndex.getThirdVertexKeyOnFace(edgeId, faceId),
   groupController.getGroupPlaceAngle,
+  log,
 );
 renderer2d.setEdgeQueryProviders({
   getEdges: unfold2d.getEdges2D,

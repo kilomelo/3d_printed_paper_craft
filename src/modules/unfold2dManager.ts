@@ -18,7 +18,18 @@ import type { Renderer2DContext } from "./renderer2d";
 import { createUnfoldEdgeMaterial, createUnfoldFaceMaterial } from "./materials";
 import type { Point2D, Point3D, Vec3, TriangleWithEdgeInfo as TriangleData } from "../types/geometryTypes";
 import { p3, v3 } from "../types/geometryTypes";
-import { isCounterClockwiseFromFront, pointKey3D, edgeKey3D, sub3, cross3, norm3, mul3, dot3, bisectorPlaneOfDihedral } from "./mathUtils";
+import {
+  isCounterClockwiseFromFront,
+  pointKey3D,
+  edgeKey3D,
+  sub3,
+  cross3,
+  norm3,
+  mul3,
+  dot3,
+  bisectorPlaneOfDihedral,
+  triIntersect2D,
+} from "./mathUtils";
 import { getSettings } from "./settings";
 
 // 记录“3D → 2D”变换矩阵，后续将按组树关系进行累乘展开。
@@ -43,6 +54,7 @@ export function createUnfold2dManager(
   getEdgeKeyToId: () => Map<string, number>,
   getThirdVertexKeyOnFace: (edgeId: number, faceId: number) => string | undefined,
   getGroupPlaceAngle: (id: number) => number | undefined,
+  logFn: (message: string | number, tone?: import("./log").LogTone) => void,
 ) {
   const transformStore: TransformStore = new Map();
   const transformCache: Map<string, Matrix4> = new Map();
@@ -206,7 +218,14 @@ export function createUnfold2dManager(
     transformCache.clear();
   };
 
-  type SnappedTri = { faceId: number; tri: [Vector3, Vector3, Vector3] };
+  type SnappedTri = {
+    faceId: number;
+    tri: [Vector3, Vector3, Vector3];
+    vertexKeys: string[];
+    edgeIds: number[];
+    bbox: { minX: number; maxX: number; minY: number; maxY: number };
+    intersected?: boolean;
+  };
 
   const buildSnappedTris = (groupId: number, force: boolean = false): SnappedTri[] => {
     if (cachedSnapped?.groupId === groupId && cachedSnapped && !force) {
@@ -217,8 +236,13 @@ export function createUnfold2dManager(
     clearTransforms();
     buildRootTransforms(groupId);
     buildTransformsForGroup(groupId);
+    const faceToEdges = getFaceToEdges();
+    const faceIndexMap = getFaceIndexMap();
+    const makeVertexKey = (pos: BufferAttribute | InterleavedBufferAttribute, idx: number) =>
+      pointKey3D([pos.getX(idx), pos.getY(idx), pos.getZ(idx)]);
     const snap = (v: number) => (Math.abs(v) < 1e-6 ? 0 : v);
     const tris: SnappedTri[] = [];
+    let hasIntersect = false;
     faces.forEach((fid) => {
       const tri = faceTo2D(groupId, fid);
       if (!tri) return;
@@ -226,9 +250,64 @@ export function createUnfold2dManager(
       a.x = snap(a.x); a.y = snap(a.y);
       b.x = snap(b.x); b.y = snap(b.y);
       c.x = snap(c.x); c.y = snap(c.y);
-      tris.push({ faceId: fid, tri: [a.clone(), b.clone(), c.clone()] });
+      const rawEdges = faceToEdges.get(fid);
+      const edgeIds: number[] = rawEdges ? Array.from(rawEdges) : [];
+      const vertexKeys: string[] = [];
+      const mapping = faceIndexMap.get(fid);
+      if (mapping) {
+        const geom = mapping.mesh.geometry;
+        const pos = geom.getAttribute("position");
+        if (pos) {
+          const [ia, ib, ic] = getFaceVertexIndices(geom, mapping.localFace);
+          vertexKeys.push(makeVertexKey(pos, ia), makeVertexKey(pos, ib), makeVertexKey(pos, ic));
+        }
+      }
+      const minX = Math.min(a.x, b.x, c.x);
+      const maxX = Math.max(a.x, b.x, c.x);
+      const minY = Math.min(a.y, b.y, c.y);
+      const maxY = Math.max(a.y, b.y, c.y);
+      const newTri: SnappedTri = {
+        faceId: fid,
+        tri: [a.clone(), b.clone(), c.clone()],
+        vertexKeys,
+        edgeIds,
+        bbox: { minX, maxX, minY, maxY },
+      };
+      const newTri2d: [[number, number], [number, number], [number, number]] = [
+        [a.x, a.y],
+        [b.x, b.y],
+        [c.x, c.y],
+      ];
+      tris.forEach((t) => {
+        // 跳过共享边的相邻三角形（共边不视为自交）；仅共享顶点仍需检测
+        if (t.edgeIds.some((eid) => edgeIds.includes(eid))) return;
+        // bbox 预检查
+        const bb = t.bbox;
+        if (
+          newTri.bbox.maxX < bb.minX - 1e-6 ||
+          newTri.bbox.minX > bb.maxX + 1e-6 ||
+          newTri.bbox.maxY < bb.minY - 1e-6 ||
+          newTri.bbox.minY > bb.maxY + 1e-6
+        ) {
+          return;
+        }
+        const tri2d: [[number, number], [number, number], [number, number]] = [
+          [t.tri[0].x, t.tri[0].y],
+          [t.tri[1].x, t.tri[1].y],
+          [t.tri[2].x, t.tri[2].y],
+        ];
+        if (triIntersect2D(tri2d, newTri2d)) {
+          t.intersected = true;
+          newTri.intersected = true;
+          hasIntersect = true;
+        }
+      });
+      tris.push(newTri);
     });
     if (!tris.length) return [];
+    if (hasIntersect) {
+      logFn("当前展开组存在自交三角形", "error");
+    }
     cachedSnapped = { groupId, tris };
     return cachedSnapped.tris;
   };
@@ -330,13 +409,14 @@ export function createUnfold2dManager(
     }
     const positions: number[] = [];
     const colors: number[] = [];
-    tris.forEach(({ faceId, tri }) => {
+    tris.forEach(({ faceId, tri, intersected }) => {
       const [a, b, c] = tri;
       const gid = getFaceGroupMap().get(faceId);
       const col = gid !== null && gid !== undefined ? getGroupColor(gid) : getGroupColor(groupId);
-      const cr = col?.r ?? 255;
-      const cg = col?.g ?? 255;
-      const cb = col?.b ?? 255;
+      const flagged = intersected === true;
+      const cr = flagged ? 1 : col?.r ?? 255;
+      const cg = flagged ? 0 : col?.g ?? 255;
+      const cb = flagged ? 1 : col?.b ?? 255;
       [a, b, c].forEach((v) => {
         positions.push(v.x, v.y, 0);
         colors.push(cr, cg, cb);

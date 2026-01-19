@@ -77,8 +77,8 @@ export function createGroupController(
     if (size <= 2 || canRemoveFaceData(groupId, faceId, getFaceAdjacency())) {
       if (assignFaceToGroup(faceId, null)) {
         rebuildGroupTreeData(groupId, getFaceAdjacency());
-        appEventBus.emit("groupFaceRemoved", { groupId: groupId, faceId });
         log(`已从组 ${getGroupIdsData().indexOf(groupId) + 1} 移除`, "success");
+        appEventBus.emit("groupFaceRemoved", { groupId: groupId, faceId });
           return true;
       }
       else{
