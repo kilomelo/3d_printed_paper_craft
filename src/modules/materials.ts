@@ -6,6 +6,9 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 export const FACE_DEFAULT_COLOR = new Color(0xffffff);
 const BACK_DEFAULT_COLOR = new Color(0xa77f7d);
 const EDGE_DEFAULT_COLOR = new Color(0x774400);
+const SEAMEDGE_DEFAULT_COLOR = new Color(0x222222);
+const HOVERLINE_DEFAULT_COLOR = new Color(0xffa500);
+const SEAM_CONNECT_LINE_COLOR = new Color(0x00ff88);
 
 export function createFrontMaterial(baseColor?: Color) {
   return new MeshStandardMaterial({
@@ -92,7 +95,7 @@ export function createLineMaterial(options: {
 // Hover 线材质（与 3D hover 使用一致）
 export function createHoverLineMaterial(resolution: { width: number; height: number }) {
   return createLineMaterial({
-    color: 0xffa500,
+    color: HOVERLINE_DEFAULT_COLOR.getHex(),
     linewidth: 4,
     resolution,
     polygonOffset: true,
@@ -104,9 +107,12 @@ export function createHoverLineMaterial(resolution: { width: number; height: num
 // 拼缝线材质
 export function createSeamLineMaterial(resolution: { width: number; height: number }) {
   return createLineMaterial({
-    color: 0x000000,
+    color: SEAMEDGE_DEFAULT_COLOR.getHex(),
     linewidth: 4,
     resolution,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -2,
   });
 }
 
@@ -131,7 +137,7 @@ export function createSpecialEdgeMaterial(options: {
 // 2D 视图显示拼接边拼接关系的线的材质
 export function createSeamConnectLineMaterial(resolution: { width: number; height: number }) {
   return new LineMaterial({
-    color: 0x00ff88,
+    color: SEAM_CONNECT_LINE_COLOR.getHex(),
     linewidth: 2,
     resolution: new Vector2(resolution.width, resolution.height),
   });

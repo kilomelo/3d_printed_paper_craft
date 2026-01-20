@@ -396,6 +396,44 @@ textarea {
   display: none;
 }
 
+.history-panel {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  height: 200px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 8px;
+  padding: 8px;
+  color: #e5e7eb;
+  font-size: 14px;
+  font-family: monospace;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 15;
+  pointer-events: none;
+}
+
+.history-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.history-entry {
+  color: #e5e7eb;
+  background: rgba(12, 18, 27, 0.6);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.history-panel.hidden {
+  display: none;
+}
+
 .settings-overlay {
   position: fixed;
   inset: 0;
@@ -437,7 +475,7 @@ textarea {
 
 .rename-modal {
   width: 500px;
-  height: 200px;
+  height: 170px;
   background: #0b1020;
   border: 1px solid var(--border);
   box-shadow: var(--shadow);

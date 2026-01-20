@@ -228,7 +228,7 @@ export function createRenderer2D(
     }
 
     if (hitEdge) {
-      if (lastHitEdge && lastHitEdge.groupId === hitEdge.groupId && lastHitEdge.edgeId === hitEdge.edgeId) return;
+      if (lastHitEdge && lastHitEdge.groupId === hitEdge.groupId && lastHitEdge.edgeId === hitEdge.edgeId && lastHitEdge.cache.faceId === hitEdge.cache.faceId) return;
       lastHitEdge = hitEdge;
       const [p1, p2] = hitEdge.cache.unfoldedPos;
       const p1Rotated = rotate2([p1.x, p1.y], getCurrentGroupPlaceAngle());

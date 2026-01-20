@@ -13,7 +13,7 @@ import { createGroupUI } from "./modules/groupUI";
 import { createRenderer2D } from "./modules/renderer2d";
 import { createUnfold2dManager } from "./modules/unfold2dManager";
 import { createGeometryContext } from "./modules/geometry";
-import { build3dppcData, download3dppc } from "./modules/ppc";
+import { build3dppcData, download3dppc, type PPCFile } from "./modules/ppc";
 import { createSettingsUI } from "./modules/settingsUI";
 import { getDefaultSettings, SETTINGS_LIMITS } from "./modules/settings";
 import { getModel } from "./modules/model";
@@ -26,6 +26,11 @@ import {
 } from "./modules/replicad/replicadWorkerClient";
 import { buildEarClip } from "./modules/replicad/replicadModeling";
 import { startNewProject, getCurrentProject } from "./modules/project";
+import { historyManager } from "./modules/history";
+import { createHistoryPanel } from "./modules/historyPanel";
+import type { Snapshot, ProjectState } from "./types/historyTypes.js";
+import { exportGroupsData, getGroupColorCursor } from "./modules/groups";
+import { applySettings, getSettings } from "./modules/settings";
 
 const VERSION = packageJson.version ?? "0.0.0.0";
 const previewMeshCache = new Map<number, { mesh: Mesh, earClipNumTotal: number }>();
@@ -36,6 +41,29 @@ const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) {
   throw new Error("未找到应用容器 #app");
 }
+let historyPanelUI: ReturnType<typeof createHistoryPanel> | null = null;
+const captureProjectState = (): ProjectState => ({
+  groups: exportGroupsData(),
+  colorCursor: getGroupColorCursor(),
+  previewGroupId: groupController.getPreviewGroupId(),
+  settings: getSettings(),
+});
+
+const applyProjectState = (snap: Snapshot) => {
+  const state = snap.data;
+  const importedGroups = state.groups.map((g) => ({
+    id: g.id,
+    faces: g.faces,
+    color: typeof g.color === "number" ? `#${g.color.toString(16).padStart(6, "0")}` : g.color,
+    name: g.name,
+    placeAngle: g.placeAngle,
+  })) as NonNullable<PPCFile["groups"]>;
+  groupController.applyImportedGroups(importedGroups, state.colorCursor);
+  const fallbackGroupId = importedGroups[0]?.id ?? groupController.getPreviewGroupId();
+  groupController.setPreviewGroupId(state.previewGroupId ?? fallbackGroupId);
+  applySettings(state.settings);
+  historyPanelUI?.render();
+};
 
 app.innerHTML = `
   <main class="shell">
@@ -67,24 +95,28 @@ app.innerHTML = `
         <button class="btn ghost" id="settings-open-btn">项目设置</button>
         <div id="menu-blocker" class="menu-blocker"></div>
       </nav>
-      <section class="editor-preview">
-        <div class="preview-panel">
-          <div class="preview-toolbar">
-            <button class="btn sm ghost" id="reset-view-btn">重置视角</button>
-            <button class="btn sm toggle active" id="light-toggle">光源：开</button>
-            <button class="btn sm toggle" id="edges-toggle">线框：关</button>
-            <button class="btn sm toggle" id="seams-toggle">拼接边：关</button>
-            <button class="btn sm toggle active" id="faces-toggle">面渲染：开</button>
-            <button class="btn sm toggle" id="bbox-toggle">包围盒：关</button>
-            <div class="toolbar-spacer"></div>
-            <span class="toolbar-stat" id="tri-counter">渲染三角形：0</span>
-          </div>
-          <div class="preview-area" id="viewer"></div>
+  <section class="editor-preview">
+    <div class="preview-panel">
+      <div class="preview-toolbar">
+        <button class="btn sm ghost" id="reset-view-btn">重置视角</button>
+        <button class="btn sm toggle active" id="light-toggle">光源：开</button>
+        <button class="btn sm toggle" id="edges-toggle">线框：关</button>
+        <button class="btn sm toggle" id="seams-toggle">拼接边：关</button>
+        <button class="btn sm toggle active" id="faces-toggle">面渲染：开</button>
+        <button class="btn sm toggle" id="bbox-toggle">包围盒：关</button>
+        <div class="toolbar-spacer"></div>
+        <span class="toolbar-stat" id="tri-counter">渲染三角形：0</span>
+      </div>
+      <div class="preview-area" id="viewer">
+        <div id="history-panel" class="history-panel hidden">
+          <div id="history-list" class="history-list"></div>
         </div>
-        <div class="preview-panel">
-          <div class="preview-toolbar">
-            <button class="btn sm toggle" id="group-edit-toggle">编辑展开组</button>
-            <div class="group-tabs" id="group-tabs"></div>
+      </div>
+    </div>
+    <div class="preview-panel">
+      <div class="preview-toolbar">
+        <button class="btn sm toggle" id="group-edit-toggle">编辑展开组</button>
+        <div class="group-tabs" id="group-tabs"></div>
             <div class="toolbar-spacer"></div>
             <button class="btn sm tab-add" id="group-add">+</button>
           </div>
@@ -541,6 +573,13 @@ appEventBus.on("workspaceStateChanged", ({ current, previous }) => {
   }
 });
 
+appEventBus.on("historyApplySnapshot", (snap) => {
+  applyProjectState(snap);
+  historyManager.markApplied(snap.action);
+  groupUI.render(buildGroupUIState());
+  historyPanelUI?.render();
+});
+
 // appEventBus.on("modelLoaded", () => {
 const projectLoaded = () => {
   if (versionBadgeGlobal) versionBadgeGlobal.style.display = "none";
@@ -550,6 +589,9 @@ const projectLoaded = () => {
   layoutWorkspace.classList.remove("preloaded");
   updateMenuState();
   groupUI.render(buildGroupUIState());
+  historyManager.reset();
+  historyManager.push({ data: captureProjectState(), action: { name: "载入模型", timestamp: Date.now() } });
+  historyPanelUI?.render();
 };
 
 const allowedExtensions = ["obj", "fbx", "stl", "3dppc"];
@@ -576,6 +618,7 @@ const handleFileSelected = async () => {
     const projectInfo = startNewProject(getProjectNameFromFile(file.name));
     appEventBus.emit("projectChanged", projectInfo);
     projectLoaded();
+    // historyPanelUI?.render();
   }
   fileInput.value = "";
 };
@@ -731,6 +774,7 @@ appEventBus.on("modelCleared", () => {
   changeWorkspaceState("normal");
   previewMeshCache.clear();
   layoutWorkspace.classList.add("preloaded");
+  historyManager.reset();
 });
 appEventBus.on("groupAdded", ({ groupId }) => groupUI.render(buildGroupUIState()));
 appEventBus.on("groupRemoved", ({ groupId, faces }) => {
@@ -739,7 +783,11 @@ appEventBus.on("groupRemoved", ({ groupId, faces }) => {
 });
 appEventBus.on("groupCurrentChanged", (groupId: number) => groupUI.render(buildGroupUIState()));
 appEventBus.on("groupColorChanged", ({ groupId, color }) => groupUI.render(buildGroupUIState()));
-appEventBus.on("groupNameChanged", ({ groupId, name }) => groupUI.render(buildGroupUIState()));
+appEventBus.on("groupNameChanged", ({ groupId, name }) => {
+  groupUI.render(buildGroupUIState());
+  historyManager.push({ data: captureProjectState(), action: { name: "展开组重命名", timestamp: Date.now() } });
+  historyPanelUI?.render();
+});
 appEventBus.on("groupFaceAdded", ({ groupId }) => {
   // previewMeshCache.delete(groupId);
   // 一个组的拓扑变化可能会影响到其他组拼接边的耳朵角度，所以需要全部清理
@@ -760,7 +808,14 @@ appEventBus.on("settingsChanged", (changed) => {previewMeshCache.clear();});
 groupUI.render(buildGroupUIState());
 updateGroupEditToggle();
 updateMenuState();
-
+historyPanelUI = createHistoryPanel(
+  {
+    panel: document.getElementById("history-panel"),
+    list: document.getElementById("history-list"),
+  },
+  () => historyManager.getSnapshots(),
+);
+historyPanelUI.render();
 onWorkerBusyChange((busy) => {
   appEventBus.emit("workerBusyChange", busy);
   if (busy && getWorkspaceState() === "editingGroup") {
