@@ -38,7 +38,7 @@ export function createFaceColorService(deps: FaceColorDeps) {
     });
   });
 
-  appEventBus.on("modelLoaded", () => {
+  appEventBus.on("projectChanged", () => {
     repaintAllFaces();
   });
 

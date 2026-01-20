@@ -375,7 +375,7 @@ export function createRenderer2D(
     renderer.domElement.remove();
   };
 
-  appEventBus.on("modelLoaded", resizeRenderer2D);
+  appEventBus.on("projectChanged", resizeRenderer2D);
 
   const initHoverFaceLines = () => {
     if (hoverFaceLines) return;

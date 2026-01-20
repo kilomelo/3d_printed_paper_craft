@@ -27,7 +27,7 @@ import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeome
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import { getModel, setModel, setLastFileName } from "./model";
+import { getModel, setModel } from "./model";
 import { load3dppc, type PPCFile } from "./ppc";
 import { applySettings, resetSettings, getSettings } from "./settings";
 import { createScene, fitCameraToObject } from "./scene";
@@ -766,7 +766,7 @@ export function createRenderer3D(
           resetSettings();
         }
       }
-      appEventBus.emit("loadMeshStarted", undefined);
+      // appEventBus.emit("loadMeshStarted", undefined);
       return { object, importedGroups, importedColorCursor };
     } finally {
       URL.revokeObjectURL(url);
@@ -776,7 +776,6 @@ export function createRenderer3D(
   async function applyObject(object: Object3D, name: string, importedGroups?: PPCFile["groups"], importedColorCursor?: number) {
     clearModel();
     setModel(buildRenderableRoot(object, "model-root"));
-    setLastFileName(name);
     const model = getModel();
     if (!model) throw new Error("模型初始化失败");
     geometryContext.rebuildFromModel(model);
@@ -795,7 +794,7 @@ export function createRenderer3D(
     modelGroup.add(model);
     fitCameraToObject(model, camera, controls);
     log(`已加载：${name} · 三角面 ${geometryIndex.getTriangleCount()}`, "success");
-    appEventBus.emit("modelLoaded", undefined);
+    // appEventBus.emit("modelLoaded", undefined);
     rebuildSpecialEdges(modelGroup);
     bboxBox = new Box3().setFromObject(modelGroup);
     bboxHelper = new Box3Helper(bboxBox, new Color(0x00ff88));
@@ -811,17 +810,19 @@ export function createRenderer3D(
     updateLabelPositions();
   }
 
-  async function applyLoadedModel(file: File, ext: string) {
+  async function applyLoadedModel(file: File, ext: string): Promise<boolean> {
     log("加载中...", "info");
     try {
       const { object, importedGroups, importedColorCursor } = await loadRawObject(file, ext);
       await applyObject(object, file.name, importedGroups, importedColorCursor);
+      return true;
     } catch (error) {
       console.error("加载模型失败", error);
       if ((error as Error)?.stack) {
         console.error((error as Error).stack);
       }
       log("加载失败，请检查文件格式是否正确。", "error");
+      return false;
     }
   }
 

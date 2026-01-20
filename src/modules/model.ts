@@ -19,12 +19,10 @@ export type GeometryPrep = {
 
 type ModelState = {
   current: Group | null;
-  lastFileName: string;
 };
 
 const state: ModelState = {
   current: null,
-  lastFileName: "model",
 };
 
 export function setModel(root: Group | null) {
@@ -33,14 +31,6 @@ export function setModel(root: Group | null) {
 
 export function getModel(): Group | null {
   return state.current;
-}
-
-export function setLastFileName(name: string) {
-  state.lastFileName = name;
-}
-
-export function getLastFileName(): string {
-  return state.lastFileName;
 }
 
 // ---- 几何预处理与索引 ----

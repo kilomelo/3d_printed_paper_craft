@@ -32,7 +32,7 @@ export function createSeamManager(
     });
   };
 
-  appEventBus.on("modelLoaded", rebuildFull);
+  appEventBus.on("projectChanged", rebuildFull);
   appEventBus.on("groupFaceAdded", ({groupId, faceId}) => rebuildFull());
   appEventBus.on("groupFaceRemoved", ({groupId, faceId}) => rebuildFull());
   appEventBus.on("groupRemoved", ({groupId, faces}) => rebuildFull());

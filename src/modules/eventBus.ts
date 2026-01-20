@@ -30,9 +30,10 @@ export function createEventBus<Events extends Record<string, unknown>>(): EventB
 }
 
 export type AppEvents = {
-  loadMeshStarted: void;
+  // loadMeshStarted: void;
   workspaceStateChanged: {previous: WorkspaceState, current: WorkspaceState};
-  modelLoaded: void;
+  projectChanged: import("./project.js").ProjectInfo;
+  // modelLoaded: void;
   modelCleared: void;
   groupRemoved: { groupId: number; groupName: string; faces: Set<number> };
   groupAdded: { groupId: number; groupName: string };

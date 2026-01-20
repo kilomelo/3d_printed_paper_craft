@@ -80,7 +80,7 @@ export function createUnfold2dManager(
   const transformKey = (a: number, b: number) => `${a}->${b}`;
   let lastBounds: { minX: number; maxX: number; minY: number; maxY: number } | null = null;
 
-  let modelLoaded = false;
+  // let modelLoaded = false;
 
   const clearScene = () => {
     renderer2d.root.children.forEach((child) => {
@@ -798,19 +798,19 @@ export function createUnfold2dManager(
   };
 
   appEventBus.on("modelCleared", () => {
-    modelLoaded = false;
+    // modelLoaded = false;
     clearScene();
     clearTransforms();
     cachedSnapped = null;
   });
 
   appEventBus.on("groupFaceAdded", ({ groupId, faceId }: { groupId: number; faceId: number }) => {
-    if (!modelLoaded) return;
+    // if (!modelLoaded) return;
     cachedSnapped = null;
     rebuildGroup2D(groupId, true);
   });
   appEventBus.on("groupFaceRemoved", ({ groupId, faceId }: { groupId: number; faceId: number }) => {
-    if (!modelLoaded) return;
+    // if (!modelLoaded) return;
     const current = getPreviewGroupId();
     if (groupId !== current) return;
     rebuildGroup2D(groupId, true);
@@ -840,14 +840,14 @@ export function createUnfold2dManager(
   };
 
   appEventBus.on("groupColorChanged", ({ groupId }) => {
-    if (!modelLoaded) return;
+    // if (!modelLoaded) return;
     const ok = repaintGroupColor(groupId);
     if (!ok) {
       rebuildGroup2D(groupId, true);
     }
   });
-  appEventBus.on("modelLoaded", () => {
-    modelLoaded = true;
+  appEventBus.on("projectChanged", () => {
+    // modelLoaded = true;
     const groups = getGroupIds();
     if (groups.length === 0) return;
     const gid = getPreviewGroupId();

@@ -25,7 +25,7 @@ import {
   isWorkerBusy,
 } from "./modules/replicad/replicadWorkerClient";
 import { buildEarClip } from "./modules/replicad/replicadModeling";
-import { getLastFileName } from "./modules/model";
+import { startNewProject, getCurrentProject } from "./modules/project";
 
 const VERSION = packageJson.version ?? "0.0.0.0";
 const previewMeshCache = new Map<number, { mesh: Mesh, earClipNumTotal: number }>();
@@ -540,11 +540,29 @@ appEventBus.on("workspaceStateChanged", ({ current, previous }) => {
     bboxToggle.textContent = `包围盒：${visible ? "开" : "关"}`;
   }
 });
+
+// appEventBus.on("modelLoaded", () => {
+const projectLoaded = () => {
+  if (versionBadgeGlobal) versionBadgeGlobal.style.display = "none";
+  logPanelEl?.classList.remove("hidden");
+  layoutEmpty.classList.toggle("active", false);
+  layoutWorkspace.classList.toggle("active", true);
+  layoutWorkspace.classList.remove("preloaded");
+  updateMenuState();
+  groupUI.render(buildGroupUIState());
+};
+
 const allowedExtensions = ["obj", "fbx", "stl", "3dppc"];
 function getExtension(name: string) {
   const parts = name.split(".");
   return parts.length > 1 ? parts.pop()!.toLowerCase() : "";
 }
+const getProjectNameFromFile = (name: string) => {
+  const trimmed = name.trim();
+  if (!trimmed) return "未命名工程";
+  const lastDot = trimmed.lastIndexOf(".");
+  return lastDot > 0 ? trimmed.slice(0, lastDot) : trimmed;
+};
 const handleFileSelected = async () => {
   const file = fileInput.files?.[0];
   if (!file) return;
@@ -553,7 +571,12 @@ const handleFileSelected = async () => {
     log("不支持的格式，请选择 OBJ / FBX / STL。", "error");
     return;
   }
-  await renderer3d.applyLoadedModel(file, ext);
+  const loaded = await renderer3d.applyLoadedModel(file, ext);
+  if (loaded) {
+    const projectInfo = startNewProject(getProjectNameFromFile(file.name));
+    appEventBus.emit("projectChanged", projectInfo);
+    projectLoaded();
+  }
   fileInput.value = "";
 };
 
@@ -700,15 +723,6 @@ const updateGroupEditToggle = () => {
   groupEditToggle.textContent = ws !== "editingGroup" ? "编辑展开组" : "结束编辑";
 };
 
-appEventBus.on("modelLoaded", () => {
-  if (versionBadgeGlobal) versionBadgeGlobal.style.display = "none";
-  logPanelEl?.classList.remove("hidden");
-  layoutEmpty.classList.toggle("active", false);
-  layoutWorkspace.classList.toggle("active", true);
-  layoutWorkspace.classList.remove("preloaded");
-  updateMenuState();
-  groupUI.render(buildGroupUIState());
-});
 appEventBus.on("modelCleared", () => {
   if (versionBadgeGlobal) versionBadgeGlobal.style.display = "block";
   logPanelEl?.classList.add("hidden");
@@ -801,6 +815,7 @@ exportGroupStepBtn.addEventListener("click", async () => {
       return;
     }
     const groupName = groupController.getGroupName(targetGroupId) ?? `group-${targetGroupId}`;
+    const projectName = getCurrentProject().name || "未命名工程";
     const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
     if (!trisWithAngles.length) {
       log("当前展开组没有三角面，无法导出。", "error");
@@ -815,13 +830,13 @@ exportGroupStepBtn.addEventListener("click", async () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `group-${groupName}-${earClipNumTotal}Clips.step`;
+    a.download = `${projectName}-${groupName}-${earClipNumTotal}Clips.step`;
     a.style.display = "none";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    log(`展开组 STEP 已导出：下载目录/group-${groupName}-${earClipNumTotal}Clips.step`, "success");
+    log(`展开组 STEP 已导出：下载目录/${projectName}-${groupName}-${earClipNumTotal}Clips.step`, "success");
   } catch (error) {
     console.error("展开组 STEP 导出失败", error);
     log("展开组 STEP 导出失败，请查看控制台日志。", "error");
@@ -832,6 +847,7 @@ exportGroupStepBtn.addEventListener("click", async () => {
 exportGroupStlBtn.addEventListener("click", async () => {
   exportGroupStlBtn.disabled = true;
   const downloadMesh = (groupName: string, mesh: Mesh, earClipNumTotal: number) => {
+      const projectName = getCurrentProject().name || "未命名工程";
       const exporter = new STLExporter();
       const stlResult = exporter.parse(mesh, { binary: true });
       const stlArray =
@@ -844,13 +860,13 @@ exportGroupStlBtn.addEventListener("click", async () => {
       const url = URL.createObjectURL(new Blob([stlCopy.buffer], { type: "model/stl" }));
       const a = document.createElement("a");
       a.href = url;
-      a.download = `group-${groupName}-${earClipNumTotal}Clips.stl`;
+      a.download = `${projectName}-${groupName}-${earClipNumTotal}Clips.stl`;
       a.style.display = "none";
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      log(`展开组 STL 已导出：下载目录/group-${groupName}-${earClipNumTotal}Clips.stl`, "success");
+      log(`展开组 STL 已导出：下载目录/${projectName}-${groupName}-${earClipNumTotal}Clips.stl`, "success");
     };
   try {
     const targetGroupId = groupController.getPreviewGroupId();
@@ -937,7 +953,7 @@ exportEarClipBtn?.addEventListener("click", async () => {
     const solid = await buildEarClip();
     const blob = solid.blobSTL({ binary: true });
     const buffer = await blob.arrayBuffer();
-    const baseName = getLastFileName().replace(/\.[^/.]+$/, "");
+    const baseName = getCurrentProject().name || "未命名工程";
     const fileName = `${baseName}_earClip.stl`;
     const url = URL.createObjectURL(new Blob([buffer], { type: "model/stl" }));
     const a = document.createElement("a");
