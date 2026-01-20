@@ -656,7 +656,7 @@ export function createRenderer3D(
     if (!bboxBox || bboxLabels.length !== 3) return;
     const { scale } = getSettings();
     const size = bboxBox.getSize(new Vector3()).multiplyScalar(scale);
-    const texts = [`${Math.round(size.x)}`, `${Math.round(size.y)}`, `${Math.round(size.z)}`];
+    const texts = [size.x.toFixed(1), size.y.toFixed(1), size.z.toFixed(1)];
     bboxLabels.forEach((s, i) => {
       const mat = s.material as SpriteMaterial;
       const canvas = drawLabelTexture(texts[i], (mat.map as CanvasTexture).image as HTMLCanvasElement);

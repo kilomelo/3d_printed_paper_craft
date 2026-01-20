@@ -59,6 +59,7 @@ export function createUnfold2dManager(
   const transformStore: TransformStore = new Map();
   const transformCache: Map<string, Matrix4> = new Map();
   let cachedSnapped: { groupId: number; tris: SnappedTri[] } | null = null;
+  const groupIntersected: Map<number, boolean> = new Map();
   const groupEdgesCache: Map<
     number,
     { edges: Map<number, EdgeCache[]>; medianEdgeLength: number }
@@ -93,6 +94,7 @@ export function createUnfold2dManager(
     renderer2d.root.rotation.set(0, 0, 0);
     renderer2d.root.updateMatrixWorld(true);
     groupEdgesCache.clear();
+    groupIntersected.clear();
   };
 
   const computeFaceNormal = (faceId: number, out: Vector3) => {
@@ -305,6 +307,7 @@ export function createUnfold2dManager(
       tris.push(newTri);
     });
     if (!tris.length) return [];
+    groupIntersected.set(groupId, hasIntersect);
     if (hasIntersect) {
       logFn("当前展开组存在自交三角形", "error");
     }
@@ -882,6 +885,10 @@ export function createUnfold2dManager(
     getGroupTrianglesData,
     getEdges2D: () => groupEdgesCache,
     getLastBounds,
+    hasGroupIntersection: (groupId: number) => {
+      buildSnappedTris(groupId);
+      return groupIntersected.get(groupId) ?? false;
+    },
   };
 }
 

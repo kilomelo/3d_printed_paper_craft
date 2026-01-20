@@ -796,6 +796,10 @@ exportGroupStepBtn.addEventListener("click", async () => {
   exportGroupStepBtn.disabled = true;
   try {
     const targetGroupId = groupController.getPreviewGroupId();
+    if (unfold2d.hasGroupIntersection(targetGroupId)) {
+      log("当前展开组存在自交，无法生成模型", "error");
+      return;
+    }
     const groupName = groupController.getGroupName(targetGroupId) ?? `group-${targetGroupId}`;
     const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
     if (!trisWithAngles.length) {
@@ -850,6 +854,10 @@ exportGroupStlBtn.addEventListener("click", async () => {
     };
   try {
     const targetGroupId = groupController.getPreviewGroupId();
+    if (unfold2d.hasGroupIntersection(targetGroupId)) {
+      log("当前展开组存在自交，无法生成模型", "error");
+      return;
+    }
     const groupName = groupController.getGroupName(targetGroupId) ?? `group-${targetGroupId}`;
     const cached = getCachedPreviewMesh(targetGroupId);
     if (!cached) {
@@ -888,6 +896,10 @@ previewGroupModelBtn.addEventListener("click", async () => {
   previewGroupModelBtn.disabled = true;
   try {
     const targetGroupId = groupController.getPreviewGroupId();
+    if (unfold2d.hasGroupIntersection(targetGroupId)) {
+      log("当前展开组存在自交，无法生成模型", "error");
+      return;
+    }
     const cached = getCachedPreviewMesh(targetGroupId);
     if (cached) {
       renderer3d.loadPreviewModel(cached.mesh, cached.angle);

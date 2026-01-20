@@ -1,11 +1,11 @@
 // 拼缝管理器：管理模型中的拼缝线的创建、更新和显示
-import { Vector3, Vector2, Object3D, Group } from "three";
+import { Vector3, Object3D, Group } from "three";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
-import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { type EdgeRecord } from "./model";
 import { appEventBus } from "./eventBus";
 import { sharedEdgeIsSeam  } from "./groups";
+import { createSeamLineMaterial } from "./materials";
 
 export function createSeamManager(
   root: Group,
@@ -90,11 +90,7 @@ export function createSeamManager(
     if (existing) return existing;
     const geom = new LineSegmentsGeometry();
     const { width, height } = viewportSizeProvider()
-    const mat = new LineMaterial({
-      color: 0x000000,
-      linewidth: 5,
-      resolution: new Vector2(width, height),
-    });
+    const mat = createSeamLineMaterial({ width, height });
     const line = new LineSegments2(geom, mat);
     line.userData.functional = "seam";
     line.renderOrder = 2;

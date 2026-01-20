@@ -62,15 +62,69 @@ export function createPreviewMaterial() {
   });
 }
 
+// 通用线材质工厂（用于 hover/拼缝/特殊边）
+export function createLineMaterial(options: {
+  color: number;
+  linewidth: number;
+  resolution: { width: number; height: number };
+  polygonOffset?: boolean;
+  polygonOffsetFactor?: number;
+  polygonOffsetUnits?: number;
+}) {
+  const {
+    color,
+    linewidth,
+    resolution,
+    polygonOffset = false,
+    polygonOffsetFactor = 0,
+    polygonOffsetUnits = 0,
+  } = options;
+  return new LineMaterial({
+    color,
+    linewidth,
+    resolution: new Vector2(resolution.width, resolution.height),
+    polygonOffset,
+    polygonOffsetFactor,
+    polygonOffsetUnits,
+  });
+}
+
 // Hover 线材质（与 3D hover 使用一致）
 export function createHoverLineMaterial(resolution: { width: number; height: number }) {
-  return new LineMaterial({
+  return createLineMaterial({
     color: 0xffa500,
-    linewidth: 5,
-    resolution: new Vector2(resolution.width, resolution.height),
+    linewidth: 4,
+    resolution,
     polygonOffset: true,
     polygonOffsetFactor: -2,
     polygonOffsetUnits: -3,
+  });
+}
+
+// 拼缝线材质
+export function createSeamLineMaterial(resolution: { width: number; height: number }) {
+  return createLineMaterial({
+    color: 0x000000,
+    linewidth: 4,
+    resolution,
+  });
+}
+
+// 特殊边材质
+export function createSpecialEdgeMaterial(options: {
+  color: number;
+  linewidth: number;
+  resolution: { width: number; height: number };
+  offsetUnits: number;
+}) {
+  const { color, linewidth, resolution, offsetUnits } = options;
+  return createLineMaterial({
+    color,
+    linewidth,
+    resolution,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: offsetUnits,
   });
 }
 

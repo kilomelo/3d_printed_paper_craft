@@ -1,10 +1,10 @@
 // 交互辅助：创建 raycaster/hover 线、更新分辨率等低层交互工具函数。
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
-import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Vector2, Vector3, Mesh, Raycaster } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { v3 } from "../types/geometryTypes";
+import { createHoverLineMaterial } from "./materials";
 
 export type HoverState = {
   hoverLines: LineSegments2[];
@@ -60,14 +60,7 @@ export function initInteractionController(opts: InteractionOptions) {
     for (let i = 0; i < 3; i++) {
       const geom = new LineSegmentsGeometry();
       geom.setPositions(new Float32Array(6));
-      const mat = new LineMaterial({
-        color: 0xffa500,
-        linewidth: 5,
-        resolution: new Vector2(opts.view.width, opts.view.height),
-        polygonOffset: true,
-        polygonOffsetFactor: -2,
-        polygonOffsetUnits: -3,
-      });
+      const mat = createHoverLineMaterial({ width: opts.view.width, height: opts.view.height });
       const line = new LineSegments2(geom, mat);
       line.computeLineDistances();
       line.visible = false;
@@ -106,7 +99,7 @@ export function initInteractionController(opts: InteractionOptions) {
     hoverState.hoverLines.forEach((line) => {
       line.removeFromParent();
       (line.geometry as LineSegmentsGeometry).dispose();
-      (line.material as LineMaterial).dispose();
+      (line.material as any)?.dispose?.();
     });
     hoverState.hoverLines.length = 0;
   }

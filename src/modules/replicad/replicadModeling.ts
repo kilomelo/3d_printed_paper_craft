@@ -11,7 +11,6 @@ import {
   buildTriangleByEdgeAndAngles
 } from "../mathUtils";
 import {
-  makeVerticalPlaneThroughAB,
   makeVerticalPlaneNormalAB,
   sketchFromContourPoints,
 } from "./replicadUtils";
