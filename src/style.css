@@ -400,10 +400,11 @@ textarea {
   position: absolute;
   top: 4px;
   left: 2px;
-  height: 180px;
+  /* min-height: 200px;; */
+  height: 288px;
   background: transparent;
-  -webkit-mask-image: linear-gradient(to bottom, rgba(255, 255, 255, 1), rgba(255, 255, 255, 0.1));
-  mask-image: linear-gradient(to bottom, rgba(255, 255, 255, 1), rgba(255, 255, 255, 0.1));
+  -webkit-mask-image: linear-gradient(to bottom, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 1) 15%, rgba(255, 255, 255, 0) 40%, rgba(255, 255, 255, 0) 100%);
+  mask-image: linear-gradient(to bottom, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 1) 15%, rgba(255, 255, 255, 0) 40%, rgba(255, 255, 255, 0) 100%);
   border: none;
   padding: 4px 4px;
   color: #e5e7eb;

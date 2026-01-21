@@ -6,7 +6,7 @@ import { BBoxRuler, createScene2D } from "./scene";
 import { appEventBus } from "./eventBus";
 import { getWorkspaceState } from "@/types/workspaceState";
 import { isSafari } from "./utils";
-import { distancePointToSegment2, pointInSegmentRectangle2, rotate2 } from "./mathUtils";
+import { distancePointToSegment2, pointInSegmentRectangle2, rotate2, radToDeg } from "./mathUtils";
 import type { EdgeCache } from "./unfold2dManager";
 import { createHoverLineMaterial, createSeamConnectLineMaterial } from "./materials";
 import type { Vec2 } from "@/types/geometryTypes";
@@ -50,6 +50,7 @@ export function createRenderer2D(
 
   let isPanning = false;
   let isRotating = false;
+  let rotateAngleDeltaTotal = 0;
   const panStart = { x: 0, y: 0 };
   let hoverFaceLines: [LineSegments2, LineSegments2, LineSegments2] | null = null;
   let seamConnectLines: [LineSegments2, LineSegments2, LineSegments2] | null = null;
@@ -147,6 +148,7 @@ export function createRenderer2D(
     } else if (event.button === 0 && getWorkspaceState() === "editingGroup") {
       if (!isSafari()) renderer.domElement.requestPointerLock?.();
       isRotating = true;
+      rotateAngleDeltaTotal = 0;
       cancelHoverLineState();
     }
   };
@@ -168,6 +170,7 @@ export function createRenderer2D(
     }
     if (isRotating) {
       const deltaAngle = event.movementX * 0.005;
+      rotateAngleDeltaTotal += deltaAngle;
       updateCurrentGroupPlaceAngle(deltaAngle);
       if (hoverLine && hoverLine.visible) {
         hoverLine.rotateOnAxis(new Vector3(0, 0, 1), deltaAngle);
@@ -262,6 +265,10 @@ export function createRenderer2D(
 
   const stopRotate = () => {
     isRotating = false;
+    if (rotateAngleDeltaTotal > 1e-5 || rotateAngleDeltaTotal < -1e-5) {
+      appEventBus.emit("groupPlaceAngleRotateDone", { deltaAngle: radToDeg(rotateAngleDeltaTotal) });
+    }
+    rotateAngleDeltaTotal = 0;
     if (document.pointerLockElement === renderer.domElement) {
       document.exitPointerLock();
     }
@@ -328,7 +335,7 @@ export function createRenderer2D(
   appEventBus.on("groupFaceRemoved", ({ groupId, faceId }) => {
     updateHoverFaceByFaceIdNextFrame = faceId;
   });
-  appEventBus.on("modelCleared", () => {
+  appEventBus.on("clearAppStates", () => {
     hoverFaceLines?.forEach((l) => (l.visible = false));
     seamConnectLines?.forEach((l) => (l.visible = false));
     if (hoverLine) hoverLine.visible = false;
@@ -373,6 +380,8 @@ export function createRenderer2D(
     seamConnectLines = null;
     renderer.dispose();
     renderer.domElement.remove();
+    isRotating = false;
+    rotateAngleDeltaTotal = 0;
   };
 
   appEventBus.on("projectChanged", resizeRenderer2D);

@@ -72,6 +72,12 @@ export function rotate2(v: Vec2, ang: number): Vec2 {
   return [v[0] * c - v[1] * s, v[0] * s + v[1] * c];
 }
 
+export function triangleArea(a: Point3D, b: Point3D, c: Point3D): number {
+  const ab = sub3(b, a);
+  const ac = sub3(c, a);
+  return norm3(cross3(ab, ac)) * 0.5;
+}
+
 // 多边形面积（有符号，CCW 为正）
 export function polygonArea(pts: Point2D[]): number {
   let area = 0;
@@ -224,7 +230,7 @@ export function triIntersect2D(
   // SAT 通过，进一步区分仅顶点接触的情况
   const dist2 = (p: Point2D, q: Point2D) => (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2;
   const shared = t1.flatMap((p) => t2.filter((q) => dist2(p, q) <= eps * eps));
-
+  
   const areaSign = (tri: [Point2D, Point2D, Point2D]) => (polygonArea(tri) >= 0 ? 1 : -1) as 1 | -1;
   const strictInside = (p: Point2D, tri: [Point2D, Point2D, Point2D]) => {
     const s = areaSign(tri);

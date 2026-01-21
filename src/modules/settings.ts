@@ -105,22 +105,22 @@ export function resetSettings() {
   current = { ...defaultSettings };
 }
 
-export function applySettings(next: Partial<Settings>) {
+export function applySettings(next: Partial<Settings>, emitEvent: boolean = true) {
   // 如果没有实际变化则直接返回
   const merged = { ...current, ...next };
-  const unchanged =
-    merged.scale === current.scale &&
-    merged.layerHeight === current.layerHeight &&
-    merged.connectionLayers === current.connectionLayers &&
-    merged.bodyLayers === current.bodyLayers &&
-    merged.earWidth === current.earWidth &&
-    merged.earThickness === current.earThickness &&
-    merged.earClipGap === current.earClipGap &&
-    merged.hollowStyle === current.hollowStyle &&
-    merged.wireframeThickness === current.wireframeThickness;
-  if (unchanged) return;
+  let changedItemCnt = 0;
+  (Object.keys(next) as (keyof Settings)[]).forEach((key) => {
+    if (current[key] !== merged[key]) {
+      changedItemCnt += 1;
+    }
+  });
+  if (changedItemCnt === 0) return;
   current = { ...current, ...next };
-  appEventBus.emit("settingsChanged", next);
+  if (emitEvent) appEventBus.emit("settingsChanged", changedItemCnt);
+}
+
+export function importSettings(imported: Partial<Settings>) {
+  applySettings(imported, false);
 }
 
 export function getDefaultSettings(): Settings {

@@ -34,7 +34,7 @@ export function createGroupController(
   let previewGroupId = 1;
   resetGroups();
 
-  appEventBus.on("modelCleared", () => {
+  appEventBus.on("clearAppStates", () => {
     previewGroupId = 1;
     resetGroups();
   });

@@ -1,6 +1,8 @@
 // 几何工具：计算面-边索引、顶点键、邻接关系等基础几何数据，供索引/业务层使用。
-import { Vector3, type Object3D, type Mesh } from "three";
+import { Vector3, type Object3D, type Mesh, BufferAttribute } from "three";
 import { EdgeRecord, prepareGeometryData, getFaceVertexIndices } from "./model";
+import { triangleArea } from "./mathUtils";
+import { Point3D } from "@/types/geometryTypes";
 
 // 角度索引：按需计算并缓存边的二面角（弧度），在模型重新加载时清空。
 export class AngleIndex {
@@ -149,15 +151,6 @@ export type PPCGeometry = {
   triangles: number[][];
 };
 
-function triangleArea(a: number[], b: number[], c: number[]): number {
-  const va = new Vector3().fromArray(a);
-  const vb = new Vector3().fromArray(b);
-  const vc = new Vector3().fromArray(c);
-  const ab = new Vector3().subVectors(vb, va);
-  const ac = new Vector3().subVectors(vc, va);
-  return ab.cross(ac).length() * 0.5;
-}
-
 export function collectGeometry(object: Object3D): PPCGeometry {
   const vertices: number[][] = [];
   const triangles: number[][] = [];
@@ -232,7 +225,17 @@ export function filterLargestComponent(
       const tIdx = queue.pop()!;
       comp.push(tIdx);
       const [a, b, c] = triangles[tIdx];
-      area += triangleArea(vertices[a], vertices[b], vertices[c]);
+      area += triangleArea(vertices[a] as Point3D, vertices[b] as Point3D, vertices[c] as Point3D);
+
+      [a, b, c].forEach((vIdx) => {
+        const key = posKeys[vIdx];
+        (keyToTris.get(key) ?? []).forEach((n) => {
+          if (!visited[n]) {
+            visited[n] = true;
+            queue.push(n);
+          }
+        });
+      });
 
       [a, b, c].forEach((vIdx) => {
         const key = posKeys[vIdx];
@@ -396,4 +399,19 @@ export function createGeometryContext(): GeometryContext {
   };
 
   return { geometryIndex, angleIndex, rebuildFromModel, reset };
+}
+
+export function snapGeometryPositions(geometry: THREE.BufferGeometry, decimals = 5) {
+  const factor = 10 ** decimals;
+  const pos = geometry.getAttribute("position") as BufferAttribute | undefined;
+  if (!pos) return;
+  for (let i = 0; i < pos.count; i += 1) {
+    const x = Math.round(pos.getX(i) * factor) / factor;
+    const y = Math.round(pos.getY(i) * factor) / factor;
+    const z = Math.round(pos.getZ(i) * factor) / factor;
+    pos.setXYZ(i, x, y, z);
+  }
+  pos.needsUpdate = true;
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
 }

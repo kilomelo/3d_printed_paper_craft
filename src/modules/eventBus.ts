@@ -31,27 +31,28 @@ export function createEventBus<Events extends Record<string, unknown>>(): EventB
 }
 
 export type AppEvents = {
-  // loadMeshStarted: void;
   workspaceStateChanged: {previous: WorkspaceState, current: WorkspaceState};
   projectChanged: import("./project.js").ProjectInfo;
-  // modelLoaded: void;
-  modelCleared: void;
+  clearAppStates: void;
   groupRemoved: { groupId: number; groupName: string; faces: Set<number> };
   groupAdded: { groupId: number; groupName: string };
   groupColorChanged: { groupId: number; color: THREE.Color };
   groupNameChanged: { groupId: number; name: string };
-  groupCurrentChanged: number;
+  groupCurrentChanged: number; // 新的当前组ID
   groupFaceAdded: { groupId: number; faceId: number };
   groupFaceRemoved: { groupId: number; faceId: number };
+  brushOperationDone: { facePaintedCnt: number };
+  groupPlaceAngleRotateDone: { deltaAngle: number };
   groupPlaceAngleChanged: { groupId: number; newAngle: number; oldAngle: number };
-  workerBusyChange: boolean;
-  settingsChanged: Partial<import("./settings.js").Settings>;
+  workerBusyChange: boolean; // 是否有正在运行的 worker 任务
+  settingsChanged: number; // 被修改的设置项数量
   edgeHover2D: { groupId: number; edgeId: number; p1: Point3D; p2: Point3D };
   edgeHover2DClear: void;
-  faceHover3D: number | null;
+  faceHover3D: number | null; // 被 hover 的面 ID
   faceHover3DClear: void;
-  historyApplySnapshot: Snapshot;
+  historyApplySnapshot: { current: Snapshot; direction: "undo" | "redo"; snapPassed: number[] };
   historyApplied: MetaAction;
+  historyErased: number[]; // 被抹掉的历史记录的uid
 };
 
 export const appEventBus = createEventBus<AppEvents>();

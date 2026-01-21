@@ -797,7 +797,7 @@ export function createUnfold2dManager(
     return result;
   };
 
-  appEventBus.on("modelCleared", () => {
+  appEventBus.on("clearAppStates", () => {
     // modelLoaded = false;
     clearScene();
     clearTransforms();
@@ -865,7 +865,7 @@ export function createUnfold2dManager(
     rebuildGroup2D(groupId);
   });
 
-  appEventBus.on("settingsChanged", () => {
+  appEventBus.on("settingsChanged", (changedItemCnt) => {
     if (!lastBounds) return;
     const { scale } = getSettings();
     renderer2d.bboxRuler.update(lastBounds.minX, lastBounds.maxX, lastBounds.minY, lastBounds.maxY, scale);
