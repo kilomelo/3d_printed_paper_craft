@@ -184,7 +184,7 @@ textarea {
   white-space: nowrap;
   gap: 8px;
   align-items: center;
-  padding: 10px 18px;
+  padding: 10px 10px;
   background: var(--panel-muted);
   border: 1px solid var(--border);
   border-top: none;
@@ -398,13 +398,14 @@ textarea {
 
 .history-panel {
   position: absolute;
-  top: 8px;
-  left: 8px;
-  right: 8px;
-  height: 200px;
-  background: rgba(0, 0, 0, 0.35);
-  border-radius: 8px;
-  padding: 8px;
+  top: 4px;
+  left: 2px;
+  height: 180px;
+  background: transparent;
+  -webkit-mask-image: linear-gradient(to bottom, rgba(255, 255, 255, 1), rgba(255, 255, 255, 0.1));
+  mask-image: linear-gradient(to bottom, rgba(255, 255, 255, 1), rgba(255, 255, 255, 0.1));
+  border: none;
+  padding: 4px 4px;
   color: #e5e7eb;
   font-size: 14px;
   font-family: monospace;
@@ -412,22 +413,45 @@ textarea {
   flex-direction: column;
   overflow: hidden;
   z-index: 15;
-  pointer-events: none;
+  pointer-events: none; /* 允许点击穿透到画布 */
+}
+.history-panel:hover {
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 
 .history-list {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  overflow-y: auto;
+  gap: 0;
+  overflow-y: hidden;
 }
 
 .history-entry {
-  color: #e5e7eb;
-  background: rgba(12, 18, 27, 0.6);
-  padding: 4px 8px;
-  border-radius: 4px;
+  color: #e5e7ebff;
+  display: inline-block;
+  width: max-content;
+  pointer-events: auto; /* 仅文字区域可点击 */
+  padding: 4px 6px;
+  border-left: 4px solid transparent;
+  border-left-color: rgba(56, 189, 248, 1);
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.16), rgba(56, 189, 248, 0));
+}
+.history-entry:hover {
+  border-left: 4px solid transparent;
+  border-left-color: rgba(56, 189, 248, 0.6);
+}
+.history-entry-past {
+  color: #e5e7ebaa;
+  border-left-color: rgba(56, 189, 248, 0.0);
+  background: none;
+}
+.history-entry-future {
+  text-decoration: line-through;
+  color: #e5e7ebaa;
+  border-left-color: rgba(56, 189, 248, 0.0);
+  background: none;
 }
 
 .history-panel.hidden {
@@ -509,16 +533,16 @@ textarea {
 
 .rename-body {
   justify-content: center;
+  align-items: center;
 }
 
 .rename-body input {
-  width: 100%;
-  padding: 10px 12px;
+  flex: 1;
+  padding: 6px 8px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
   color: var(--text);
-  font-size: 14px;
+  border-radius: 6px;
+  background: #0f1628;
 }
 
 .settings-footer {

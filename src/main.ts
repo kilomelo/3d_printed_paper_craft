@@ -62,7 +62,7 @@ const applyProjectState = (snap: Snapshot) => {
   const fallbackGroupId = importedGroups[0]?.id ?? groupController.getPreviewGroupId();
   groupController.setPreviewGroupId(state.previewGroupId ?? fallbackGroupId);
   applySettings(state.settings);
-  historyPanelUI?.render();
+  // historyPanelUI?.render();
 };
 
 app.innerHTML = `
@@ -571,12 +571,24 @@ appEventBus.on("workspaceStateChanged", ({ current, previous }) => {
     bboxToggle.classList.toggle("active", visible);
     bboxToggle.textContent = `包围盒：${visible ? "开" : "关"}`;
   }
+  if (historyPanelUI) {
+    const panel = document.getElementById("history-panel");
+    panel?.classList.toggle("hidden", isPreview);
+  }
 });
 
 appEventBus.on("historyApplySnapshot", (snap) => {
   applyProjectState(snap);
   historyManager.markApplied(snap.action);
+  log(`已回溯至 [${snap.action.description}]`, "info");
+  // groupUI.render(buildGroupUIState());
+  // historyPanelUI?.render();
+});
+
+appEventBus.on("historyApplied", (action) => {
   groupUI.render(buildGroupUIState());
+  updateGroupEditToggle();
+  updateMenuState();
   historyPanelUI?.render();
 });
 
@@ -590,7 +602,7 @@ const projectLoaded = () => {
   updateMenuState();
   groupUI.render(buildGroupUIState());
   historyManager.reset();
-  historyManager.push({ data: captureProjectState(), action: { name: "载入模型", timestamp: Date.now() } });
+  historyManager.push(captureProjectState(), { name: "载入模型", description: "载入了模型", timestamp: Date.now()});
   historyPanelUI?.render();
 };
 
@@ -776,16 +788,22 @@ appEventBus.on("modelCleared", () => {
   layoutWorkspace.classList.add("preloaded");
   historyManager.reset();
 });
-appEventBus.on("groupAdded", ({ groupId }) => groupUI.render(buildGroupUIState()));
-appEventBus.on("groupRemoved", ({ groupId, faces }) => {
+appEventBus.on("groupAdded", ({ groupId, groupName }) => {
+  groupUI.render(buildGroupUIState());
+  historyManager.push(captureProjectState(), { name: "新建展开组", description: `新建展开组 ${groupName}`, timestamp: Date.now() });
+  historyPanelUI?.render();
+});
+appEventBus.on("groupRemoved", ({ groupId, groupName, faces }) => {
   previewMeshCache.delete(groupId);
   groupUI.render(buildGroupUIState());
+  historyManager.push(captureProjectState(), { name: "删除展开组", description: `删除展开组 ${groupName}`, timestamp: Date.now() });
+  historyPanelUI?.render();
 });
 appEventBus.on("groupCurrentChanged", (groupId: number) => groupUI.render(buildGroupUIState()));
 appEventBus.on("groupColorChanged", ({ groupId, color }) => groupUI.render(buildGroupUIState()));
 appEventBus.on("groupNameChanged", ({ groupId, name }) => {
   groupUI.render(buildGroupUIState());
-  historyManager.push({ data: captureProjectState(), action: { name: "展开组重命名", timestamp: Date.now() } });
+  historyManager.push(captureProjectState(), { name: "展开组重命名", description: `展开组重命名为 ${name}`, timestamp: Date.now() });
   historyPanelUI?.render();
 });
 appEventBus.on("groupFaceAdded", ({ groupId }) => {
@@ -800,9 +818,11 @@ appEventBus.on("groupFaceRemoved", ({ groupId }) => {
   previewMeshCache.clear();
   groupUI.render(buildGroupUIState());
 });
-appEventBus.on("workspaceStateChanged", () => groupUI.render(buildGroupUIState()));
-appEventBus.on("workspaceStateChanged", () => updateGroupEditToggle());
-appEventBus.on("workspaceStateChanged", () => updateMenuState());
+appEventBus.on("workspaceStateChanged", () =>  {
+  groupUI.render(buildGroupUIState());
+  updateGroupEditToggle();
+  updateMenuState();
+});
 appEventBus.on("settingsChanged", (changed) => {previewMeshCache.clear();});
 
 groupUI.render(buildGroupUIState());
@@ -814,6 +834,10 @@ historyPanelUI = createHistoryPanel(
     list: document.getElementById("history-list"),
   },
   () => historyManager.getSnapshots(),
+  () => historyManager.getUndoSteps(),
+  (snapUid) => {
+    historyManager.applySnapshot(snapUid);
+  },
 );
 historyPanelUI.render();
 onWorkerBusyChange((busy) => {

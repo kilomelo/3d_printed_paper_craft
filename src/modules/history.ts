@@ -1,19 +1,24 @@
 // 撤销/重做管理：维护项目快照栈、元操作信息，并通过事件总线驱动状态回放。
 import { appEventBus } from "./eventBus";
 import type { MetaAction, Snapshot } from "../types/historyTypes.js";
+import type { ProjectState } from "../types/historyTypes.js";
 
 export class HistoryManager {
   private snapshots: Snapshot[] = [];
   private undoSteps = 0;
   private applying = false;
+  private uidCounter = 0;
+  private readonly MAX = 6;
 
   reset() {
     this.snapshots = [];
     this.undoSteps = 0;
     this.applying = false;
+    this.uidCounter = 0;
   }
 
-  push(snapshot: Snapshot) {
+  push(data: ProjectState, action: MetaAction) {
+    const snapshot: Snapshot = { data, action, uid: ++this.uidCounter };
     console.log("[HistoryManager] push snapshot:", snapshot);
     if (this.applying) return;
     if (this.undoSteps > 0) {
@@ -21,6 +26,9 @@ export class HistoryManager {
       this.undoSteps = 0;
     }
     this.snapshots.push(snapshot);
+    if (this.snapshots.length > this.MAX) {
+      this.snapshots.splice(0, this.snapshots.length - this.MAX);
+    }
   }
 
   canUndo() {
@@ -33,6 +41,20 @@ export class HistoryManager {
   undo() {
     if (!this.canUndo()) return;
     this.undoSteps += 1;
+    this.emitSnapshot();
+  }
+
+  applySnapshot(snapUid: number) {
+    if (this.applying) return;
+    const index = this.snapshots.findIndex(s => s.uid === snapUid);
+    if (index === -1) {
+      console.warn(`[HistoryManager] Snapshot with uid ${snapUid} not found.`);
+      return;
+    }
+    const targetUndoSteps = this.snapshots.length - 1 - index;
+    // 判断是不是当前状态
+    if (targetUndoSteps === this.undoSteps) return;
+    this.undoSteps = targetUndoSteps;
     this.emitSnapshot();
   }
 

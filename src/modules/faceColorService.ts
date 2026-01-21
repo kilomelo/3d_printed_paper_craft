@@ -42,6 +42,10 @@ export function createFaceColorService(deps: FaceColorDeps) {
     repaintAllFaces();
   });
 
+  appEventBus.on("historyApplied", () => {
+    repaintAllFaces();
+  });
+
   function setFaceColor(mesh: Mesh, faceIndex: number, color: Color) {
     const geometry = mesh.geometry;
     const colorsAttr = geometry.getAttribute("color") as Float32BufferAttribute;
@@ -62,7 +66,10 @@ export function createFaceColorService(deps: FaceColorDeps) {
   }
 
   function repaintAllFaces() {
-    deps.getFaceGroupMap().forEach((_, faceId) => updateFaceColorById(faceId));
+    deps.getFaceIndexMap().forEach((_, faceId) => {
+      const gid = deps.getFaceGroupMap().get(faceId) ?? null;
+      updateFaceColorById(faceId, gid);
+    });
   }
 
   return { setFaceColor, updateFaceColorById };

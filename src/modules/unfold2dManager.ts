@@ -853,10 +853,10 @@ export function createUnfold2dManager(
     const gid = getPreviewGroupId();
     rebuildGroup2D(gid);
   });
-  appEventBus.on("groupAdded", ({ groupId }) => {
+  appEventBus.on("groupAdded", () => {
     clearScene();
   });
-  appEventBus.on("groupRemoved", ({ groupId, faces }) => {
+  appEventBus.on("groupRemoved", () => {
     const gid = getPreviewGroupId();
     rebuildGroup2D(gid);
   });
@@ -879,6 +879,11 @@ export function createUnfold2dManager(
     const { minX, maxX, minY, maxY } = getMeshVertexBounds();
     updateCamera(minX, maxX, minY, maxY, true);
     updateBBoxRuler(minX, maxX, minY, maxY);
+  });
+
+  appEventBus.on("historyApplied", () => {
+    const gid = getPreviewGroupId();
+    rebuildGroup2D(gid, true);
   });
 
   return {

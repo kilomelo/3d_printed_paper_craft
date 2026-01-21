@@ -33,9 +33,10 @@ export function createSeamManager(
   };
 
   appEventBus.on("projectChanged", rebuildFull);
-  appEventBus.on("groupFaceAdded", ({groupId, faceId}) => rebuildFull());
-  appEventBus.on("groupFaceRemoved", ({groupId, faceId}) => rebuildFull());
-  appEventBus.on("groupRemoved", ({groupId, faces}) => rebuildFull());
+  appEventBus.on("groupFaceAdded", () => rebuildFull());
+  appEventBus.on("groupFaceRemoved", () => rebuildFull());
+  appEventBus.on("groupRemoved", () => rebuildFull());
+  appEventBus.on("historyApplied", () => rebuildFull());
 
   function edgeIsSeam(
     edgeId: number,

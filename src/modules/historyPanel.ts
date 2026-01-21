@@ -6,14 +6,16 @@ type HistoryPanelRefs = {
   list: HTMLElement | null;
 };
 
-export function createHistoryPanel(refs: HistoryPanelRefs, getSnapshots: () => Snapshot[]) {
+export function createHistoryPanel(
+  refs: HistoryPanelRefs,
+  getSnapshots: () => Snapshot[],
+  getUndoSteps?: () => number,
+  onEntryClick?: (snapUid: number) => void,
+) {
   const render = () => {
-    console.log("[HistoryPanel] render");
     const { panel, list } = refs;
-    console.log("[HistoryPanel] refs:", panel, list);
     if (!panel || !list) return;
     const snaps = getSnapshots();
-    console.log("[HistoryPanel] snapshots:", snaps.length);
     list.innerHTML = "";
     if (!snaps.length) {
       panel.classList.add("hidden");
@@ -21,10 +23,23 @@ export function createHistoryPanel(refs: HistoryPanelRefs, getSnapshots: () => S
     }
     panel.classList.remove("hidden");
     const items = [...snaps].reverse();
+    const undoSteps = getUndoSteps ? getUndoSteps() ?? 0 : 0;
+    const currentIdx = snaps.length - 1 - undoSteps;
     items.forEach((snap) => {
       const entry = document.createElement("div");
       entry.className = "history-entry";
-      entry.textContent = snap.action.name || "未命名操作";
+      entry.textContent = snap.action.description || snap.action.name || "未命名操作";
+      const originalIdx = snaps.findIndex((s) => s.uid === snap.uid);
+      if (originalIdx === currentIdx) {
+        entry.classList.add("history-entry-current");
+      } else if (originalIdx < currentIdx) {
+        entry.classList.add("history-entry-past");
+      } else if (originalIdx > currentIdx) {
+        entry.classList.add("history-entry-future");
+      }
+      entry.addEventListener("click", () => {
+        if (onEntryClick) onEntryClick(snap.uid);
+      });
       list.appendChild(entry);
     });
   };
