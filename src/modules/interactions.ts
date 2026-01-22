@@ -27,7 +27,6 @@ export type InteractionOptions = {
   pickFace: (event: PointerEvent) => number | null;
   onAddFace: (faceId: number) => boolean;
   onRemoveFace: (faceId: number) => boolean;
-  // hoverState: HoverState;
   emitFaceHover?: (faceId: number | null) => void;
 };
 
@@ -50,10 +49,10 @@ function getFaceVertexIndices(geometry: THREE.BufferGeometry, faceIndex: number)
 
 // 交互控制器：统一管理 pointer 事件、刷子状态、拾取与面添加/移除回调，解耦渲染器与 DOM 事件。
 export function initInteractionController(opts: InteractionOptions) {
-  let brushMode = false;
+  let brushMode = -1;
   // brush过程中是否有效地修改过组数据
   let brushPaintedCnt: number = 0;
-  let brushButton: number | null = null;
+  // let brushButton: number | null = null;
   let lastBrushedFace: number | null = null;
   let controlsEnabledBeforeBrush = true;
   let lastClientPos = { x: 0, y: 0 };
@@ -77,26 +76,31 @@ export function initInteractionController(opts: InteractionOptions) {
   const startBrush = (button: number, initialFace: number | null) => {
     if (!opts.canEdit()) return;
     if (initialFace === null) return;
-    brushMode = true;
+    brushMode = button;
     brushPaintedCnt = 0;
-    brushButton = button;
     lastBrushedFace = null;
     controlsEnabledBeforeBrush = opts.controls.enabled;
     opts.controls.enabled = false;
     if (button === 0) {
       if (opts.onAddFace(initialFace)) brushPaintedCnt++;
+      appEventBus.emit("userOperation", { side: "left", op: "group-add-face", highlightDuration: 0 });
     } else if (button === 2) {
       if (opts.onRemoveFace(initialFace)) brushPaintedCnt--;
+      appEventBus.emit("userOperation", { side: "left", op: "group-remove-face", highlightDuration: 0 });
     }
     lastBrushedFace = initialFace;
   };
 
   const endBrush = () => {
-    if (!brushMode) return;
+    if (brushMode === -1) return;
     appEventBus.emit("brushOperationDone", { facePaintedCnt: brushPaintedCnt });
-    brushMode = false;
+    if (brushMode === 0) {
+      appEventBus.emit("userOperationDone", { side: "left", op: "group-add-face" });
+    } else if (brushMode === 2) {
+      appEventBus.emit("userOperationDone", { side: "left", op: "group-remove-face" });
+    }
+    brushMode = -1;
     brushPaintedCnt = 0;
-    brushButton = null;
     lastBrushedFace = null;
     opts.controls.enabled = controlsEnabledBeforeBrush;
   };
@@ -184,7 +188,7 @@ export function initInteractionController(opts: InteractionOptions) {
     });
 
     if (!intersects.length) {
-      if (brushMode) lastBrushedFace = null;
+      if (brushMode !== -1) lastBrushedFace = null;
       hideHoverLines();
       return;
     }
@@ -196,10 +200,14 @@ export function initInteractionController(opts: InteractionOptions) {
       hideHoverLines();
       return;
     }
-    if (brushMode) {
+    if (brushMode!== -1) {
       if (faceId !== lastBrushedFace) {
-        if (brushButton === 0) { if (opts.onAddFace(faceId)) brushPaintedCnt++; }
-        else if (brushButton === 2) { if (opts.onRemoveFace(faceId)) brushPaintedCnt--; }
+        if (brushMode === 0) { 
+          if (opts.onAddFace(faceId)) brushPaintedCnt++; 
+        }
+        else if (brushMode === 2) {
+          if (opts.onRemoveFace(faceId)) brushPaintedCnt--; 
+        }
         lastBrushedFace = faceId;
       }
     }
@@ -241,11 +249,7 @@ export function initInteractionController(opts: InteractionOptions) {
     } catch (e) {
       // ignore release failures
     }
-    if (brushMode) endBrush();
-  };
-
-  const onWindowPointerUp = () => {
-    if (brushMode) endBrush();
+    if (brushMode !== -1) endBrush();
   };
 
   opts.renderer.domElement.addEventListener("pointermove", onPointerMove);
@@ -256,7 +260,6 @@ export function initInteractionController(opts: InteractionOptions) {
   opts.renderer.domElement.addEventListener("contextmenu", (event) => {
     event.preventDefault();
   });
-  window.addEventListener("pointerup", onWindowPointerUp);
 
   return {
     endBrush,

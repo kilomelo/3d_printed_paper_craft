@@ -117,6 +117,7 @@ export function createRenderer2D(
         clientX: event.clientX,
         clientY: event.clientY,
     }));
+    appEventBus.emit("userOperation", { side: "right", op: "view-zoom", highlightDuration: 200})
   };
   renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
 
@@ -145,11 +146,13 @@ export function createRenderer2D(
       panStart.x = event.clientX;
       panStart.y = event.clientY;
       cancelHoverLineState();
+      appEventBus.emit("userOperation", { side: "right", op: "view-pan", highlightDuration: 0 });
     } else if (event.button === 0 && getWorkspaceState() === "editingGroup") {
       if (!isSafari()) renderer.domElement.requestPointerLock?.();
       isRotating = true;
       rotateAngleDeltaTotal = 0;
       cancelHoverLineState();
+      appEventBus.emit("userOperation", { side: "right", op: "group-rotate", highlightDuration: 0 });
     }
   };
   let lastHitEdge: { groupId: number; edgeId: number; cache: EdgeCache } | null = null;
@@ -166,6 +169,7 @@ export function createRenderer2D(
         panStart.x = event.clientX;
         panStart.y = event.clientY;
       }
+      // appEventBus.emit("userOperation", { side: "right", op: "view-pan" });
       return;
     }
     if (isRotating) {
@@ -261,6 +265,7 @@ export function createRenderer2D(
     if (document.pointerLockElement === renderer.domElement) {
       document.exitPointerLock();
     }
+    appEventBus.emit("userOperationDone", { side: "right", op: "view-pan" });
   };
 
   const stopRotate = () => {
@@ -272,6 +277,7 @@ export function createRenderer2D(
     if (document.pointerLockElement === renderer.domElement) {
       document.exitPointerLock();
     }
+    appEventBus.emit("userOperationDone", { side: "right", op: "group-rotate" });
   }
 
   const onPointerUp = (event: PointerEvent) => {
@@ -381,6 +387,7 @@ export function createRenderer2D(
     renderer.dispose();
     renderer.domElement.remove();
     isRotating = false;
+    isPanning = false;
     rotateAngleDeltaTotal = 0;
   };
 

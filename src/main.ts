@@ -33,6 +33,7 @@ import { createHistoryPanel } from "./modules/historyPanel";
 import type { Snapshot, ProjectState } from "./types/historyTypes.js";
 import { exportGroupsData, getGroupColorCursor } from "./modules/groups";
 import { importSettings, getSettings, resetSettings } from "./modules/settings";
+import { createOperationHints } from "./modules/operationHints";
 
 const VERSION = packageJson.version ?? "0.0.0.0";
 
@@ -61,6 +62,7 @@ const setFileSaved = (value: boolean) => {
 };
 
 let historyPanelUI: ReturnType<typeof createHistoryPanel> | null = null;
+let operationHints: ReturnType<typeof createOperationHints> | null = null;
 const captureProjectState = (): ProjectState => ({
   groups: exportGroupsData(),
   colorCursor: getGroupColorCursor(),
@@ -472,6 +474,7 @@ const clearAppStates = () => {
   layoutWorkspace.classList.add("preloaded");
   historyManager.reset();
   appEventBus.emit("clearAppStates", undefined);
+  operationHints?.resetHighlights();
 }
 // 全局禁用右键菜单，避免画布交互被系统菜单打断
 document.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -572,11 +575,13 @@ const openRenameDialog = () => {
   renameInput.value = currentName;
   renameOverlay.classList.remove("hidden");
   renameInput.focus();
+  appEventBus.emit("userOperation", { side: "right", op: "rename-group", highlightDuration: 0 })
 };
 
 const closeRenameDialog = () => {
   if (!renameOverlay) return;
   renameOverlay.classList.add("hidden");
+  appEventBus.emit("userOperationDone", { side: "right", op: "rename-group" })
 };
 
 renameCancelBtn.addEventListener("click", closeRenameDialog);
@@ -1006,6 +1011,13 @@ historyPanelUI = createHistoryPanel(
   },
 );
 historyPanelUI.render();
+if (viewer && groupPreview) {
+  operationHints = createOperationHints({
+    leftMount: viewer,
+    rightMount: groupPreview,
+    getWorkspaceState,
+  });
+}
 onWorkerBusyChange((busy) => {
   appEventBus.emit("workerBusyChange", busy);
   if (menuBlocker) {

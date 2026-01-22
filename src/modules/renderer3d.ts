@@ -390,6 +390,11 @@ export function createRenderer3D(
     // console.debug("[pointer] down", { id: event.pointerId, button: event.button });
     if (!shouldLockPointer(event)) return;
     lockedButton = event.button;
+    if (lockedButton == 0) {
+      appEventBus.emit("userOperation", { side: "left", op: "view-rotate", highlightDuration: 0 });
+    } else if (lockedButton == 2) {
+      appEventBus.emit("userOperation", { side: "left", op: "view-pan", highlightDuration: 0 });
+    }
     if (document.pointerLockElement !== el && !isSafari()) {
       el.requestPointerLock();
     }
@@ -401,11 +406,15 @@ export function createRenderer3D(
   };
   const onWindowPointerUp = (event: PointerEvent) => {
     exitPointerLockIfNeeded();
+    if (lockedButton == 0) {
+      appEventBus.emit("userOperationDone", { side: "left", op: "view-rotate" });
+    } else if (lockedButton == 2) {
+      appEventBus.emit("userOperationDone", { side: "left", op: "view-pan" });
+    }
     lockedButton = null;
   };
   const onPointerLockChange = () => {
     pointerLocked = document.pointerLockElement === el;
-    // console.debug("[pointer] lock change", pointerLocked);
     if (pointerLocked) {
       interactionController.hideHoverLines();
     }
@@ -430,6 +439,7 @@ export function createRenderer3D(
   renderer.domElement.addEventListener("pointerup", onWindowPointerUp);
   renderer.domElement.addEventListener("pointercancel", onWindowPointerUp);
   renderer.domElement.addEventListener("pointermove", onWindowPointerMove);
+  renderer.domElement.addEventListener("wheel", (event) => appEventBus.emit("userOperation", { side: "left", op: "view-zoom", highlightDuration: 200 }), { passive: true });
   document.addEventListener("pointerlockchange", onPointerLockChange);
 
   function clearModel() {
@@ -455,7 +465,6 @@ export function createRenderer3D(
     seamManager?.dispose();
     specialEdgeManager?.dispose();
     interactionController.hideHoverLines();
-    // appEventBus.emit("clearAppStates", undefined);
   }
 
   function getFaceIdFromIntersection(mesh: Mesh, localFace: number | undefined): number | null {

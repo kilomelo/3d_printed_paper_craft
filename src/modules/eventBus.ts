@@ -53,6 +53,8 @@ export type AppEvents = {
   historyApplySnapshot: { current: Snapshot; direction: "undo" | "redo"; snapPassed: number[] };
   historyApplied: MetaAction;
   historyErased: number[]; // 被抹掉的历史记录的uid
+  userOperation: { side: "left" | "right" | "both"; op: string; highlightDuration?: number };
+  userOperationDone: { side: "left" | "right" | "both"; op: string };
 };
 
 export const appEventBus = createEventBus<AppEvents>();

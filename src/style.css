@@ -5,8 +5,9 @@
   --panel-muted: #0d1328;
   --border: rgba(255, 255, 255, 0.08);
   --text: #e5e7eb;
+  --textSecondary: #e5e7eb88;
   --muted: #94a3b8;
-  --accent: #38bdf8;
+  --textShadow: 1px 1px 4px rgba(0, 0, 0, 0.05);
   --shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
 }
 
@@ -360,6 +361,49 @@ textarea {
   z-index: 0;
 }
 
+#operation-hints-left,
+#operation-hints-right {
+  pointer-events: none;
+}
+
+.op-hints {
+  position: absolute;
+  right: 4px;
+  bottom: 10px;
+  padding: 4px 12px;
+  background: transparent;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.op-hints.hidden {
+  display: none;
+}
+
+.op-hints-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  justify-content: flex-end;
+  overflow-y: auto;
+}
+
+.op-hints-item {
+  color: var(--textSecondary);
+  font-size: 14px;
+  transition: background 0.1s ease, color 0.3s ease;
+  text-align: right;
+  text-shadow: var(--textShadow);
+}
+
+.op-hints-item.highlight {
+  color: var(--text);
+}
+
 #group-preview {
   background: #0c121b;
 }
@@ -395,6 +439,7 @@ textarea {
 
 .log-entry {
   color: #e5e7eb;
+  text-shadow: var(--textShadow);
 }
 
 .log-entry.error {
@@ -455,6 +500,7 @@ textarea {
   border-left: 4px solid transparent;
   border-left-color: rgba(56, 189, 248, 1);
   background: linear-gradient(90deg, rgba(56, 189, 248, 0.16), rgba(56, 189, 248, 0));
+  text-shadow: var(--textShadow);
 }
 .history-entry:hover {
   border-left: 4px solid transparent;
