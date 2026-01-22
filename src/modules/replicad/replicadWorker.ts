@@ -60,6 +60,7 @@ const serializeMesh = async (
 ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const { id, type, settings } = event.data;
   try {
+    // 这句话不能删除
     applySettings(settings);
     const report = (message: number) => ctx.postMessage({ id, ok: true, type: "progress", message } as WorkerResponse);
     const reportLog = (msg: string, tone: LogTone = "error") =>

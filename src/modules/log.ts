@@ -7,7 +7,7 @@ type LogEntry = {
 };
 
 export type LogController = {
-  log: (message: string | number, tone?: LogTone) => void;
+  log: (message: string | number, tone?: LogTone, shouldStack?: boolean) => void;
 };
 
 export function createLog(listEl: HTMLElement): LogController {
@@ -36,7 +36,7 @@ export function createLog(listEl: HTMLElement): LogController {
     listEl.scrollTop = listEl.scrollHeight;
   };
 
-  const log = (message: string | number, tone: LogTone = "info") => {
+  const log = (message: string | number, tone: LogTone = "info", shouldStack = true) => {
     const last = entries[entries.length - 1];
     if (tone === "progress") {
       const value =
@@ -70,7 +70,7 @@ export function createLog(listEl: HTMLElement): LogController {
       return;
     }
     const targetForStack = last?.tone === "progress" ? entries[entries.length - 2] : last;
-    if (targetForStack && targetForStack.message === message && targetForStack.tone === tone) {
+    if (shouldStack && targetForStack && targetForStack.message === message && targetForStack.tone === tone) {
       targetForStack.count += 1;
     } else {
       entries.push({ message, tone, count: 0 });

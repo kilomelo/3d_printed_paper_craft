@@ -6,6 +6,9 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 export const FACE_DEFAULT_COLOR = new Color(0xffffff);
 const BACK_DEFAULT_COLOR = new Color(0xa77f7d);
 const EDGE_DEFAULT_COLOR = new Color(0x774400);
+const SEAMEDGE_DEFAULT_COLOR = new Color(0x222222);
+const HOVERLINE_DEFAULT_COLOR = new Color(0xffa500);
+const SEAM_CONNECT_LINE_COLOR = new Color(0x00ff88);
 
 export function createFrontMaterial(baseColor?: Color) {
   return new MeshStandardMaterial({
@@ -62,22 +65,79 @@ export function createPreviewMaterial() {
   });
 }
 
+// 通用线材质工厂（用于 hover/拼缝/特殊边）
+export function createLineMaterial(options: {
+  color: number;
+  linewidth: number;
+  resolution: { width: number; height: number };
+  polygonOffset?: boolean;
+  polygonOffsetFactor?: number;
+  polygonOffsetUnits?: number;
+}) {
+  const {
+    color,
+    linewidth,
+    resolution,
+    polygonOffset = false,
+    polygonOffsetFactor = 0,
+    polygonOffsetUnits = 0,
+  } = options;
+  return new LineMaterial({
+    color,
+    linewidth,
+    resolution: new Vector2(resolution.width, resolution.height),
+    polygonOffset,
+    polygonOffsetFactor,
+    polygonOffsetUnits,
+  });
+}
+
 // Hover 线材质（与 3D hover 使用一致）
 export function createHoverLineMaterial(resolution: { width: number; height: number }) {
-  return new LineMaterial({
-    color: 0xffa500,
-    linewidth: 5,
-    resolution: new Vector2(resolution.width, resolution.height),
+  return createLineMaterial({
+    color: HOVERLINE_DEFAULT_COLOR.getHex(),
+    linewidth: 4,
+    resolution,
     polygonOffset: true,
     polygonOffsetFactor: -2,
     polygonOffsetUnits: -3,
   });
 }
 
+// 拼缝线材质
+export function createSeamLineMaterial(resolution: { width: number; height: number }) {
+  return createLineMaterial({
+    color: SEAMEDGE_DEFAULT_COLOR.getHex(),
+    linewidth: 4,
+    resolution,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -2,
+  });
+}
+
+// 特殊边材质
+export function createSpecialEdgeMaterial(options: {
+  color: number;
+  linewidth: number;
+  resolution: { width: number; height: number };
+  offsetUnits: number;
+}) {
+  const { color, linewidth, resolution, offsetUnits } = options;
+  return createLineMaterial({
+    color,
+    linewidth,
+    resolution,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: offsetUnits,
+  });
+}
+
 // 2D 视图显示拼接边拼接关系的线的材质
 export function createSeamConnectLineMaterial(resolution: { width: number; height: number }) {
   return new LineMaterial({
-    color: 0x00ff88,
+    color: SEAM_CONNECT_LINE_COLOR.getHex(),
     linewidth: 2,
     resolution: new Vector2(resolution.width, resolution.height),
   });

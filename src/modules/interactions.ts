@@ -1,10 +1,11 @@
 // 交互辅助：创建 raycaster/hover 线、更新分辨率等低层交互工具函数。
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
-import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Vector2, Vector3, Mesh, Raycaster } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { v3 } from "../types/geometryTypes";
+import { createHoverLineMaterial } from "./materials";
+import { appEventBus } from "./eventBus";
 
 export type HoverState = {
   hoverLines: LineSegments2[];
@@ -24,9 +25,8 @@ export type InteractionOptions = {
   canEdit: () => boolean;
   isPointerLocked: () => boolean;
   pickFace: (event: PointerEvent) => number | null;
-  onAddFace: (faceId: number) => void;
-  onRemoveFace: (faceId: number) => void;
-  // hoverState: HoverState;
+  onAddFace: (faceId: number) => boolean;
+  onRemoveFace: (faceId: number) => boolean;
   emitFaceHover?: (faceId: number | null) => void;
 };
 
@@ -49,8 +49,10 @@ function getFaceVertexIndices(geometry: THREE.BufferGeometry, faceIndex: number)
 
 // 交互控制器：统一管理 pointer 事件、刷子状态、拾取与面添加/移除回调，解耦渲染器与 DOM 事件。
 export function initInteractionController(opts: InteractionOptions) {
-  let brushMode = false;
-  let brushButton: number | null = null;
+  let brushMode = -1;
+  // brush过程中是否有效地修改过组数据
+  let brushPaintedCnt: number = 0;
+  // let brushButton: number | null = null;
   let lastBrushedFace: number | null = null;
   let controlsEnabledBeforeBrush = true;
   let lastClientPos = { x: 0, y: 0 };
@@ -60,14 +62,7 @@ export function initInteractionController(opts: InteractionOptions) {
     for (let i = 0; i < 3; i++) {
       const geom = new LineSegmentsGeometry();
       geom.setPositions(new Float32Array(6));
-      const mat = new LineMaterial({
-        color: 0xffa500,
-        linewidth: 5,
-        resolution: new Vector2(opts.view.width, opts.view.height),
-        polygonOffset: true,
-        polygonOffsetFactor: -2,
-        polygonOffsetUnits: -3,
-      });
+      const mat = createHoverLineMaterial({ width: opts.view.width, height: opts.view.height });
       const line = new LineSegments2(geom, mat);
       line.computeLineDistances();
       line.visible = false;
@@ -81,23 +76,31 @@ export function initInteractionController(opts: InteractionOptions) {
   const startBrush = (button: number, initialFace: number | null) => {
     if (!opts.canEdit()) return;
     if (initialFace === null) return;
-    brushMode = true;
-    brushButton = button;
+    brushMode = button;
+    brushPaintedCnt = 0;
     lastBrushedFace = null;
     controlsEnabledBeforeBrush = opts.controls.enabled;
     opts.controls.enabled = false;
     if (button === 0) {
-      opts.onAddFace(initialFace);
+      if (opts.onAddFace(initialFace)) brushPaintedCnt++;
+      appEventBus.emit("userOperation", { side: "left", op: "group-add-face", highlightDuration: 0 });
     } else if (button === 2) {
-      opts.onRemoveFace(initialFace);
+      if (opts.onRemoveFace(initialFace)) brushPaintedCnt--;
+      appEventBus.emit("userOperation", { side: "left", op: "group-remove-face", highlightDuration: 0 });
     }
     lastBrushedFace = initialFace;
   };
 
   const endBrush = () => {
-    if (!brushMode) return;
-    brushMode = false;
-    brushButton = null;
+    if (brushMode === -1) return;
+    appEventBus.emit("brushOperationDone", { facePaintedCnt: brushPaintedCnt });
+    if (brushMode === 0) {
+      appEventBus.emit("userOperationDone", { side: "left", op: "group-add-face" });
+    } else if (brushMode === 2) {
+      appEventBus.emit("userOperationDone", { side: "left", op: "group-remove-face" });
+    }
+    brushMode = -1;
+    brushPaintedCnt = 0;
     lastBrushedFace = null;
     opts.controls.enabled = controlsEnabledBeforeBrush;
   };
@@ -106,7 +109,7 @@ export function initInteractionController(opts: InteractionOptions) {
     hoverState.hoverLines.forEach((line) => {
       line.removeFromParent();
       (line.geometry as LineSegmentsGeometry).dispose();
-      (line.material as LineMaterial).dispose();
+      (line.material as any)?.dispose?.();
     });
     hoverState.hoverLines.length = 0;
   }
@@ -185,7 +188,7 @@ export function initInteractionController(opts: InteractionOptions) {
     });
 
     if (!intersects.length) {
-      if (brushMode) lastBrushedFace = null;
+      if (brushMode !== -1) lastBrushedFace = null;
       hideHoverLines();
       return;
     }
@@ -197,10 +200,14 @@ export function initInteractionController(opts: InteractionOptions) {
       hideHoverLines();
       return;
     }
-    if (brushMode) {
+    if (brushMode!== -1) {
       if (faceId !== lastBrushedFace) {
-        if (brushButton === 0) opts.onAddFace(faceId);
-        else if (brushButton === 2) opts.onRemoveFace(faceId);
+        if (brushMode === 0) { 
+          if (opts.onAddFace(faceId)) brushPaintedCnt++; 
+        }
+        else if (brushMode === 2) {
+          if (opts.onRemoveFace(faceId)) brushPaintedCnt--; 
+        }
         lastBrushedFace = faceId;
       }
     }
@@ -242,11 +249,7 @@ export function initInteractionController(opts: InteractionOptions) {
     } catch (e) {
       // ignore release failures
     }
-    if (brushMode) endBrush();
-  };
-
-  const onWindowPointerUp = () => {
-    if (brushMode) endBrush();
+    if (brushMode !== -1) endBrush();
   };
 
   opts.renderer.domElement.addEventListener("pointermove", onPointerMove);
@@ -257,7 +260,6 @@ export function initInteractionController(opts: InteractionOptions) {
   opts.renderer.domElement.addEventListener("contextmenu", (event) => {
     event.preventDefault();
   });
-  window.addEventListener("pointerup", onWindowPointerUp);
 
   return {
     endBrush,

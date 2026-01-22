@@ -24,12 +24,9 @@ import {
 } from "three";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
-import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
-import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
-import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import { getModel, setModel, setLastFileName } from "./model";
+import { getModel, setModel } from "./model";
 import { load3dppc, type PPCFile } from "./ppc";
-import { applySettings, resetSettings, getSettings } from "./settings";
+import { resetSettings, getSettings } from "./settings";
 import { createScene, fitCameraToObject } from "./scene";
 import { FACE_DEFAULT_COLOR, createFrontMaterial, createPreviewMaterial, createEdgeMaterial, createHoverLineMaterial } from "./materials";
 import {
@@ -48,28 +45,12 @@ import { isSafari } from "./utils";
 import { disposeGroupDeep } from "./threeUtils";
 
 export type GroupApi = {
-  handleRemoveFace: (faceId: number) => void;
-  handleAddFace: (faceId: number) => void;
+  handleRemoveFace: (faceId: number) => boolean;
+  handleAddFace: (faceId: number) => boolean;
   getGroupFaces: (groupId: number) => Set<number> | undefined;
   getGroupColor: (groupId: number) => Color | undefined;
   getFaceGroupMap: () => Map<number, number | null>;
-  applyImportedGroups: (groups: PPCFile["groups"], groupColorCursor?: number) => void;
 };
-
-export function snapGeometryPositions(geometry: THREE.BufferGeometry, decimals = 5) {
-  const factor = 10 ** decimals;
-  const pos = geometry.getAttribute("position") as BufferAttribute | undefined;
-  if (!pos) return;
-  for (let i = 0; i < pos.count; i += 1) {
-    const x = Math.round(pos.getX(i) * factor) / factor;
-    const y = Math.round(pos.getY(i) * factor) / factor;
-    const z = Math.round(pos.getZ(i) * factor) / factor;
-    pos.setXYZ(i, x, y, z);
-  }
-  pos.needsUpdate = true;
-  geometry.computeBoundingBox();
-  geometry.computeBoundingSphere();
-}
 
 export function createRenderer3D(
   log: (msg: string, tone?: "info" | "error" | "success") => void,
@@ -409,6 +390,11 @@ export function createRenderer3D(
     // console.debug("[pointer] down", { id: event.pointerId, button: event.button });
     if (!shouldLockPointer(event)) return;
     lockedButton = event.button;
+    if (lockedButton == 0) {
+      appEventBus.emit("userOperation", { side: "left", op: "view-rotate", highlightDuration: 0 });
+    } else if (lockedButton == 2) {
+      appEventBus.emit("userOperation", { side: "left", op: "view-pan", highlightDuration: 0 });
+    }
     if (document.pointerLockElement !== el && !isSafari()) {
       el.requestPointerLock();
     }
@@ -420,11 +406,15 @@ export function createRenderer3D(
   };
   const onWindowPointerUp = (event: PointerEvent) => {
     exitPointerLockIfNeeded();
+    if (lockedButton == 0) {
+      appEventBus.emit("userOperationDone", { side: "left", op: "view-rotate" });
+    } else if (lockedButton == 2) {
+      appEventBus.emit("userOperationDone", { side: "left", op: "view-pan" });
+    }
     lockedButton = null;
   };
   const onPointerLockChange = () => {
     pointerLocked = document.pointerLockElement === el;
-    // console.debug("[pointer] lock change", pointerLocked);
     if (pointerLocked) {
       interactionController.hideHoverLines();
     }
@@ -449,12 +439,9 @@ export function createRenderer3D(
   renderer.domElement.addEventListener("pointerup", onWindowPointerUp);
   renderer.domElement.addEventListener("pointercancel", onWindowPointerUp);
   renderer.domElement.addEventListener("pointermove", onWindowPointerMove);
+  renderer.domElement.addEventListener("wheel", (event) => appEventBus.emit("userOperation", { side: "left", op: "view-zoom", highlightDuration: 200 }), { passive: true });
   document.addEventListener("pointerlockchange", onPointerLockChange);
 
-  const objLoader = new OBJLoader();
-  const fbxLoader = new FBXLoader();
-  const stlLoader = new STLLoader();
-  
   function clearModel() {
     stopGroupBreath();
     interactionController?.endBrush();
@@ -478,7 +465,6 @@ export function createRenderer3D(
     seamManager?.dispose();
     specialEdgeManager?.dispose();
     interactionController.hideHoverLines();
-    appEventBus.emit("modelCleared", undefined);
   }
 
   function getFaceIdFromIntersection(mesh: Mesh, localFace: number | undefined): number | null {
@@ -547,6 +533,19 @@ export function createRenderer3D(
     if (!getModel()) return;
     seamManager.setVisibility(seamsVisible);
   }
+
+  const updateBBox = () => {
+    if (!bboxBox || bboxLabels.length !== 3) return;
+    const { scale } = getSettings();
+    const size = bboxBox.getSize(new Vector3()).multiplyScalar(scale);
+    const texts = [size.x.toFixed(1), size.y.toFixed(1), size.z.toFixed(1)];
+    bboxLabels.forEach((s, i) => {
+      const mat = s.material as SpriteMaterial;
+      const canvas = drawLabelTexture(texts[i], (mat.map as CanvasTexture).image as HTMLCanvasElement);
+      (mat.map as CanvasTexture).image = canvas;
+      (mat.map as CanvasTexture).needsUpdate = true;
+    });
+  };
 
   const resetView = () => {
     const model = getWorkspaceState() === "previewGroupModel" ? previewModelGroup : modelGroup;
@@ -652,18 +651,8 @@ export function createRenderer3D(
     }
   });
   appEventBus.on("groupCurrentChanged", (groupId: number) => syncGroupStateFromData(groupId));
-  appEventBus.on("settingsChanged", () => {
-    if (!bboxBox || bboxLabels.length !== 3) return;
-    const { scale } = getSettings();
-    const size = bboxBox.getSize(new Vector3()).multiplyScalar(scale);
-    const texts = [`${Math.round(size.x)}`, `${Math.round(size.y)}`, `${Math.round(size.z)}`];
-    bboxLabels.forEach((s, i) => {
-      const mat = s.material as SpriteMaterial;
-      const canvas = drawLabelTexture(texts[i], (mat.map as CanvasTexture).image as HTMLCanvasElement);
-      (mat.map as CanvasTexture).image = canvas;
-      (mat.map as CanvasTexture).needsUpdate = true;
-    });
-  });
+  appEventBus.on("settingsChanged", updateBBox);
+  appEventBus.on("historyApplied", updateBBox);
   appEventBus.on("edgeHover2D", ({ p1, p2 }) => {
     // if (hoverState.hoveredFaceId !== null) return;
     (hoverEdgeLine.geometry as LineSegmentsGeometry).setPositions(
@@ -721,62 +710,9 @@ export function createRenderer3D(
     breathRaf = requestAnimationFrame(loop);
   }
 
-  async function loadRawObject(file: File, ext: string) {
-    const url = URL.createObjectURL(file);
-    try {
-      let object: Object3D;
-      let importedGroups: PPCFile["groups"] | undefined;
-      let importedColorCursor: number | undefined;
-      if (ext === "obj") {
-        const loaded = await objLoader.loadAsync(url);
-        const mat = createFrontMaterial();
-        loaded.traverse((child) => {
-          if ((child as Mesh).isMesh) {
-            (child as Mesh).material = mat.clone();
-            snapGeometryPositions((child as Mesh).geometry);
-          }
-        });
-        object = loaded;
-        resetSettings();
-      } else if (ext === "fbx") {
-        const loaded = await fbxLoader.loadAsync(url);
-        const mat = createFrontMaterial();
-        loaded.traverse((child) => {
-          if ((child as Mesh).isMesh) {
-            (child as Mesh).material = mat.clone();
-            snapGeometryPositions((child as Mesh).geometry);
-          }
-        });
-        object = loaded;
-        resetSettings();
-      } else if (ext === "stl") {
-        const geometry = await stlLoader.loadAsync(url);
-        snapGeometryPositions(geometry);
-        const material = createFrontMaterial();
-        object = new Mesh(geometry, material);
-        resetSettings();
-      } else {
-        const loaded = await load3dppc(url, createFrontMaterial());
-        object = loaded.object;
-        importedGroups = loaded.groups;
-        importedColorCursor = loaded.colorCursor;
-        if (loaded.annotations && typeof loaded.annotations.settings === "object") {
-          applySettings(loaded.annotations.settings as Record<string, number>);
-        } else {
-          resetSettings();
-        }
-      }
-      appEventBus.emit("loadMeshStarted", undefined);
-      return { object, importedGroups, importedColorCursor };
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  }
-
-  async function applyObject(object: Object3D, name: string, importedGroups?: PPCFile["groups"], importedColorCursor?: number) {
+  async function applyObject(object: Object3D, name: string) {
     clearModel();
     setModel(buildRenderableRoot(object, "model-root"));
-    setLastFileName(name);
     const model = getModel();
     if (!model) throw new Error("模型初始化失败");
     geometryContext.rebuildFromModel(model);
@@ -787,15 +723,12 @@ export function createRenderer3D(
     edges = geometryIndex.getEdgesArray();
     edgeKeyToId = geometryIndex.getEdgeKeyToId();
     vertexKeyToPos = geometryIndex.getVertexKeyToPos();
-    if (importedGroups && importedGroups.length) {
-      groupApi.applyImportedGroups(importedGroups, importedColorCursor);
-    }
     applyFaceVisibility();
     applyEdgeVisibility();
     modelGroup.add(model);
     fitCameraToObject(model, camera, controls);
     log(`已加载：${name} · 三角面 ${geometryIndex.getTriangleCount()}`, "success");
-    appEventBus.emit("modelLoaded", undefined);
+    // appEventBus.emit("modelLoaded", undefined);
     rebuildSpecialEdges(modelGroup);
     bboxBox = new Box3().setFromObject(modelGroup);
     bboxHelper = new Box3Helper(bboxBox, new Color(0x00ff88));
@@ -809,20 +742,6 @@ export function createRenderer3D(
     ];
     bboxLabels.forEach((s) => gizmosGroup.add(s));
     updateLabelPositions();
-  }
-
-  async function applyLoadedModel(file: File, ext: string) {
-    log("加载中...", "info");
-    try {
-      const { object, importedGroups, importedColorCursor } = await loadRawObject(file, ext);
-      await applyObject(object, file.name, importedGroups, importedColorCursor);
-    } catch (error) {
-      console.error("加载模型失败", error);
-      if ((error as Error)?.stack) {
-        console.error((error as Error).stack);
-      }
-      log("加载失败，请检查文件格式是否正确。", "error");
-    }
   }
 
   function loadPreviewModel(mesh: Mesh, angle: number) {
@@ -891,6 +810,8 @@ export function createRenderer3D(
 
   return {
     loadPreviewModel,
+    applyObject,
+    clearModel,
     resetView,
     toggleLight,
     toggleEdges,
@@ -898,7 +819,6 @@ export function createRenderer3D(
     toggleFaces,
     toggleBBox,
     getBBoxVisible,
-    applyLoadedModel,
     getTriCount,
     resizeRenderer3D,
     dispose: () => {

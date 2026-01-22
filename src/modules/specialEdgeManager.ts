@@ -1,9 +1,9 @@
 // 特殊边管理器：渲染未封闭边与非流形边的线段。
-import { Vector2, Vector3, Group } from "three";
+import { Vector3, Group } from "three";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
-import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { type EdgeRecord } from "./model";
+import { createSpecialEdgeMaterial } from "./materials";
 
 type SpecialType = "open" | "nonmanifold";
 
@@ -20,7 +20,7 @@ export function createSpecialEdgeManager(
   };
   const lineWidth: Record<SpecialType, number> = {
     open: 2,
-    nonmanifold: 6,
+    nonmanifold: 5,
   };
   const offsetUnits: Record<SpecialType, number> = {
     open: -1,
@@ -30,7 +30,7 @@ export function createSpecialEdgeManager(
   const disposeAll = () => {
     edgeLines.forEach((line) => {
       line.geometry.dispose();
-      (line.material as LineMaterial).dispose();
+      (line.material as any)?.dispose?.();
       line.parent?.remove(line);
     });
     edgeLines.clear();
@@ -47,13 +47,11 @@ export function createSpecialEdgeManager(
     }
     const geom = new LineSegmentsGeometry();
     const { width, height } = viewportSizeProvider();
-    const mat = new LineMaterial({
+    const mat = createSpecialEdgeMaterial({
       color: colors[type],
       linewidth: lineWidth[type],
-      resolution: new Vector2(width, height),
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: offsetUnits[type],
+      resolution: { width, height },
+      offsetUnits: offsetUnits[type],
     });
     const line = new LineSegments2(geom, mat);
     line.userData.specialType = type;

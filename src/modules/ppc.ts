@@ -1,7 +1,7 @@
 // 3dppc 格式处理：负责序列化/反序列化自定义 3dppc 文件，提供加载与下载工具。
 import { BufferGeometry, Float32BufferAttribute, Group, Mesh } from "three";
 import { collectGeometry, filterLargestComponent } from "./geometry";
-import { getLastFileName } from "./model";
+import { getCurrentProject } from "./project";
 import { getGroupColorCursor, exportGroupsData } from "./groups";
 import { getSettings } from "./settings";
 
@@ -83,7 +83,7 @@ export async function build3dppcData(object: Group): Promise<PPCFile> {
     meta: {
       generator: "3D Printed Paper Craft",
       createdAt: new Date().toISOString(),
-      source: getLastFileName(),
+      source: getCurrentProject().name,
       units: "meter",
       checksum: {
         algorithm: "SHA-256",
@@ -105,7 +105,7 @@ export function download3dppc(data: PPCFile): string {
   const json = JSON.stringify(data, null, 2);
   const blob = new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
-  const base = getLastFileName().replace(/\.[^.]+$/, "");
+  const base = getCurrentProject().name || "未命名工程";
   const now = new Date();
   const pad = (n: number) => n.toString().padStart(2, "0");
   const stamp = `${pad(now.getFullYear() % 100)}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(

@@ -11,7 +11,6 @@ import {
   buildTriangleByEdgeAndAngles
 } from "../mathUtils";
 import {
-  makeVerticalPlaneThroughAB,
   makeVerticalPlaneNormalAB,
   sketchFromContourPoints,
 } from "./replicadUtils";
@@ -414,7 +413,7 @@ const buildSolidFromTrianglesWithAngles = async (
     onLog?.("最终实体不是有效的 OCCT 形状");
     console.warn('[ReplicadModeling] final solid is not valid OCCT shape');
   }
-  console.log(`[ReplicadModeling] buildSolidFromTrianglesWithAngles completed with ${booleanOperations} boolean operations`);
+  // console.log(`[ReplicadModeling] buildSolidFromTrianglesWithAngles completed with ${booleanOperations} boolean operations`);
   return { solid: connectionSolid, earClipNumTotal };
 };
 
