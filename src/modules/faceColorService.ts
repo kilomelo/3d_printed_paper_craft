@@ -38,13 +38,8 @@ export function createFaceColorService(deps: FaceColorDeps) {
     });
   });
 
-  appEventBus.on("projectChanged", () => {
-    repaintAllFaces();
-  });
-
-  appEventBus.on("historyApplied", () => {
-    repaintAllFaces();
-  });
+  appEventBus.on("projectChanged", repaintAllFaces);
+  appEventBus.on("historyApplied", repaintAllFaces);
 
   function setFaceColor(mesh: Mesh, faceIndex: number, color: Color) {
     const geometry = mesh.geometry;

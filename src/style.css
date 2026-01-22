@@ -158,8 +158,18 @@ textarea {
 }
 
 .editor-title {
+  display: flex;
+  gap: 15px;
+  align-items: baseline;
+}
+.editor-title-main {
   font-size: 18px;
   letter-spacing: 0.4px;
+}
+.editor-title-project {
+  font-size: 12px;
+  color: #cfd8e3;
+  opacity: 0.8;
 }
 
 .version-badge {
@@ -253,6 +263,13 @@ textarea {
   min-width: 90px;
   margin-right: 10px;
   justify-content: center;
+}
+#group-edit-toggle:disabled {
+  color: var(--muted);
+  border-color: var(--border);
+  cursor: not-allowed;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .toolbar-spacer {

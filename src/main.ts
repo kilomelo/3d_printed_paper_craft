@@ -47,6 +47,19 @@ const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) {
   throw new Error("未找到应用容器 #app");
 }
+
+const setProjectNameLabel = (name: string) => {
+  if (projectNameLabel) {
+    projectNameLabel.textContent = isFileSaved ? `${name}` : `${name} *`;
+  }
+};
+// 文件已保存状态
+let isFileSaved = true;
+const setFileSaved = (value: boolean) => {
+  isFileSaved = value;
+  setProjectNameLabel(getCurrentProject().name ?? "未命名工程");
+};
+
 let historyPanelUI: ReturnType<typeof createHistoryPanel> | null = null;
 const captureProjectState = (): ProjectState => ({
   groups: exportGroupsData(),
@@ -68,7 +81,6 @@ const applyProjectState = (snap: Snapshot) => {
   const fallbackGroupId = importedGroups[0]?.id ?? groupController.getPreviewGroupId();
   groupController.setPreviewGroupId(state.previewGroupId ?? fallbackGroupId);
   importSettings(state.settings);
-  // historyPanelUI?.render();
 };
 
 app.innerHTML = `
@@ -87,13 +99,16 @@ app.innerHTML = `
 
     <section id="layout-workspace" class="page">
       <header class="editor-header">
-        <div class="editor-title">3D打印纸艺</div>
+        <div class="editor-title">
+          <span class="editor-title-main">3D打印纸艺</span>
+          <span class="editor-title-project" id="project-name-label"></span>
+        </div>
         <div class="version-badge">v${VERSION}</div>
       </header>
     <nav class="editor-menu">
         <button class="btn ghost hidden" id="exit-preview-btn">退出预览</button>
         <button class="btn ghost" id="menu-open">打开模型</button>
-        <button class="btn ghost" id="export-btn">导出 .3dppc</button>
+        <button class="btn ghost" id="export-btn">保存 .3dppc</button>
         <button class="btn ghost" id="export-group-step-btn">导出展开组 STEP</button>
         <button class="btn ghost" id="export-group-stl-btn">导出展开组 STL</button>
         <button class="btn ghost" id="export-ear-clip-btn">导出拼接边固定夹 STL</button>
@@ -285,12 +300,14 @@ app.innerHTML = `
 `;
 
 const viewer = document.querySelector<HTMLDivElement>("#viewer");
+const projectNameLabel = document.getElementById("project-name-label");
 const logListEl = document.querySelector<HTMLDivElement>("#log-list");
 const logPanelEl = document.querySelector<HTMLDivElement>("#log-panel");
 const fileInput = document.querySelector<HTMLInputElement>("#file-input");
 const homeStartBtn = document.querySelector<HTMLButtonElement>("#home-start");
 const exitPreviewBtn = document.querySelector<HTMLButtonElement>("#exit-preview-btn");
 const menuOpenBtn = document.querySelector<HTMLButtonElement>("#menu-open");
+const menuBlocker = document.querySelector<HTMLDivElement>("#menu-blocker");
 const editorPreviewEl = document.querySelector<HTMLElement>(".editor-preview");
 const resetViewBtn = document.querySelector<HTMLButtonElement>("#reset-view-btn");
 const lightToggle = document.querySelector<HTMLButtonElement>("#light-toggle");
@@ -643,8 +660,7 @@ appEventBus.on("historyApplySnapshot", ({ current, direction, snapPassed} ) => {
   }
   historyManager.markApplied(current.action);
   log(`已回溯至 [${current.action.description}] (${Math.floor((Date.now() - current.action.timestamp) / 60000)}分钟前)`, "info", false);
-  // groupUI.render(buildGroupUIState());
-  // historyPanelUI?.render();
+  setFileSaved(false);
 });
 
 appEventBus.on("historyApplied", (action) => {
@@ -678,7 +694,6 @@ appEventBus.on("historyErased", (erasedHistoryUid) => {
   }
 });
 
-// appEventBus.on("modelLoaded", () => {
 const projectLoaded = () => {
   if (versionBadgeGlobal) versionBadgeGlobal.style.display = "none";
   logPanelEl?.classList.remove("hidden");
@@ -703,6 +718,7 @@ const getProjectNameFromFile = (name: string) => {
   const lastDot = trimmed.lastIndexOf(".");
   return lastDot > 0 ? trimmed.slice(0, lastDot) : trimmed;
 };
+setProjectNameLabel(getCurrentProject().name ?? "未命名工程");
 const handleFileSelected = async () => {
   const file = fileInput.files?.[0];
   if (!file) return;
@@ -726,6 +742,7 @@ const handleFileSelected = async () => {
     }
     appEventBus.emit("projectChanged", projectInfo);
     projectLoaded();
+    setProjectNameLabel(projectInfo.name);
   } catch (error) {
     console.error("加载模型失败", error);
     if ((error as Error)?.stack) {
@@ -881,21 +898,11 @@ const updateGroupEditToggle = () => {
   groupEditToggle.textContent = ws !== "editingGroup" ? "编辑展开组" : "结束编辑";
 };
 
-// appEventBus.on("clearAppStates", () => {
-  // if (versionBadgeGlobal) versionBadgeGlobal.style.display = "block";
-//   logPanelEl?.classList.add("hidden");
-//   layoutEmpty.classList.toggle("active", true);
-//   layoutWorkspace.classList.toggle("active", false);
-//   changeWorkspaceState("normal");
-//   previewMeshCache.length = 0;
-//   historyAbandonJudgeMethods.clear();
-//   layoutWorkspace.classList.add("preloaded");
-//   historyManager.reset();
-// });
 appEventBus.on("groupAdded", ({ groupId, groupName }) => {
   groupUI.render(buildGroupUIState());
   historyManager.push(captureProjectState(), { name: "新建展开组", description: `新建展开组 ${groupName}`, timestamp: Date.now() });
   historyPanelUI?.render();
+  setFileSaved(false);
 });
 appEventBus.on("groupRemoved", ({ groupId, groupName, faces }) => {
   groupUI.render(buildGroupUIState());
@@ -908,19 +915,28 @@ appEventBus.on("groupRemoved", ({ groupId, groupName, faces }) => {
     historyAbandonJudgeMethods.set(pushResult, judgeMethod);
     historyPanelUI?.render();
   }
+  setFileSaved(false);
 });
 appEventBus.on("groupCurrentChanged", (groupId: number) => groupUI.render(buildGroupUIState()));
-appEventBus.on("groupColorChanged", ({ groupId, color }) => groupUI.render(buildGroupUIState()));
+appEventBus.on("groupColorChanged", ({ groupId, color }) => {
+  groupUI.render(buildGroupUIState());
+  setFileSaved(false);
+});
 appEventBus.on("groupNameChanged", ({ groupId, name }) => {
   groupUI.render(buildGroupUIState());
-  historyManager.push(captureProjectState(), { name: "展开组重命名", description: `展开组重命名为 ${name}`, timestamp: Date.now() });
-  historyPanelUI?.render();
+  const pushResult = historyManager.push(captureProjectState(), { name: "展开组重命名", description: `展开组重命名为 ${name}`, timestamp: Date.now() });
+  if (pushResult > 0) {
+    historyPanelUI?.render();
+  }
+  setFileSaved(false);
 });
 appEventBus.on("groupFaceAdded", ({ groupId }) => {
   groupUI.render(buildGroupUIState());
+  setFileSaved(false);
 });
 appEventBus.on("groupFaceRemoved", ({ groupId }) => {
   groupUI.render(buildGroupUIState());
+  setFileSaved(false);
 });
 appEventBus.on("brushOperationDone", ({ facePaintedCnt }) => {
   if (facePaintedCnt === 0) return;
@@ -941,6 +957,8 @@ appEventBus.on("brushOperationDone", ({ facePaintedCnt }) => {
     historyPanelUI?.render();
   }
 });
+appEventBus.on("groupPlaceAngleChanged", () => { setFileSaved(false); });
+
 appEventBus.on("groupPlaceAngleRotateDone", ({ deltaAngle }) => {
   historyManager.push(captureProjectState(), { name: "旋转展开组", description: `旋转展开组 ${deltaAngle.toFixed(1)} 度`, timestamp: Date.now(), payload: {
     groupId: groupController.getPreviewGroupId(),
@@ -970,6 +988,7 @@ appEventBus.on("settingsChanged", (changedItemCnt) => {
     historyAbandonJudgeMethods.set(pushResult, judgeMethod);
     historyPanelUI?.render();
   }
+  setFileSaved(false);
 });
 
 groupUI.render(buildGroupUIState());
@@ -989,6 +1008,12 @@ historyPanelUI = createHistoryPanel(
 historyPanelUI.render();
 onWorkerBusyChange((busy) => {
   appEventBus.emit("workerBusyChange", busy);
+  if (menuBlocker) {
+    menuBlocker.classList.toggle("active", busy);
+  }
+  if (groupEditToggle) {
+    groupEditToggle.disabled = busy;
+  }
   if (busy && getWorkspaceState() === "editingGroup") {
     changeWorkspaceState("normal");
   }
@@ -1020,13 +1045,14 @@ exportBtn.addEventListener("click", async () => {
     return;
   }
   try {
-    log("正在导出 .3dppc ...", "info");
+    log("正在保存 .3dppc ...", "info");
     const data = await build3dppcData(model);
     const fileName = download3dppc(data);
-    log(`3dppc 已导出：下载目录/${fileName}`, "success");
+    log(`3dppc 已保存：下载目录/${fileName}`, "success");
+    setFileSaved(true);
   } catch (error) {
-    console.error("导出失败", error);
-    log("导出失败，请重试。", "error");
+    console.error("保存失败", error);
+    log("保存失败，请重试。", "error");
   }
   finally {
     exportBtn.disabled = false;

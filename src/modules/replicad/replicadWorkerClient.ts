@@ -17,7 +17,6 @@ type WorkerRequest =
   | { id: number; type: "mesh"; triangles: TriangleWithEdgeInfo[]; settings: ReturnType<typeof getSettings> };
 
 let worker: Worker | null = null;
-const blocker = () => document.querySelector<HTMLElement>("#menu-blocker");
 let seq = 0;
 const pending = new Map<
   number,
@@ -29,9 +28,6 @@ const busyListeners = new Set<(busy: boolean) => void>();
 const setBusy = (next: boolean) => {
   if (busy === next) return;
   busy = next;
-  if (!busy) {
-    blocker()?.classList.remove("active");
-  }
   busyListeners.forEach((fn) => fn(busy));
 };
 
@@ -71,7 +67,6 @@ const callWorker = (payload: Omit<WorkerRequest, "id">, onProgress?: (msg: numbe
   new Promise<WorkerResponse>((resolve, reject) => {
     const id = ++seq;
     setBusy(true);
-    blocker()?.classList.add("active");
     ensureWorker().postMessage({ id, ...payload } satisfies WorkerRequest);
     pending.set(id, { resolve, reject, onProgress, onLog });
   });

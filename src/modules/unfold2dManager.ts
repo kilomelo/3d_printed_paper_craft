@@ -80,8 +80,6 @@ export function createUnfold2dManager(
   const transformKey = (a: number, b: number) => `${a}->${b}`;
   let lastBounds: { minX: number; maxX: number; minY: number; maxY: number } | null = null;
 
-  // let modelLoaded = false;
-
   const clearScene = () => {
     renderer2d.root.children.forEach((child) => {
       if ((child as Mesh).isMesh) {
@@ -684,25 +682,21 @@ export function createUnfold2dManager(
                     }
                     let dir = mul3(lineDir, 1 / len);
                     // 纠正交线方向，使其与任一相关三角面的法线夹角 > 90°
-                    const faceNormals: Vec3[] = [];
-                    const collectNormals = (vk: string) => {
+                    const pickAnyNormal = (vk: string): Vec3 | undefined => {
                       const seamKey = [aKey, vk].sort().join("|");
                       const seamEdgeId = edgeKeyToId.get(seamKey);
                       const seamEdge = seamEdgeId !== undefined ? edgesArray[seamEdgeId] : undefined;
-                      if (!seamEdge || !seamEdge.faces) return;
-                      seamEdge.faces.forEach((fid) => {
+                      if (!seamEdge || !seamEdge.faces) return undefined;
+                      for (const fid of seamEdge.faces) {
                         const n = new Vector3();
                         if (angleIndex.getFaceNormal(fid, n)) {
-                          faceNormals.push([n.x, n.y, n.z]);
+                          return [n.x, n.y, n.z];
                         }
-                      });
+                      }
+                      return undefined;
                     };
-                    collectNormals(keyI);
-                    collectNormals(keyJ);
-                    // faceNormals.forEach(fn => {
-                    //   console.log("      Related face normal:", dot3(dir, fn) > 0 ? "same direction" : "opposite direction");
-                    // });
-                    if (faceNormals.some((fn) => dot3(dir, fn) > 0)) {
+                    const normal = pickAnyNormal(keyI) ?? pickAnyNormal(keyJ);
+                    if (normal && dot3(dir, normal) > 0) {
                       dir = mul3(dir, -1);
                     }
                     const posI = vertexKeyToPos.get(keyI);
@@ -798,19 +792,16 @@ export function createUnfold2dManager(
   };
 
   appEventBus.on("clearAppStates", () => {
-    // modelLoaded = false;
     clearScene();
     clearTransforms();
     cachedSnapped = null;
   });
 
   appEventBus.on("groupFaceAdded", ({ groupId, faceId }: { groupId: number; faceId: number }) => {
-    // if (!modelLoaded) return;
     cachedSnapped = null;
     rebuildGroup2D(groupId, true);
   });
   appEventBus.on("groupFaceRemoved", ({ groupId, faceId }: { groupId: number; faceId: number }) => {
-    // if (!modelLoaded) return;
     const current = getPreviewGroupId();
     if (groupId !== current) return;
     rebuildGroup2D(groupId, true);
@@ -840,30 +831,24 @@ export function createUnfold2dManager(
   };
 
   appEventBus.on("groupColorChanged", ({ groupId }) => {
-    // if (!modelLoaded) return;
     const ok = repaintGroupColor(groupId);
     if (!ok) {
       rebuildGroup2D(groupId, true);
     }
   });
   appEventBus.on("projectChanged", () => {
-    // modelLoaded = true;
     const groups = getGroupIds();
     if (groups.length === 0) return;
     const gid = getPreviewGroupId();
     rebuildGroup2D(gid);
   });
-  appEventBus.on("groupAdded", () => {
-    clearScene();
-  });
+  appEventBus.on("groupAdded", clearScene);
   appEventBus.on("groupRemoved", () => {
     const gid = getPreviewGroupId();
     rebuildGroup2D(gid);
   });
 
-  appEventBus.on("groupCurrentChanged", (groupId: number) => {
-    rebuildGroup2D(groupId);
-  });
+  appEventBus.on("groupCurrentChanged", (groupId: number) => rebuildGroup2D(groupId));
 
   appEventBus.on("settingsChanged", (changedItemCnt) => {
     if (!lastBounds) return;

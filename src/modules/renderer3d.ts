@@ -642,8 +642,8 @@ export function createRenderer3D(
     }
   });
   appEventBus.on("groupCurrentChanged", (groupId: number) => syncGroupStateFromData(groupId));
-  appEventBus.on("settingsChanged", () => updateBBox());
-  appEventBus.on("historyApplied", () => updateBBox());
+  appEventBus.on("settingsChanged", updateBBox);
+  appEventBus.on("historyApplied", updateBBox);
   appEventBus.on("edgeHover2D", ({ p1, p2 }) => {
     // if (hoverState.hoveredFaceId !== null) return;
     (hoverEdgeLine.geometry as LineSegmentsGeometry).setPositions(
