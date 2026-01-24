@@ -11,10 +11,11 @@ export function createSeamManager(
   root: Group,
   viewportSizeProvider: () => { width: number; height: number },
   getEdges: () => EdgeRecord[],
-  isVisibleSeam: (faceAId: number, faceBId: number) => boolean,
   getVertexKeyToPos: () => Map<string, Vector3>,
   getEdgeWorldPositions: (edgeId: number) => [Vector3, Vector3] | null,
-  // getGroupVisibility: (id: number) => boolean,
+  getGroupVisibility: (id: number) => boolean,
+  getFaceGroupMap: () => Map<number, number | null>,
+  getGroupTreeParent: (groupId: number) => Map<number, number | null> | undefined,
   isSeamsVisible: () => boolean,
 ) {
   const seamLines = new Map<number, LineSegments2>();
@@ -22,8 +23,16 @@ export function createSeamManager(
   const rebuildFull = () => {
     const edges = getEdges();
     edges.forEach((_, edgeId) => {
-      const isSeam = edgeIsSeam(edgeId);
-      updateSeamLine(edgeId, edges, isSeam, isSeamsVisible());
+      const visible = isVisibleSeam(edgeId);
+      updateSeamLine(edgeId, edges, visible, isSeamsVisible());
+    });
+  };
+
+  const rebuildFullWithSingleGroupVisible = (groupId: number) => {
+    const edges = getEdges();
+    edges.forEach((_, edgeId) => {
+      const visible = isVisibleSeam(edgeId, groupId);
+      updateSeamLine(edgeId, edges, visible, isSeamsVisible());
     });
   };
 
@@ -39,9 +48,14 @@ export function createSeamManager(
   appEventBus.on("groupRemoved", rebuildFull);
   appEventBus.on("groupVisibilityChanged", rebuildFull);
   appEventBus.on("historyApplied", rebuildFull);
+  appEventBus.on("groupBreathStart", (groupId) => {
+    rebuildFullWithSingleGroupVisible(groupId);
+  });
+  appEventBus.on("groupBreathEnd", rebuildFull);
 
-  function edgeIsSeam(
+  function isVisibleSeam(
     edgeId: number,
+    singleGroupId?: number | null,
   ): boolean {
     const edges = getEdges();
     const edge = edges[edgeId];
@@ -49,7 +63,31 @@ export function createSeamManager(
     const faces = Array.from(edge.faces);
     if (faces.length === 1) return false;
     if (faces.length !== 2) return true;
-    return isVisibleSeam(faces[0], faces[1]);
+    const g1 = getFaceGroupMap().get(faces[0]) ?? -1;
+    const g2 = getFaceGroupMap().get(faces[1]) ?? -1;
+    if (g1 === -1 && g2 === -1) return false;
+    if (g1 === -1 || g2 === -1) {
+      if (singleGroupId) {
+        return (g1 === -1 && g2 === singleGroupId) || (g2 === -1 && g1 === singleGroupId);
+      } else {
+        return true;
+      }
+    }
+    const g1Visible = getGroupVisibility(g1);
+    const g2Visible = getGroupVisibility(g2);
+    if (g1 !== g2) {
+      if (singleGroupId) {
+        return g1 === singleGroupId || g2 === singleGroupId;
+      } else {
+        return g1Visible || g2Visible;
+      }
+    }
+    const parentMap = getGroupTreeParent(g1);
+    if (!parentMap) return false;
+    const isFathersonRelationship = parentMap.get(faces[0]) === faces[1] || parentMap.get(faces[1]) === faces[0];
+    if (isFathersonRelationship) return false;
+    if (singleGroupId) return g1 === singleGroupId;
+    else return g1Visible;
   }
 
   function ensureSeamLine(edgeId: number): LineSegments2 {

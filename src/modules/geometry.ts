@@ -64,8 +64,8 @@ export class AngleIndex {
     const v2 = vertexKeyToPos.get(k2);
     if (!v1 || !v2) return fallbackAngle;
 
-    this.applyWorld(v1, faceA.mesh[0], this.tempA);
-    this.applyWorld(v2, faceA.mesh[0], this.tempB);
+    this.applyWorld(v1, faceA.mesh, this.tempA);
+    this.applyWorld(v2, faceA.mesh, this.tempB);
     this.edgeDir.copy(this.tempB).sub(this.tempA).normalize();
 
     this.getFaceNormal(faceAId, this.n1);
@@ -140,7 +140,7 @@ export class AngleIndex {
     }
     const mapping = this.geometryIndex.getFaceIndexMap().get(faceId);
     if (!mapping) return false;
-    this.computeFaceNormal(mapping.mesh[0], mapping.localFace, out);
+    this.computeFaceNormal(mapping.mesh, mapping.localFace, out);
     this.faceNormalCache.set(faceId, out.clone());
     return true;
   }
@@ -280,7 +280,7 @@ export function filterLargestComponent(
 // 几何索引缓存：对加载的模型构建 face/edge/vertex 映射与邻接关系，并支持刷新的 getter。
 export class GeometryIndex {
   private faceAdjacency = new Map<number, Set<number>>();
-  private faceIndexMap = new Map<number, { mesh: Mesh[]; localFace: number }>();
+  private faceIndexMap = new Map<number, { mesh: Mesh; localFace: number }>();
   private meshFaceIdMap = new Map<string, Map<number, number>>();
   private faceToEdges = new Map<number, [number, number, number]>();
   private edges: EdgeRecord[] = [];

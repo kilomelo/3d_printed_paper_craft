@@ -55,7 +55,6 @@ export function resetGroups() {
 }
 
 export function addGroup(newGroupId?: number): number | undefined {
-  // console.trace(`[groups] Adding group with id: ${newGroupId}`); 
   newGroupId = newGroupId ?? nextGroupId();
   let exists = findGroup(newGroupId);
   if (exists) return undefined;

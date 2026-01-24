@@ -7,7 +7,7 @@ import { pointKey3D } from "./mathUtils";
 export type EdgeRecord = { id: number; key: string; faces: Set<number>; vertices: [string, string] };
 export type GeometryPrep = {
   faceAdjacency: Map<number, Set<number>>;
-  faceIndexMap: Map<number, { mesh: Mesh[]; localFace: number }>;
+  faceIndexMap: Map<number, { mesh: Mesh; localFace: number }>;
   meshFaceIdMap: Map<string, Map<number, number>>;
   faceToEdges: Map<number, [number, number, number]>;
   edges: EdgeRecord[];
@@ -134,7 +134,7 @@ export function countTrianglesInObject(object: Object3D): number {
 
 export function prepareGeometryData(object: Object3D): GeometryPrep {
   const faceAdjacency = new Map<number, Set<number>>();
-  const faceIndexMap = new Map<number, { mesh: Mesh[]; localFace: number }>();
+  const faceIndexMap = new Map<number, { mesh: Mesh; localFace: number }>();
   const meshFaceIdMap = new Map<string, Map<number, number>>();
   const faceToEdges = new Map<number, [number, number, number]>();
   const edges: EdgeRecord[] = [];
@@ -144,7 +144,6 @@ export function prepareGeometryData(object: Object3D): GeometryPrep {
   let faceId = 0;
   const vertexKey = (pos: any, idx: number) => pointKey3D([pos.getX(idx), pos.getY(idx), pos.getZ(idx)]);
 
-  const backMesh = object.children.find((child) => (child as Mesh).isMesh && (child as Mesh).userData.functional === "back") as Mesh;
   object.traverse((child) => {
     if (!(child as Mesh).isMesh) return;
     const mesh = child as Mesh;
@@ -161,7 +160,7 @@ export function prepareGeometryData(object: Object3D): GeometryPrep {
       const localMap = meshFaceIdMap.get(mesh.uuid)!;
 
       for (let f = 0; f < faceCount; f++) {
-        faceIndexMap.set(faceId, { mesh: [mesh, backMesh], localFace: f });
+        faceIndexMap.set(faceId, { mesh: mesh, localFace: f });
         localMap.set(f, faceId);
         const [a, b, c] = getFaceVertexIndices(geometry, f);
         const va = vertexKey(position, a);

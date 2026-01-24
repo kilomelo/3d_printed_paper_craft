@@ -34,12 +34,20 @@ export function createGroupController(
 ) {
   let previewGroupId = 1;
   const groupVisibility = new Map<number, boolean>();
+  let groupBreathing = false;
+
   resetGroups();
 
   appEventBus.on("clearAppStates", () => {
     previewGroupId = 1;
     resetGroups();
     groupVisibility.clear();
+  });
+  appEventBus.on("groupBreathStart", () => {
+    groupBreathing = true;
+  });
+  appEventBus.on("groupBreathEnd", () => {
+    groupBreathing = false;
   });
   
   function setGroupColor(groupId: number, color: Color) {
@@ -199,21 +207,7 @@ export function createGroupController(
   function getGroupVisibilityEntries(): Array<[number, boolean]> {
     return Array.from(groupVisibility.entries());
   }
-
-  function isVisibleSeam(faceAId: number, faceBId: number): boolean {
-    const g1 = getFaceGroupMapData().get(faceAId) ?? -1;
-    const g2 = getFaceGroupMapData().get(faceBId) ?? -1;
-    if (g1 === -1 && g2 === -1) return false;
-    if (g1 === -1 || g2 === -1) return true;
-    const g1Visible = getGroupVisibility(g1);
-    const g2Visible = getGroupVisibility(g2);
-    if (g1 !== g2) return g1Visible || g2Visible;
-    const parentMap = getGroupTreeParentData(g1);
-    if (!parentMap) return false;
-    const isFathersonRelationship = parentMap.get(faceAId) === faceBId || parentMap.get(faceBId) === faceAId;
-    return g1Visible && !isFathersonRelationship;
-  }
-
+  
   function applyGroupVisibility(entries: Array<[number, boolean]>) {
     groupVisibility.clear();
     entries.forEach(([gid, vis]) => groupVisibility.set(gid, vis));
@@ -243,5 +237,5 @@ export function createGroupController(
     getGroupVisibility,
     getGroupVisibilityEntries,
     applyGroupVisibility,
-    isVisibleSeam };
+  };
 }

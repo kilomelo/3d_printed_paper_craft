@@ -7,6 +7,10 @@ type HintItem = { key: string; label: string };
 type HintConfig = { left: HintItem[]; right: HintItem[] };
 
 const hintTable: Record<WorkspaceState, HintConfig> = {
+  loading: {
+    left: [],
+    right: [],
+  },
   normal: {
     left: [
       { key: "view-rotate", label: "左键旋转视角" },
@@ -67,6 +71,7 @@ export function createOperationHints(params: { leftMount: HTMLElement; rightMoun
 
   const renderSide = (side: Side, state: WorkspaceState) => {
     const cfg = hintTable[state];
+    if (!cfg) return;
     const target = side === "left" ? left : right;
     target.list.innerHTML = "";
     target.items.clear();

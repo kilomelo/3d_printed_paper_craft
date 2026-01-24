@@ -133,7 +133,7 @@ app.innerHTML = `
         <button class="btn sm toggle active" id="faces-toggle">面渲染：开</button>
         <button class="btn sm toggle" id="bbox-toggle">包围盒：关</button>
         <div class="toolbar-spacer"></div>
-        <span class="toolbar-stat" id="tri-counter">渲染三角形：0</span>
+        <span class="toolbar-stat" id="tri-counter">渲染负载：0</span>
       </div>
       <div class="preview-area" id="viewer">
         <div id="history-panel" class="history-panel hidden">
@@ -149,21 +149,23 @@ app.innerHTML = `
             <button class="btn sm tab-add" id="group-add">+</button>
           </div>
           <div class="preview-area" id="group-preview">
-            <button class="overlay-btn color-swatch" id="group-color-btn" title="选择组颜色"></button>
-            <button class="overlay-btn overlay-visibility" id="group-visibility-toggle" title="显示/隐藏展开组">
-              <svg class="icon-visible" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
-                <path d="M-896-256H384v800H-896z" style="fill:none"/>
-                <path d="M32.513 13.926C43.087 14.076 51.654 23.82 56 32c0 0-1.422 2.892-2.856 4.895a46.344 46.344 0 0 1-2.191 2.826 41.265 41.265 0 0 1-1.698 1.898c-5.237 5.5-12.758 9.603-20.7 8.01C19.732 47.859 12.823 40.131 8.497 32c0 0 1.248-2.964 2.69-4.964a45.105 45.105 0 0 1 2.034-2.617 41.618 41.618 0 0 1 1.691-1.897c4.627-4.876 10.564-8.63 17.601-8.596Zm-.037 4c-5.89-.022-10.788 3.267-14.663 7.35a37.553 37.553 0 0 0-1.527 1.713 41.472 41.472 0 0 0-1.854 2.386c-.544.755-1.057 1.805-1.451 2.59 3.773 6.468 9.286 12.323 16.361 13.742 6.563 1.317 12.688-2.301 17.016-6.846a37.224 37.224 0 0 0 1.534-1.715c.7-.833 1.366-1.694 1.999-2.579.557-.778 1.144-1.767 1.588-2.567-3.943-6.657-10.651-13.944-19.003-14.074Z"/>
-                <path d="M32.158 23.948c4.425 0 8.018 3.593 8.018 8.017a8.021 8.021 0 0 1-8.018 8.017 8.021 8.021 0 0 1-8.017-8.017 8.022 8.022 0 0 1 8.017-8.017Zm0 4.009a4.01 4.01 0 0 1 4.009 4.008 4.01 4.01 0 0 1-4.009 4.009 4.01 4.01 0 0 1-4.008-4.009 4.01 4.01 0 0 1 4.008-4.008Z"/>
-              </svg>
-              <svg class="icon-hidden hidden" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
-                <path d="M-960-256H320v800H-960z" style="fill:none"/>
-                <path d="m13.673 10.345-3.097 3.096 39.853 39.854 3.097-3.097-39.853-39.853Z"/>
-                <path d="m17.119 19.984 2.915 2.915c-3.191 2.717-5.732 6.099-7.374 9.058l-.005.01c4.573 7.646 11.829 14.872 20.987 13.776 2.472-.296 4.778-1.141 6.885-2.35l2.951 2.95c-4.107 2.636-8.815 4.032-13.916 3.342-9.198-1.244-16.719-8.788-21.46-17.648 2.226-4.479 5.271-8.764 9.017-12.053Zm6.63-4.32c2.572-1.146 5.355-1.82 8.327-1.868.165-.001 2.124.092 3.012.238a18.45 18.45 0 0 1 1.659.35C45.472 16.657 51.936 24.438 56 32.037c-1.705 3.443-3.938 6.398-6.601 9.277l-2.827-2.827c1.967-2.12 3.622-4.161 4.885-6.45 0 0-1.285-2.361-2.248-3.643a37.988 37.988 0 0 0-1.954-2.395c-.54-.608-2.637-2.673-3.136-3.103-3.348-2.879-7.279-5.138-11.994-5.1-1.826.029-3.582.389-5.249.995l-3.127-3.127Z" style="fill-rule:nonzero"/>
-                <path d="m25.054 27.92 2.399 2.398a4.843 4.843 0 0 0 6.114 6.114l2.399 2.399A8.02 8.02 0 0 1 25.054 27.92Zm6.849-4.101.148-.002a8.021 8.021 0 0 1 8.017 8.017l-.001.148-8.164-8.163Z"/>
-              </svg>
-            </button>
-            <span class="overlay-label group-faces-count" id="group-faces-count">面数量 0</span>
+            <div class="overlay-group-meta">
+              <button class="overlay-btn color-swatch" id="group-color-btn" title="选择组颜色"></button>
+              <button class="overlay-btn overlay-visibility" id="group-visibility-toggle" title="显示/隐藏展开组">
+                <svg class="icon-visible" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
+                  <path d="M-896-256H384v800H-896z" style="fill:none"/>
+                  <path d="M32.513 13.926C43.087 14.076 51.654 23.82 56 32c0 0-1.422 2.892-2.856 4.895a46.344 46.344 0 0 1-2.191 2.826 41.265 41.265 0 0 1-1.698 1.898c-5.237 5.5-12.758 9.603-20.7 8.01C19.732 47.859 12.823 40.131 8.497 32c0 0 1.248-2.964 2.69-4.964a45.105 45.105 0 0 1 2.034-2.617 41.618 41.618 0 0 1 1.691-1.897c4.627-4.876 10.564-8.63 17.601-8.596Zm-.037 4c-5.89-.022-10.788 3.267-14.663 7.35a37.553 37.553 0 0 0-1.527 1.713 41.472 41.472 0 0 0-1.854 2.386c-.544.755-1.057 1.805-1.451 2.59 3.773 6.468 9.286 12.323 16.361 13.742 6.563 1.317 12.688-2.301 17.016-6.846a37.224 37.224 0 0 0 1.534-1.715c.7-.833 1.366-1.694 1.999-2.579.557-.778 1.144-1.767 1.588-2.567-3.943-6.657-10.651-13.944-19.003-14.074Z"/>
+                  <path d="M32.158 23.948c4.425 0 8.018 3.593 8.018 8.017a8.021 8.021 0 0 1-8.018 8.017 8.021 8.021 0 0 1-8.017-8.017 8.022 8.022 0 0 1 8.017-8.017Zm0 4.009a4.01 4.01 0 0 1 4.009 4.008 4.01 4.01 0 0 1-4.009 4.009 4.01 4.01 0 0 1-4.008-4.009 4.01 4.01 0 0 1 4.008-4.008Z"/>
+                </svg>
+                <svg class="icon-hidden hidden" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
+                  <path d="M-960-256H320v800H-960z" style="fill:none"/>
+                  <path d="m13.673 10.345-3.097 3.096 39.853 39.854 3.097-3.097-39.853-39.853Z"/>
+                  <path d="m17.119 19.984 2.915 2.915c-3.191 2.717-5.732 6.099-7.374 9.058l-.005.01c4.573 7.646 11.829 14.872 20.987 13.776 2.472-.296 4.778-1.141 6.885-2.35l2.951 2.95c-4.107 2.636-8.815 4.032-13.916 3.342-9.198-1.244-16.719-8.788-21.46-17.648 2.226-4.479 5.271-8.764 9.017-12.053Zm6.63-4.32c2.572-1.146 5.355-1.82 8.327-1.868.165-.001 2.124.092 3.012.238a18.45 18.45 0 0 1 1.659.35C45.472 16.657 51.936 24.438 56 32.037c-1.705 3.443-3.938 6.398-6.601 9.277l-2.827-2.827c1.967-2.12 3.622-4.161 4.885-6.45 0 0-1.285-2.361-2.248-3.643a37.988 37.988 0 0 0-1.954-2.395c-.54-.608-2.637-2.673-3.136-3.103-3.348-2.879-7.279-5.138-11.994-5.1-1.826.029-3.582.389-5.249.995l-3.127-3.127Z" style="fill-rule:nonzero"/>
+                  <path d="m25.054 27.92 2.399 2.398a4.843 4.843 0 0 0 6.114 6.114l2.399 2.399A8.02 8.02 0 0 1 25.054 27.92Zm6.849-4.101.148-.002a8.021 8.021 0 0 1 8.017 8.017l-.001.148-8.164-8.163Z"/>
+                </svg>
+              </button>
+              <span class="overlay-label group-faces-count" id="group-faces-count">面数量 0</span>
+            </div>
             <button class="overlay-btn tab-delete" id="group-delete" title="删除展开组">删除组</button>
             <div id="group-preview-empty" class="preview-2d-empty hidden">
               点击【编辑展开组】按钮进行编辑
@@ -174,6 +176,7 @@ app.innerHTML = `
       </section>
   </section>
 </main>
+  <div id="loading-overlay" class="loading-overlay hidden"></div>
   <div id="log-panel" class="log-panel hidden">
     <div id="log-list" class="log-list"></div>
   </div>
@@ -353,6 +356,10 @@ const renameModal = document.querySelector<HTMLDivElement>("#rename-modal");
 const renameInput = document.querySelector<HTMLInputElement>("#rename-input");
 const renameCancelBtn = document.querySelector<HTMLButtonElement>("#rename-cancel-btn");
 const renameConfirmBtn = document.querySelector<HTMLButtonElement>("#rename-confirm-btn");
+const loadingOverlay = document.querySelector<HTMLDivElement>("#loading-overlay");
+
+const showLoadingOverlay = () => loadingOverlay?.classList.remove("hidden");
+const hideLoadingOverlay = () => loadingOverlay?.classList.add("hidden");
 const settingsCancelBtn = document.querySelector<HTMLButtonElement>("#settings-cancel-btn");
 const settingsConfirmBtn = document.querySelector<HTMLButtonElement>("#settings-confirm-btn");
 const settingScaleInput = document.querySelector<HTMLInputElement>("#setting-scale");
@@ -475,6 +482,11 @@ const changeWorkspaceState = (state: WorkspaceState) => {
   const previousState = getWorkspaceState();
   if (previousState === state) return;
   setWorkspaceState(state);
+  if (state === "loading") {
+    showLoadingOverlay();
+  } else {
+    hideLoadingOverlay();
+  }
   if (previousState === "editingGroup") log("已退出展开组编辑模式", "info");
   if (state === "editingGroup") log("已进入展开组编辑模式", "info");
   if (previousState === "previewGroupModel") log("已退出组模型预览", "info");
@@ -483,14 +495,9 @@ const changeWorkspaceState = (state: WorkspaceState) => {
 };
 
 const clearAppStates = () => {
-    // if (versionBadgeGlobal) versionBadgeGlobal.style.display = "block";
-  logPanelEl?.classList.add("hidden");
-  layoutEmpty.classList.toggle("active", true);
-  layoutWorkspace.classList.toggle("active", false);
-  changeWorkspaceState("normal");
+  changeWorkspaceState("loading");
   previewMeshCache.length = 0;
   historyAbandonJudgeMethods.clear();
-  layoutWorkspace.classList.add("preloaded");
   historyManager.reset();
   appEventBus.emit("clearAppStates", undefined);
   operationHints?.resetHighlights();
@@ -594,6 +601,10 @@ const openRenameDialog = () => {
   renameInput.value = currentName;
   renameOverlay.classList.remove("hidden");
   renameInput.focus();
+  // 全选文本，便于直接输入新名称
+  renameInput.select();
+  // 某些浏览器需要延迟才能正确选中
+  requestAnimationFrame(() => renameInput.setSelectionRange(0, renameInput.value.length));
   appEventBus.emit("userOperation", { side: "right", op: "rename-group", highlightDuration: 0 })
 };
 
@@ -639,7 +650,8 @@ const renderer3d = createRenderer3D(
     getGroupFaces: groupController.getGroupFaces,
     getFaceGroupMap: groupController.getFaceGroupMap,
     getGroupVisibility: groupController.getGroupVisibility,
-    isVisibleSeam: groupController.isVisibleSeam,
+    getGroupParentTree: groupController.getGroupTreeParent,
+    // isVisibleSeam: groupController.isVisibleSeam,
   },
   geometryContext,
   () => {
@@ -747,7 +759,10 @@ const getProjectNameFromFile = (name: string) => {
 setProjectNameLabel(getCurrentProject().name ?? "未命名工程");
 const handleFileSelected = async () => {
   const file = fileInput.files?.[0];
-  if (!file) return;
+  if (!file) {
+    hideLoadingOverlay();
+    return;
+  }
   const ext = getExtension(file.name);
   if (!allowedExtensions.includes(ext)) {
     log("不支持的格式，请选择 OBJ / FBX / STL。", "error");
@@ -755,6 +770,7 @@ const handleFileSelected = async () => {
   }
   try {
     clearAppStates();
+    await new Promise((resolve) => setTimeout(resolve, 200));
     const { object, importedGroups, importedColorCursor, importedSeting } = await loadRawObject(file, ext);
     const projectInfo = startNewProject(getProjectNameFromFile(file.name));
     await renderer3d.applyObject(object, file.name);
@@ -778,16 +794,38 @@ const handleFileSelected = async () => {
     renderer3d.clearModel();
     resetSettings();
   }
+  finally {
+    changeWorkspaceState("normal");
+  }
   fileInput.value = "";
+  hideLoadingOverlay();
 };
 
 fileInput.addEventListener("change", handleFileSelected);
+
+const focusCancelHandler = () => {
+  if (!fileInput.files || fileInput.files.length === 0) {
+    hideLoadingOverlay();
+    window.removeEventListener("focus", focusCancelHandler);
+  }
+};
+
+fileInput.addEventListener("cancel", () => {
+  hideLoadingOverlay();
+  window.removeEventListener("focus", focusCancelHandler);
+});
+
+fileInput.addEventListener("click", () => {
+  window.addEventListener("focus", focusCancelHandler);
+});
 homeStartBtn.addEventListener("click", () => {
   fileInput.value = "";
+  showLoadingOverlay();
   fileInput.click();
 });
 menuOpenBtn.addEventListener("click", () => {
   fileInput.value = "";
+  showLoadingOverlay();
   fileInput.click();
 });
 resetViewBtn.addEventListener("click", () => renderer3d.resetView());
@@ -826,7 +864,7 @@ bboxToggle.textContent = "包围盒：开";
 
 // 三角形计数跟随渲染器
 const syncTriCount = () => {
-  triCounter.textContent = `渲染三角形：${renderer3d.getTriCount()}`;
+  triCounter.textContent = `渲染负载：${renderer3d.getTriCount()}`;
   requestAnimationFrame(syncTriCount);
 };
 requestAnimationFrame(syncTriCount);
@@ -1009,8 +1047,8 @@ appEventBus.on("groupPlaceAngleRotateDone", ({ deltaAngle }) => {
   historyPanelUI?.render();
 
 });
-appEventBus.on("workspaceStateChanged", () =>  {
-  groupUI.render(buildGroupUIState());
+appEventBus.on("workspaceStateChanged", ({ previous, current }) =>  {
+  if (current !== "loading") groupUI.render(buildGroupUIState());
   updateGroupEditToggle();
   updateMenuState();
 });
@@ -1020,7 +1058,6 @@ appEventBus.on("settingsChanged", (changedItemCnt) => {
     const judgeMethod = (cache: PreviewMeshCacheItem) => {
       return cache.historyUidAbandoned === Infinity;
     }
-    // console.log("settingsChanged abandon judge method added, pushResult =", pushResult);
     abandonCachedPreviewMesh(judgeMethod);
     historyAbandonJudgeMethods.set(pushResult, judgeMethod);
     historyPanelUI?.render();

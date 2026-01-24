@@ -5,7 +5,7 @@ import { getFaceVertexIndices } from "./model";
 import { appEventBus } from "./eventBus";
 
 export type FaceColorDeps = {
-  getFaceIndexMap: () => Map<number, { mesh: Mesh[]; localFace: number }>;
+  getFaceIndexMap: () => Map<number, { mesh: Mesh; localFace: number }>;
   getFaceGroupMap: () => Map<number, number | null>;
   getGroupColor: (id: number) => THREE.Color | undefined;
   getGroupVisibility: (id: number) => boolean;
@@ -47,6 +47,15 @@ export function createFaceColorService(deps: FaceColorDeps) {
     });
   });
 
+  appEventBus.on("groupBreathStart", (groupId) => {
+    deps.getFaceIndexMap().forEach((_, faceId) => {
+      const gid = deps.getFaceGroupMap().get(faceId) ?? null;
+      updateFaceColorWithForceVisibility( gid === groupId, faceId, gid);
+    });
+  });
+
+  appEventBus.on("groupBreathEnd", repaintAllFaces);
+
   appEventBus.on("projectChanged", repaintAllFaces);
   appEventBus.on("historyApplied", repaintAllFaces);
 
@@ -63,7 +72,6 @@ export function createFaceColorService(deps: FaceColorDeps) {
   }
 
   function setFaceAlpha(mesh: Mesh, localFaceIdx: number, alpha: number) {
-    // console.log("setFaceAlpha", mesh, localFaceIdx, alpha);
     if (!mesh) return;
     const geometry = mesh.geometry;
     const colorsAttr = geometry.getAttribute("color") as Float32BufferAttribute;
@@ -82,8 +90,16 @@ export function createFaceColorService(deps: FaceColorDeps) {
     const baseColor = groupId !== null ? deps.getGroupColor(groupId) : defaultColor;
     const visible = groupId !== null ? deps.getGroupVisibility?.(groupId) ?? true : true;
     const finalColor = (baseColor ?? defaultColor).clone();
-    setFaceColor(mapping.mesh[0], mapping.localFace, finalColor, visible ? 1 : 0);
-    // setFaceAlpha(mapping.mesh[1], mapping.localFace, visible ? 1 : 0);
+    setFaceColor(mapping.mesh, mapping.localFace, finalColor, visible ? 1 : 0);
+  }
+
+  function updateFaceColorWithForceVisibility(visible: boolean, faceId: number, groupId: number | null) {
+    const mapping = deps.getFaceIndexMap().get(faceId);
+    if (!mapping) return;
+    groupId = groupId??deps.getFaceGroupMap().get(faceId)??null;
+    const baseColor = groupId !== null ? deps.getGroupColor(groupId) : defaultColor;
+    const finalColor = (baseColor ?? defaultColor).clone();
+    setFaceColor(mapping.mesh, mapping.localFace, finalColor, visible ? 1 : 0);
   }
 
   function repaintAllFaces() {
@@ -93,5 +109,5 @@ export function createFaceColorService(deps: FaceColorDeps) {
     });
   }
 
-  return { setFaceColor, updateFaceColorById, repaintAllFaces };
+  return { setFaceColor, setFaceAlpha,  updateFaceColorById, repaintAllFaces };
 }

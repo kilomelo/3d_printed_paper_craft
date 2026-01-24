@@ -117,8 +117,33 @@ export function createSpecialEdgeManager(
     return { openCount, nonManifoldCount };
   };
 
+  const updateVisibility = (
+    getEdges: () => EdgeRecord[],
+    getFaceGroupMap: () => Map<number, number | null>,
+    getGroupVisibility: (groupId: number) => boolean,
+    forceSingleGroupVisible?: number | null,
+  ) => {
+    const edges = getEdges();
+    const faceGroupMap = getFaceGroupMap();
+    edgeLines.forEach((line, edgeId) => {
+      const edge = edges[edgeId];
+      if (!edge) {
+        line.visible = false;
+        return;
+      }
+      line.visible = false;
+      edge.faces.forEach((faceId) => {
+        const gid = faceGroupMap.get(faceId);
+        if (forceSingleGroupVisible) {
+          if (gid === forceSingleGroupVisible) line.visible = true;
+        } else if (!gid || getGroupVisibility(gid)) line.visible = true;
+      });
+    });
+  };
+
   return {
     rebuild,
+    updateVisibility,
     dispose: disposeAll,
   };
 }

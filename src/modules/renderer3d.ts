@@ -25,8 +25,7 @@ import {
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { getModel, setModel } from "./model";
-import { load3dppc, type PPCFile } from "./ppc";
-import { resetSettings, getSettings } from "./settings";
+import { getSettings } from "./settings";
 import { createScene, fitCameraToObject } from "./scene";
 import { FACE_DEFAULT_COLOR, createPreviewMaterial, createEdgeMaterial, createHoverLineMaterial } from "./materials";
 import {
@@ -50,7 +49,7 @@ export type GroupApi = {
   getGroupColor: (groupId: number) => Color | undefined;
   getFaceGroupMap: () => Map<number, number | null>;
   getGroupVisibility: (groupId: number) => boolean;
-  isVisibleSeam: (faceAId: number, faceBId: number) => boolean;
+  getGroupParentTree: (groupId: number) => Map<number, number | null> | undefined;
 };
 
 export function createRenderer3D(
@@ -60,10 +59,7 @@ export function createRenderer3D(
   getViewport: () => { width: number; height: number },
   mountRenderer: (canvas: HTMLElement) => void,
 ) {
-  const BREATH_PERIOD = 300; // ms
-  const BREATH_CYCLES = 3; // 呼吸循环次数
-  const BREATH_DURATION = BREATH_PERIOD * BREATH_CYCLES;
-  const BREATH_SCALE = 0.4; // 呼吸幅度
+  const BREATH_DURATION = 800;
   let edgesVisible = true;
   let seamsVisible = true;
   let facesVisible = true;
@@ -115,8 +111,15 @@ export function createRenderer3D(
     canEdit: () => getWorkspaceState() === "editingGroup",
     isPointerLocked: () => pointerLocked,
     mapFaceId: (mesh, faceIndex) => geometryIndex.getFaceId(mesh, faceIndex ?? -1),
-    onAddFace: groupApi.handleAddFace,
-    onRemoveFace: groupApi.handleRemoveFace,
+    onAddFace: (faceId: number) => {
+      stopGroupBreath();
+      return groupApi.handleAddFace(faceId);
+    },
+
+    onRemoveFace: (faceId: number) => {
+      stopGroupBreath();
+      return groupApi.handleRemoveFace(faceId);
+    },
     // hoverState,
     emitFaceHover: (faceId) => {
       if (faceId === null) {
@@ -218,10 +221,11 @@ export function createRenderer3D(
     modelGroup,
     getViewport,
     () => edges,
-    (faceAId: number, faceBId: number) => groupApi.isVisibleSeam(faceAId, faceBId),
     () => vertexKeyToPos,
     (edgeId: number) => geometryIndex.getEdgeWorldPositions(edgeId),
-    // groupApi.getGroupVisibility,
+    groupApi.getGroupVisibility,
+    groupApi.getFaceGroupMap,
+    groupApi.getGroupParentTree,
     () => seamsVisible,
   );
 
@@ -230,7 +234,7 @@ export function createRenderer3D(
   function syncGroupStateFromData(groupId: number) {
     interactionController?.endBrush();
     stopGroupBreath();
-    startGroupBreath(groupId);
+    if (groupApi.getGroupFaces(groupId)?.size) startGroupBreath(groupId);
   }
 
   const faceColorService = createFaceColorService({
@@ -630,7 +634,6 @@ export function createRenderer3D(
   appEventBus.on("settingsChanged", updateBBox);
   appEventBus.on("historyApplied", updateBBox);
   appEventBus.on("edgeHover2D", ({ p1, p2 }) => {
-    // if (hoverState.hoveredFaceId !== null) return;
     (hoverEdgeLine.geometry as LineSegmentsGeometry).setPositions(
       new Float32Array([p1[0], p1[1], p1[2], p2[0], p2[1], p2[2]]),
     );
@@ -639,22 +642,40 @@ export function createRenderer3D(
   appEventBus.on("edgeHover2DClear", () => {
     hoverEdgeLine.visible = false;
   });
+  appEventBus.on("groupVisibilityChanged", ({ groupId, visible }) => {
+    if (!stopGroupBreath()) specialEdgeManager.updateVisibility(
+      () => edges,
+      groupApi.getFaceGroupMap,
+      groupApi.getGroupVisibility,
+    );
+  });
 
-  function stopGroupBreath() {
+  function stopGroupBreath(): boolean {
+    if (!breathGroupId) return false;
+    appEventBus.emit("groupBreathEnd", breathGroupId??-1);
+    specialEdgeManager.updateVisibility(
+      () => edges,
+      groupApi.getFaceGroupMap,
+      groupApi.getGroupVisibility,
+    );
     if (breathRaf !== null) {
       cancelAnimationFrame(breathRaf);
       breathRaf = null;
     }
     const gid = breathGroupId;
     breathGroupId = null;
-    if (gid !== null) {
-      const faces = groupApi.getGroupFaces(gid);
-      faces?.forEach((faceId) => faceColorService.updateFaceColorById(faceId));
-    }
+    return true;
   }
 
   function startGroupBreath(groupId: number) {
     stopGroupBreath();
+    appEventBus.emit("groupBreathStart", groupId);
+    specialEdgeManager.updateVisibility(
+      () => edges,
+      groupApi.getFaceGroupMap,
+      groupApi.getGroupVisibility,
+      groupId
+    );
     breathGroupId = groupId;
     breathStart = performance.now();
     const faces = groupApi.getGroupFaces(groupId);
@@ -669,18 +690,9 @@ export function createRenderer3D(
       const elapsed = now - breathStart;
       const progress = Math.min(1, elapsed / BREATH_DURATION);
       if (progress >= 1) {
-        faces.forEach((faceId) => faceColorService.updateFaceColorById(faceId));
         stopGroupBreath();
         return;
       }
-      const factor = (1 + BREATH_SCALE) + BREATH_SCALE * Math.sin((progress + 0.25) * Math.PI * 2 * BREATH_CYCLES);
-      const baseColor = groupApi.getGroupColor(groupId)??FACE_DEFAULT_COLOR;
-      const scaled = baseColor.clone().multiplyScalar(factor);
-      faces.forEach((faceId) => {
-        const mapping = faceIndexMap.get(faceId);
-        if (!mapping) return;
-        faceColorService.setFaceColor(mapping.mesh[0], mapping.localFace, scaled);
-      });
       breathRaf = requestAnimationFrame(loop);
     };
     breathRaf = requestAnimationFrame(loop);

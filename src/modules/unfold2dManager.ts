@@ -52,7 +52,7 @@ export function createUnfold2dManager(
   getFaceToEdges: () => Map<number, [number, number, number]>,
   getEdgesArray: () => EdgeRecord[],
   getVertexKeyToPos: () => Map<string, Vector3>,
-  getFaceIndexMap: () => Map<number, { mesh: Mesh[]; localFace: number }>,
+  getFaceIndexMap: () => Map<number, { mesh: Mesh; localFace: number }>,
   getEdgeKeyToId: () => Map<string, number>,
   getThirdVertexKeyOnFace: (edgeId: number, faceId: number) => string | undefined,
   getGroupPlaceAngle: (id: number) => number | undefined,
@@ -103,7 +103,7 @@ export function createUnfold2dManager(
       out.set(0, 0, 1);
       return;
     }
-    const mesh = mapping.mesh[0];
+    const mesh = mapping.mesh;
     const geom = mesh.geometry;
     const pos = geom.getAttribute("position");
     if (!pos) {
@@ -258,7 +258,7 @@ export function createUnfold2dManager(
       const vertexKeys: string[] = [];
       const mapping = faceIndexMap.get(fid);
       if (mapping) {
-        const geom = mapping.mesh[0].geometry;
+        const geom = mapping.mesh.geometry;
         const pos = geom.getAttribute("position");
         if (pos) {
           const [ia, ib, ic] = getFaceVertexIndices(geom, mapping.localFace);
@@ -354,7 +354,7 @@ export function createUnfold2dManager(
     const faceIndexMap = getFaceIndexMap();
     const mapping = faceIndexMap.get(faceId);
     if (!mapping) return null;
-    const mesh = mapping.mesh[0];
+    const mesh = mapping.mesh;
     const geom = mesh.geometry;
     const pos = geom.getAttribute("position");
     if (!pos) return null;
@@ -383,7 +383,7 @@ export function createUnfold2dManager(
       const faceIndexMap = getFaceIndexMap();
       const mapping = faceIndexMap.get(faceId);
       if (!mapping) return;
-      const mesh = mapping.mesh[0];
+      const mesh = mapping.mesh;
       const geom = mesh.geometry;
       const pos = geom.getAttribute("position");
       if (!pos) return;
@@ -455,7 +455,7 @@ export function createUnfold2dManager(
       const keyTo2D = new Map<string, Vector3>();
       const mapping = faceIndexMap.get(fid);
       if (mapping) {
-        const geom = mapping.mesh[0].geometry;
+        const geom = mapping.mesh.geometry;
         const pos = geom.getAttribute("position");
         if (pos) {
           const [ia, ib, ic] = getFaceVertexIndices(geom, mapping.localFace);
@@ -567,7 +567,7 @@ export function createUnfold2dManager(
       const keyTo2D = new Map<string, Point2D>();
       const mapping = faceIndexMap.get(fid);
       if (mapping) {
-        const geom = mapping.mesh[0].geometry;
+        const geom = mapping.mesh.geometry;
         const pos = geom.getAttribute("position");
         if (pos) {
           const [ia, ib, ic] = getFaceVertexIndices(geom, mapping.localFace);
@@ -787,7 +787,7 @@ export function createUnfold2dManager(
   };
 
   appEventBus.on("clearAppStates", () => {
-    clearScene();
+    // clearScene();
     clearTransforms();
     cachedSnapped = null;
   });

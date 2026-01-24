@@ -7,7 +7,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 
 export const FACE_DEFAULT_COLOR = new Color(0xffffff);
 const BACK_DEFAULT_COLOR = new Color(0x666666);
-const TRANSPARENT_COLOR = new Color(0xffffff);
+const SILHOUETTE_COLOR = new Color(0xffffff);
 const EDGE_DEFAULT_COLOR = new Color(0x442200);
 const SEAMEDGE_DEFAULT_COLOR = new Color(0x222222);
 const HOVERLINE_DEFAULT_COLOR = new Color(0xffa500);
@@ -56,12 +56,12 @@ export function createDepthMaterial() {
 
 export function createSilhouetteMaterial() {
   return new MeshBasicMaterial({
-    color: TRANSPARENT_COLOR.clone(),
+    color: SILHOUETTE_COLOR.clone(),
     depthWrite: false,
     depthTest: true,
     transparent: true,
     forceSinglePass: true,
-    opacity: 0.2,
+    opacity: 0.1,
     side: DoubleSide,
   });
 }
