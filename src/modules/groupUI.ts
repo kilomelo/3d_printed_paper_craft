@@ -9,6 +9,7 @@ export type GroupUIState = {
   getGroupColor: (id: number) => Color | undefined;
   getGroupName: (id: number) => string | undefined;
   getGroupFacesCount: (id: number) => number;
+  getGroupVisibility: (id: number) => boolean;
   deletable: boolean;
 };
 
@@ -17,6 +18,7 @@ export type GroupUICallbacks = {
   onColorChange: (color: Color) => void;
   onDelete: () => void;
   onRenameRequest?: () => void;
+  onVisibilityToggle?: (visible: boolean) => void;
 };
 
 export function createGroupUI(
@@ -27,6 +29,7 @@ export function createGroupUI(
     groupColorBtn: HTMLButtonElement;
     groupColorInput: HTMLInputElement;
     groupDeleteBtn: HTMLButtonElement;
+    groupVisibilityBtn?: HTMLButtonElement;
   },
   callbacks: GroupUICallbacks,
 ) {
@@ -129,6 +132,14 @@ export function createGroupUI(
     const count = state.getGroupFacesCount(state.previewGroupId);
     ui.groupFacesCountLabel.textContent = `面数量 ${count}`;
     ui.groupDeleteBtn.style.display = state.deletable ? "inline-flex" : "none";
+    if (ui.groupVisibilityBtn) {
+      const visible = state.getGroupVisibility(state.previewGroupId);
+      const visibleIcon = ui.groupVisibilityBtn.querySelector<SVGElement>(".icon-visible");
+      const hiddenIcon = ui.groupVisibilityBtn.querySelector<SVGElement>(".icon-hidden");
+      visibleIcon?.classList.toggle("hidden", !visible);
+      hiddenIcon?.classList.toggle("hidden", visible);
+      ui.groupVisibilityBtn.classList.toggle("inactive", !visible);
+    }
   };
 
   ui.groupColorBtn.addEventListener("click", () => ui.groupColorInput.click());
@@ -140,6 +151,13 @@ export function createGroupUI(
   ui.groupDeleteBtn.addEventListener("click", () => {
     callbacks.onDelete();
   });
+  if (ui.groupVisibilityBtn && callbacks.onVisibilityToggle) {
+    ui.groupVisibilityBtn.addEventListener("click", () => {
+      if (!lastState) return;
+      const current = lastState.getGroupVisibility(lastState.previewGroupId);
+      callbacks.onVisibilityToggle?.(!current);
+    });
+  }
 
   return {
     render: (state: GroupUIState) => {

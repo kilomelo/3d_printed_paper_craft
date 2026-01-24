@@ -1,6 +1,7 @@
 // 交互辅助：创建 raycaster/hover 线、更新分辨率等低层交互工具函数。
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Vector2, Vector3, Mesh, Raycaster } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { v3 } from "../types/geometryTypes";
@@ -13,7 +14,7 @@ export type HoverState = {
 };
 
 export type InteractionOptions = {
-  view: { width: number; height: number },
+  viewportSizeProvider: () => { width: number; height: number },
   scene: THREE.Scene
   renderer: THREE.WebGLRenderer;
   camera: THREE.PerspectiveCamera;
@@ -21,10 +22,11 @@ export type InteractionOptions = {
   raycaster: Raycaster;
   pointer: Vector2;
   getModel: () => THREE.Object3D | null;
+  mapFaceId: (mesh: Mesh, faceIndex: number | undefined) => number | null;
+  isFaceVisible: (faceId: number) => boolean;
   facesVisible: () => boolean;
   canEdit: () => boolean;
   isPointerLocked: () => boolean;
-  pickFace: (event: PointerEvent) => number | null;
   onAddFace: (faceId: number) => boolean;
   onRemoveFace: (faceId: number) => boolean;
   emitFaceHover?: (faceId: number | null) => void;
@@ -52,17 +54,17 @@ export function initInteractionController(opts: InteractionOptions) {
   let brushMode = -1;
   // brush过程中是否有效地修改过组数据
   let brushPaintedCnt: number = 0;
-  // let brushButton: number | null = null;
   let lastBrushedFace: number | null = null;
   let controlsEnabledBeforeBrush = true;
   let lastClientPos = { x: 0, y: 0 };
   const hoverState = { hoverLines: [], hoveredFaceId: null } as HoverState;
 
   const createHoverLines = () => {
+    const { width, height } = opts.viewportSizeProvider();
     for (let i = 0; i < 3; i++) {
       const geom = new LineSegmentsGeometry();
       geom.setPositions(new Float32Array(6));
-      const mat = createHoverLineMaterial({ width: opts.view.width, height: opts.view.height });
+      const mat = createHoverLineMaterial({ width: width, height: height });
       const line = new LineSegments2(geom, mat);
       line.computeLineDistances();
       line.visible = false;
@@ -173,29 +175,13 @@ export function initInteractionController(opts: InteractionOptions) {
       hideHoverLines();
       return;
     }
-    const model = opts.getModel();
-    if (!model) return;
-    const rect = opts.renderer.domElement.getBoundingClientRect();
-    lastClientPos.x = event.clientX;
-    lastClientPos.y = event.clientY;
-    opts.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    opts.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    opts.raycaster.setFromCamera(opts.pointer, opts.camera);
-
-    const intersects = opts.raycaster.intersectObject(model, true).filter((i) => {
-      const mesh = i.object as Mesh;
-      return mesh.isMesh && !mesh.userData.functional;
-    });
-
-    if (!intersects.length) {
+    const hit = pickFaceAtEvent(event);
+    if (!hit) {
       if (brushMode !== -1) lastBrushedFace = null;
       hideHoverLines();
       return;
     }
-    const hit = intersects[0];
-    const mesh = hit.object as Mesh;
-    const faceIndex = hit.faceIndex ?? -1;
-    const faceId = opts.pickFace(event);
+    const { mesh, faceIndex, faceId } = hit;
     if (faceId === null) {
       hideHoverLines();
       return;
@@ -214,6 +200,41 @@ export function initInteractionController(opts: InteractionOptions) {
     else if (hoverState.hoveredFaceId !== faceId) {
       updateHoverLines(mesh, faceIndex, faceId);
     }
+  };
+
+  const pickFaceAtEvent = (event: PointerEvent): { mesh: Mesh; faceIndex: number; faceId: number | null } | null => {
+    const model = opts.getModel();
+    if (!model) return null;
+    const rect = opts.renderer.domElement.getBoundingClientRect();
+    lastClientPos.x = event.clientX;
+    lastClientPos.y = event.clientY;
+    opts.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    opts.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    opts.raycaster.setFromCamera(opts.pointer, opts.camera);
+    const intersects = opts.raycaster.intersectObject(model, true).filter((i) => {
+      const mesh = i.object as Mesh;
+      return mesh.isMesh && !mesh.userData.functional;
+    });
+    if (!intersects.length) return null;
+
+    for (const hit of intersects) {
+      const mesh = hit.object as Mesh;
+      const faceIndex = hit.faceIndex ?? -1;
+      if (faceIndex < 0) continue;
+      const faceId = opts.mapFaceId(mesh, faceIndex);
+      if (faceId === null) continue;
+      if (!opts.isFaceVisible(faceId)) continue;
+      return { mesh, faceIndex, faceId };
+    }
+    return null;
+  }
+
+  const updateHoverLinesResolution = () => {
+    hoverState.hoverLines.forEach((line) => {
+      const material = line.material as LineMaterial;
+      const { width, height } = opts.viewportSizeProvider()
+      material.resolution.set(width, height);
+    });
   };
   const onWheel = (event: WheelEvent) => {
     forceHoverCheck();
@@ -238,9 +259,10 @@ export function initInteractionController(opts: InteractionOptions) {
       // ignore capture failures
     }
     if (!opts.getModel() || !opts.canEdit()) return;
-    const faceId = opts.pickFace(event);
-    if (faceId === null) return;
-    startBrush(event.button, faceId);
+    const hit = pickFaceAtEvent(event);
+    if (!hit) return;
+    if (hit.faceId === null) return;
+    startBrush(event.button, hit.faceId);
   };
 
   const onPointerUp = (event: PointerEvent) => {
@@ -260,6 +282,7 @@ export function initInteractionController(opts: InteractionOptions) {
   opts.renderer.domElement.addEventListener("contextmenu", (event) => {
     event.preventDefault();
   });
+  opts.renderer.domElement.addEventListener("resize", updateHoverLinesResolution);
 
   return {
     endBrush,
@@ -273,7 +296,8 @@ export function initInteractionController(opts: InteractionOptions) {
       opts.renderer.domElement.removeEventListener("pointerleave", onPointerLeave);
       opts.renderer.domElement.removeEventListener("pointerdown", onPointerDown);
       opts.renderer.domElement.removeEventListener("pointerup", onPointerUp);
-      window.removeEventListener("pointerup", onWindowPointerUp);
+      opts.renderer.domElement.removeEventListener("pointerup", onPointerUp);
+      opts.renderer.domElement.removeEventListener("resize", updateHoverLinesResolution);
       disposeHoverLines();
     },
   };

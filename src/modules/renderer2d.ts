@@ -83,6 +83,7 @@ export function createRenderer2D(
     connectionLine.visible = true;
     const connGeom = connectionLine.geometry as LineSegmentsGeometry;
     connGeom.setPositions(new Float32Array([rotatedA[0], rotatedA[1], 2, rotatedB[0], rotatedB[1], 2]));
+    connectionLine.computeLineDistances();
   };
 
   const resizeRenderer2D = () => {
@@ -93,12 +94,16 @@ export function createRenderer2D(
     camera.top = height * 0.5;
     camera.bottom = -height * 0.5;
     camera.updateProjectionMatrix();
-    // const mat = hoverLine.material as any;
-    // mat.resolution?.set(width, height);
-    // hoverFaceLines?.forEach((line) => {
-    //   const m = line.material as any;
-    //   m.resolution?.set(width, height);
-    // });
+    const mat = hoverLine.material as any;
+    mat.resolution?.set(width, height);
+    hoverFaceLines?.forEach((line) => {
+      const m = line.material as any;
+      m.resolution?.set(width, height);
+    });
+    seamConnectLines?.forEach((line) => {
+      const m = line.material as any;
+      m.resolution?.set(width, height);
+    })
   };
   
   window.addEventListener("resize", resizeRenderer2D);
@@ -333,6 +338,7 @@ export function createRenderer2D(
   appEventBus.on("faceHover3D", onHoverFace);
   appEventBus.on("faceHover3DClear", () => {
     hoverFaceLines?.forEach((l) => (l.visible = false));
+    seamConnectLines?.forEach((l) => (l.visible = false));
   });
   let updateHoverFaceByFaceIdNextFrame: number | null = null;
   appEventBus.on("groupFaceAdded", ({ groupId, faceId }) => {
@@ -415,6 +421,7 @@ export function createRenderer2D(
       geom.setPositions(new Float32Array(6));
       const mat = createSeamConnectLineMaterial({ width, height });
       const line = new LineSegments2(geom, mat);
+      line.computeLineDistances();
       line.visible = false;
       scene.add(line);
       return line;

@@ -21,6 +21,7 @@ import {
   setGroupPlaceAngle as setGroupPlaceAngleData,
   resetGroups,
   setGroupColorCursor,
+  // sharedEdgeIsSeam,
 } from "./groups";
 import { type PPCFile } from "./ppc";
 import { appEventBus } from "./eventBus";
@@ -32,11 +33,13 @@ export function createGroupController(
   getFaceAdjacency: () => Map<number, Set<number>>,
 ) {
   let previewGroupId = 1;
+  const groupVisibility = new Map<number, boolean>();
   resetGroups();
 
   appEventBus.on("clearAppStates", () => {
     previewGroupId = 1;
     resetGroups();
+    groupVisibility.clear();
   });
   
   function setGroupColor(groupId: number, color: Color) {
@@ -77,7 +80,8 @@ export function createGroupController(
     if (size <= 2 || canRemoveFaceData(groupId, faceId, getFaceAdjacency())) {
       if (assignFaceToGroup(faceId, null)) {
         rebuildGroupTreeData(groupId, getFaceAdjacency());
-        log(`已从组 ${getGroupIdsData().indexOf(groupId) + 1} 移除`, "success");
+        const groupName = getGroupNameData(groupId) ?? `展开组 ${getGroupIdsData().indexOf(groupId) + 1}`;
+        log(`已从 ${groupName} 移除`, "success");
         appEventBus.emit("groupFaceRemoved", { groupId: groupId, faceId });
           return true;
       }
@@ -94,6 +98,10 @@ export function createGroupController(
   function addFace(faceId: number, groupId: number | null): boolean {
     // console.log('[GroupController] addFace called with faceId:', faceId, 'groupId:', groupId, 'getFaceAdjacency', getFaceAdjacency);
     if (groupId === null) return false;
+    if (!getGroupVisibility(groupId)) {
+      log("无法为隐藏的组添加面，请先取消隐藏", "error");
+      return false;
+    }
     const currentGroup = getFaceGroupMapData().get(faceId) ?? null;
     if (currentGroup === groupId) return false;
     const targetSet = getGroupFacesData(groupId) ?? new Set<number>();
@@ -112,7 +120,8 @@ export function createGroupController(
     rebuildGroupTreeData(groupId, getFaceAdjacency());
     if (currentGroup) rebuildGroupTreeData(currentGroup, getFaceAdjacency());
 
-    log(`已加入组 ${getGroupIdsData().indexOf(groupId) + 1}`, "success");
+    const groupName = getGroupNameData(groupId) ?? `展开组 ${getGroupIdsData().indexOf(groupId) + 1}`;
+    log(`已加入 ${groupName}`, "success");
     appEventBus.emit("groupFaceAdded", { groupId: groupId, faceId });
     if (currentGroup !== null) {
       appEventBus.emit("groupFaceRemoved", { groupId: currentGroup, faceId });
@@ -135,6 +144,7 @@ export function createGroupController(
     }
     const nextPreviewId = indexOfGroup === ids.length - 1 ? ids[indexOfGroup - 1] : ids[indexOfGroup + 1];
     if (deleteGroupData(groupId)) {
+      groupVisibility.delete(groupId);
       previewGroupId = nextPreviewId;
       appEventBus.emit("groupRemoved", {
         groupId: groupId,
@@ -150,6 +160,8 @@ export function createGroupController(
     applyImportedGroupsData(groups as NonNullable<PPCFile["groups"]>, getFaceAdjacency());
     setGroupColorCursor(groupColorCursor ?? 0);
     const groupIds = getGroupIdsData();
+    groupVisibility.clear();
+    groupIds.forEach((id) => groupVisibility.set(id, true));
     setPreviewGroupId(groupIds[0]);
   }
 
@@ -158,6 +170,7 @@ export function createGroupController(
     if (newGroupId) {
       const groupName = getGroupNameData(newGroupId) ?? `展开组 ${newGroupId + 1}`;
       previewGroupId = newGroupId;
+      groupVisibility.set(newGroupId, true);
       appEventBus.emit("groupAdded", { groupId: newGroupId, groupName });
       log(`已创建 ${groupName}`, "success");
       appEventBus.emit("groupCurrentChanged", previewGroupId);
@@ -172,6 +185,38 @@ export function createGroupController(
     if (previewGroupId === groupId) return;
     previewGroupId = groupId;
     appEventBus.emit("groupCurrentChanged", previewGroupId);
+  }
+
+  function setGroupVisibility(groupId: number, visible: boolean) {
+    groupVisibility.set(groupId, visible);
+    appEventBus.emit("groupVisibilityChanged", { groupId, visible });
+  }
+
+  function getGroupVisibility(groupId: number): boolean {
+    return groupVisibility.get(groupId) ?? true;
+  }
+
+  function getGroupVisibilityEntries(): Array<[number, boolean]> {
+    return Array.from(groupVisibility.entries());
+  }
+
+  function isVisibleSeam(faceAId: number, faceBId: number): boolean {
+    const g1 = getFaceGroupMapData().get(faceAId) ?? -1;
+    const g2 = getFaceGroupMapData().get(faceBId) ?? -1;
+    if (g1 === -1 && g2 === -1) return false;
+    if (g1 === -1 || g2 === -1) return true;
+    const g1Visible = getGroupVisibility(g1);
+    const g2Visible = getGroupVisibility(g2);
+    if (g1 !== g2) return g1Visible || g2Visible;
+    const parentMap = getGroupTreeParentData(g1);
+    if (!parentMap) return false;
+    const isFathersonRelationship = parentMap.get(faceAId) === faceBId || parentMap.get(faceBId) === faceAId;
+    return g1Visible && !isFathersonRelationship;
+  }
+
+  function applyGroupVisibility(entries: Array<[number, boolean]>) {
+    groupVisibility.clear();
+    entries.forEach(([gid, vis]) => groupVisibility.set(gid, vis));
   }
 
   return {
@@ -193,5 +238,10 @@ export function createGroupController(
     applyImportedGroups,
     addGroup,
     getPreviewGroupId,
-    setPreviewGroupId };
+    setPreviewGroupId,
+    setGroupVisibility,
+    getGroupVisibility,
+    getGroupVisibilityEntries,
+    applyGroupVisibility,
+    isVisibleSeam };
 }

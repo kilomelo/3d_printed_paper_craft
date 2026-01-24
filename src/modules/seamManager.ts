@@ -1,19 +1,20 @@
 // 拼缝管理器：管理模型中的拼缝线的创建、更新和显示
-import { Vector3, Object3D, Group } from "three";
+import { Vector3, Group } from "three";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { type EdgeRecord } from "./model";
 import { appEventBus } from "./eventBus";
-import { sharedEdgeIsSeam  } from "./groups";
 import { createSeamLineMaterial } from "./materials";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 
 export function createSeamManager(
   root: Group,
   viewportSizeProvider: () => { width: number; height: number },
   getEdges: () => EdgeRecord[],
-  getFaceGroupMap: () => Map<number, number | null>,
+  isVisibleSeam: (faceAId: number, faceBId: number) => boolean,
   getVertexKeyToPos: () => Map<string, Vector3>,
   getEdgeWorldPositions: (edgeId: number) => [Vector3, Vector3] | null,
+  // getGroupVisibility: (id: number) => boolean,
   isSeamsVisible: () => boolean,
 ) {
   const seamLines = new Map<number, LineSegments2>();
@@ -36,19 +37,19 @@ export function createSeamManager(
   appEventBus.on("groupFaceAdded", rebuildFull);
   appEventBus.on("groupFaceRemoved", rebuildFull);
   appEventBus.on("groupRemoved", rebuildFull);
+  appEventBus.on("groupVisibilityChanged", rebuildFull);
   appEventBus.on("historyApplied", rebuildFull);
 
   function edgeIsSeam(
     edgeId: number,
   ): boolean {
-    const faceGroupMap = getFaceGroupMap();
     const edges = getEdges();
     const edge = edges[edgeId];
     if (!edge) return false;
     const faces = Array.from(edge.faces);
     if (faces.length === 1) return false;
     if (faces.length !== 2) return true;
-    return sharedEdgeIsSeam(faces[0], faces[1]);
+    return isVisibleSeam(faces[0], faces[1]);
   }
 
   function ensureSeamLine(edgeId: number): LineSegments2 {
@@ -99,9 +100,18 @@ export function createSeamManager(
     root.add(line);
     return line;
   }
+
+  function updateSeamResolution() {
+    seamLines.forEach((line) => {
+      const material = line.material as LineMaterial;
+      const { width, height } = viewportSizeProvider()
+      material.resolution.set(width, height);
+    });
+  }
   
   return {
     setVisibility,
+    updateSeamResolution,
     dispose: () => {
       seamLines.forEach((line) => {
         if (line.removeFromParent) line.removeFromParent();

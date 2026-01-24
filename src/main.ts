@@ -68,6 +68,7 @@ const captureProjectState = (): ProjectState => ({
   colorCursor: getGroupColorCursor(),
   previewGroupId: groupController.getPreviewGroupId(),
   settings: getSettings(),
+  groupVisibility: groupController.getGroupVisibilityEntries(),
 });
 
 const applyProjectState = (snap: Snapshot) => {
@@ -82,7 +83,11 @@ const applyProjectState = (snap: Snapshot) => {
   groupController.applyImportedGroups(importedGroups, state.colorCursor);
   const fallbackGroupId = importedGroups[0]?.id ?? groupController.getPreviewGroupId();
   groupController.setPreviewGroupId(state.previewGroupId ?? fallbackGroupId);
+  if (state.groupVisibility) {
+    groupController.applyGroupVisibility(state.groupVisibility);
+  }
   importSettings(state.settings);
+  groupUI.render(buildGroupUIState());
 };
 
 app.innerHTML = `
@@ -137,18 +142,31 @@ app.innerHTML = `
       </div>
     </div>
     <div class="preview-panel">
-      <div class="preview-toolbar">
-        <button class="btn sm toggle" id="group-edit-toggle">编辑展开组</button>
-        <div class="group-tabs" id="group-tabs"></div>
+          <div class="preview-toolbar">
+            <button class="btn sm toggle" id="group-edit-toggle">编辑展开组</button>
+            <div class="group-tabs" id="group-tabs"></div>
             <div class="toolbar-spacer"></div>
             <button class="btn sm tab-add" id="group-add">+</button>
           </div>
           <div class="preview-area" id="group-preview">
             <button class="overlay-btn color-swatch" id="group-color-btn" title="选择组颜色"></button>
+            <button class="overlay-btn overlay-visibility" id="group-visibility-toggle" title="显示/隐藏展开组">
+              <svg class="icon-visible" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
+                <path d="M-896-256H384v800H-896z" style="fill:none"/>
+                <path d="M32.513 13.926C43.087 14.076 51.654 23.82 56 32c0 0-1.422 2.892-2.856 4.895a46.344 46.344 0 0 1-2.191 2.826 41.265 41.265 0 0 1-1.698 1.898c-5.237 5.5-12.758 9.603-20.7 8.01C19.732 47.859 12.823 40.131 8.497 32c0 0 1.248-2.964 2.69-4.964a45.105 45.105 0 0 1 2.034-2.617 41.618 41.618 0 0 1 1.691-1.897c4.627-4.876 10.564-8.63 17.601-8.596Zm-.037 4c-5.89-.022-10.788 3.267-14.663 7.35a37.553 37.553 0 0 0-1.527 1.713 41.472 41.472 0 0 0-1.854 2.386c-.544.755-1.057 1.805-1.451 2.59 3.773 6.468 9.286 12.323 16.361 13.742 6.563 1.317 12.688-2.301 17.016-6.846a37.224 37.224 0 0 0 1.534-1.715c.7-.833 1.366-1.694 1.999-2.579.557-.778 1.144-1.767 1.588-2.567-3.943-6.657-10.651-13.944-19.003-14.074Z"/>
+                <path d="M32.158 23.948c4.425 0 8.018 3.593 8.018 8.017a8.021 8.021 0 0 1-8.018 8.017 8.021 8.021 0 0 1-8.017-8.017 8.022 8.022 0 0 1 8.017-8.017Zm0 4.009a4.01 4.01 0 0 1 4.009 4.008 4.01 4.01 0 0 1-4.009 4.009 4.01 4.01 0 0 1-4.008-4.009 4.01 4.01 0 0 1 4.008-4.008Z"/>
+              </svg>
+              <svg class="icon-hidden hidden" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
+                <path d="M-960-256H320v800H-960z" style="fill:none"/>
+                <path d="m13.673 10.345-3.097 3.096 39.853 39.854 3.097-3.097-39.853-39.853Z"/>
+                <path d="m17.119 19.984 2.915 2.915c-3.191 2.717-5.732 6.099-7.374 9.058l-.005.01c4.573 7.646 11.829 14.872 20.987 13.776 2.472-.296 4.778-1.141 6.885-2.35l2.951 2.95c-4.107 2.636-8.815 4.032-13.916 3.342-9.198-1.244-16.719-8.788-21.46-17.648 2.226-4.479 5.271-8.764 9.017-12.053Zm6.63-4.32c2.572-1.146 5.355-1.82 8.327-1.868.165-.001 2.124.092 3.012.238a18.45 18.45 0 0 1 1.659.35C45.472 16.657 51.936 24.438 56 32.037c-1.705 3.443-3.938 6.398-6.601 9.277l-2.827-2.827c1.967-2.12 3.622-4.161 4.885-6.45 0 0-1.285-2.361-2.248-3.643a37.988 37.988 0 0 0-1.954-2.395c-.54-.608-2.637-2.673-3.136-3.103-3.348-2.879-7.279-5.138-11.994-5.1-1.826.029-3.582.389-5.249.995l-3.127-3.127Z" style="fill-rule:nonzero"/>
+                <path d="m25.054 27.92 2.399 2.398a4.843 4.843 0 0 0 6.114 6.114l2.399 2.399A8.02 8.02 0 0 1 25.054 27.92Zm6.849-4.101.148-.002a8.021 8.021 0 0 1 8.017 8.017l-.001.148-8.164-8.163Z"/>
+              </svg>
+            </button>
             <span class="overlay-label group-faces-count" id="group-faces-count">面数量 0</span>
             <button class="overlay-btn tab-delete" id="group-delete" title="删除展开组">删除组</button>
             <div id="group-preview-empty" class="preview-2d-empty hidden">
-              点击【编辑展开组】按钮可进行编辑，左键加入三角面，右键移出三角面
+              点击【编辑展开组】按钮进行编辑
             </div>
             <input type="color" id="group-color-input" class="color-input" autocomplete="off" />
           </div>
@@ -327,6 +345,7 @@ const groupTabsEl = document.querySelector<HTMLDivElement>("#group-tabs");
 const groupAddBtn = document.querySelector<HTMLButtonElement>("#group-add");
 const groupPreview = document.querySelector<HTMLDivElement>("#group-preview");
 const groupPreviewEmpty = document.querySelector<HTMLDivElement>("#group-preview-empty");
+const groupVisibilityToggle = document.querySelector<HTMLButtonElement>("#group-visibility-toggle");
 const settingsOverlay = document.querySelector<HTMLDivElement>("#settings-overlay");
 const settingsContent = settingsOverlay?.querySelector<HTMLDivElement>(".settings-content") || null;
 const renameOverlay = document.querySelector<HTMLDivElement>("#rename-overlay");
@@ -619,6 +638,8 @@ const renderer3d = createRenderer3D(
     getGroupColor: groupController.getGroupColor,
     getGroupFaces: groupController.getGroupFaces,
     getFaceGroupMap: groupController.getFaceGroupMap,
+    getGroupVisibility: groupController.getGroupVisibility,
+    isVisibleSeam: groupController.isVisibleSeam,
   },
   geometryContext,
   () => {
@@ -826,6 +847,7 @@ const unfold2d = createUnfold2dManager(
   groupController.getPreviewGroupId,
   groupController.getFaceGroupMap,
   groupController.getGroupColor,
+  groupController.getGroupVisibility,
   groupController.getGroupTreeParent,
   () => geometryContext.geometryIndex.getFaceToEdges(),
   () => geometryContext.geometryIndex.getEdgesArray(),
@@ -866,6 +888,7 @@ const buildGroupUIState = () => {
     getGroupColor: groupController.getGroupColor,
     getGroupName: groupController.getGroupName,
     getGroupFacesCount: (id: number) => groupController.getGroupFaces(id)?.size ?? 0,
+    getGroupVisibility: groupController.getGroupVisibility,
     deletable: groupCount > 1,
   };
 };
@@ -878,6 +901,7 @@ const groupUI = createGroupUI(
     groupColorBtn,
     groupColorInput,
     groupDeleteBtn,
+    groupVisibilityBtn: groupVisibilityToggle ?? undefined,
   },
   {
     onPreviewSelect: (id) => {
@@ -894,6 +918,12 @@ const groupUI = createGroupUI(
       groupController.deleteGroup(previewGroupId);
     },
     onRenameRequest: () => openRenameDialog(),
+    onVisibilityToggle: (visible: boolean) => {
+      const gid = groupController.getPreviewGroupId();
+      groupController.setGroupVisibility(gid, visible);
+      setFileSaved(false);
+      groupUI.render(buildGroupUIState());
+    },
   },
 );
 
@@ -922,7 +952,9 @@ appEventBus.on("groupRemoved", ({ groupId, groupName, faces }) => {
   }
   setFileSaved(false);
 });
-appEventBus.on("groupCurrentChanged", (groupId: number) => groupUI.render(buildGroupUIState()));
+appEventBus.on("groupCurrentChanged", (groupId: number) => {
+  groupUI.render(buildGroupUIState());
+});
 appEventBus.on("groupColorChanged", ({ groupId, color }) => {
   groupUI.render(buildGroupUIState());
   setFileSaved(false);

@@ -55,6 +55,7 @@ export type AppEvents = {
   historyErased: number[]; // 被抹掉的历史记录的uid
   userOperation: { side: "left" | "right" | "both"; op: string; highlightDuration?: number };
   userOperationDone: { side: "left" | "right" | "both"; op: string };
+  groupVisibilityChanged: { groupId: number; visible: boolean };
 };
 
 export const appEventBus = createEventBus<AppEvents>();
