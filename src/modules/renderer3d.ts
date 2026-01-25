@@ -721,17 +721,15 @@ export function createRenderer3D(
     bboxBox = new Box3().setFromObject(modelGroup);
     const boxSize = bboxBox.getSize(new Vector3());
     // const minDimension = Math.min(boxSize.x, boxSize.y, boxSize.z);
-    bboxHelper = new Box3Helper(bboxBox);
+    bboxHelper = new Box3Helper(bboxBox, new Color(0x00ff88));
     bboxHelper.renderOrder = 3;
-    bboxHelper.material = new LineDashedMaterial({
-      color: 0x00ff88,
-      dashSize: 0.05,
-      gapSize: 0.025,
-      // transparent: true,
-      // opacity: 0.8,
-      depthTest: true,   // 需要始终显示在最上层可设为 false
-      depthWrite: false, // 通常线框不写深度更稳
-    });
+    // bboxHelper.material = new LineDashedMaterial({
+    //   color: 0x00ff88,
+    //   dashSize: 0.05,
+    //   gapSize: 0.025,
+    //   depthTest: true,   // 需要始终显示在最上层可设为 false
+    //   depthWrite: false, // 通常线框不写深度更稳
+    // });
     // 关键：虚线要求非 indexed geometry
     const g = bboxHelper.geometry as THREE.BufferGeometry;
     if (g.index) {
