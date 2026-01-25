@@ -160,7 +160,7 @@ textarea {
 
 .editor-header {
   width: 100%;
-  padding: 14px 18px;
+  padding: 14px 10px 12px 10px;
   height: 45px;
   display: flex;
   align-items: center;
@@ -211,7 +211,11 @@ textarea {
   border: 1px solid var(--border);
   border-top: none;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
+}
+
+.editor-menu .about-spacer {
+  flex: 1 1 auto;
 }
 
 .menu-blocker {
@@ -268,6 +272,46 @@ textarea {
 
 .loading-overlay.hidden {
   display: none;
+}
+
+.about-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 45;
+}
+
+.about-overlay.hidden {
+  display: none;
+}
+
+.about-modal {
+  width: 560px;
+  max-height: 80vh;
+  background: #0b1020;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.about-body {
+  padding: 16px;
+  flex: 1;
+  overflow: auto;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.about-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
 }
 
 .preview-toolbar {
@@ -364,7 +408,8 @@ textarea {
 
 .tab-add {
   padding: 6px 10px;
-  margin-left: 8px;
+  font-size: 13px;
+  margin-right: 0;
   border-radius: 8px;
   flex-shrink: 0;
 }
@@ -894,22 +939,6 @@ textarea {
   border: 1px solid var(--border);
   z-index: 6;
   pointer-events: none;
-}
-
-.preview-2d-placeholder {
-  flex: 1;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--muted);
-  position: absolute;
-  inset: 0;
-}
-
-.preview-2d-placeholder.hidden {
-  display: none;
 }
 
 .preview-2d-empty {

@@ -54,6 +54,26 @@ const setProjectNameLabel = (name: string) => {
     projectNameLabel.textContent = isFileSaved ? `${name}` : `${name} *`;
   }
 };
+
+const openAbout = async () => {
+  if (!aboutOverlay || !aboutContent) return;
+  aboutOverlay.classList.remove("hidden");
+  try {
+    const res = await fetch("about_cn.html", { cache: "no-cache" });
+    if (res.ok) {
+      const html = await res.text();
+      aboutContent.innerHTML = html;
+    } else {
+      aboutContent.textContent = "加载关于页面失败";
+    }
+  } catch (e) {
+    aboutContent.textContent = "加载关于页面失败";
+  }
+};
+
+const closeAbout = () => {
+  aboutOverlay?.classList.add("hidden");
+};
 // 文件已保存状态
 let isFileSaved = true;
 const setFileSaved = (value: boolean) => {
@@ -121,6 +141,8 @@ app.innerHTML = `
         <button class="btn ghost" id="export-ear-clip-btn">导出拼接边固定夹 STL</button>
         <button class="btn ghost" id="preview-group-model-btn">预览展开组模型</button>
         <button class="btn ghost" id="settings-open-btn">项目设置</button>
+        <div class="about-spacer"></div>
+        <button class="btn ghost" id="about-btn">关于与帮助</button>
         <div id="menu-blocker" class="menu-blocker"></div>
       </nav>
   <section class="editor-preview">
@@ -146,7 +168,7 @@ app.innerHTML = `
             <button class="btn sm toggle" id="group-edit-toggle">编辑展开组</button>
             <div class="group-tabs" id="group-tabs"></div>
             <div class="toolbar-spacer"></div>
-            <button class="btn sm tab-add" id="group-add">+</button>
+            <button class="btn tab-add" id="group-add">+</button>
           </div>
           <div class="preview-area" id="group-preview">
             <div class="overlay-group-meta">
@@ -179,6 +201,14 @@ app.innerHTML = `
   <div id="loading-overlay" class="loading-overlay hidden"></div>
   <div id="log-panel" class="log-panel hidden">
     <div id="log-list" class="log-list"></div>
+  </div>
+  <div id="about-overlay" class="about-overlay hidden">
+    <div id="about-modal" class="about-modal">
+      <div class="about-body" id="about-content">加载中...</div>
+      <div class="about-footer">
+        <button id="about-back-btn" class="btn primary">返回</button>
+      </div>
+    </div>
   </div>
 
   <div id="settings-overlay" class="settings-overlay hidden">
@@ -357,6 +387,10 @@ const renameInput = document.querySelector<HTMLInputElement>("#rename-input");
 const renameCancelBtn = document.querySelector<HTMLButtonElement>("#rename-cancel-btn");
 const renameConfirmBtn = document.querySelector<HTMLButtonElement>("#rename-confirm-btn");
 const loadingOverlay = document.querySelector<HTMLDivElement>("#loading-overlay");
+const aboutOverlay = document.querySelector<HTMLDivElement>("#about-overlay");
+const aboutContent = document.querySelector<HTMLDivElement>("#about-content");
+const aboutBackBtn = document.querySelector<HTMLButtonElement>("#about-back-btn");
+const aboutBtn = document.querySelector<HTMLButtonElement>("#about-btn");
 
 const showLoadingOverlay = () => loadingOverlay?.classList.remove("hidden");
 const hideLoadingOverlay = () => loadingOverlay?.classList.add("hidden");
@@ -493,6 +527,24 @@ const changeWorkspaceState = (state: WorkspaceState) => {
   if (state === "previewGroupModel") log("展开组预览模型已加载", "info");
   appEventBus.emit("workspaceStateChanged", { previous: previousState, current: state });
 };
+
+aboutBackBtn?.addEventListener("click", () => {
+  aboutOverlay?.classList.add("hidden");
+});
+aboutBtn?.addEventListener("click", async () => {
+  if (!aboutOverlay || !aboutContent) return;
+  aboutOverlay.classList.remove("hidden");
+  try {
+    const res = await fetch("about_cn.html", { cache: "no-cache" });
+    if (res.ok) {
+      aboutContent.innerHTML = await res.text();
+    } else {
+      aboutContent.textContent = "加载关于页面失败";
+    }
+  } catch (err) {
+    aboutContent.textContent = "加载关于页面失败";
+  }
+});
 
 const clearAppStates = () => {
   changeWorkspaceState("loading");
@@ -902,7 +954,7 @@ renderer2d.setEdgeQueryProviders({
   getFaceIdToEdges: () => geometryContext.geometryIndex.getFaceToEdges(),
   getPreviewGroupId: groupController.getPreviewGroupId,
 });
-const menuButtons = [menuOpenBtn, exportBtn, exportGroupStepBtn, exportGroupStlBtn, exportEarClipBtn, previewGroupModelBtn, settingsOpenBtn];
+const menuButtons = [menuOpenBtn, exportBtn, exportGroupStepBtn, exportGroupStlBtn, exportEarClipBtn, previewGroupModelBtn, settingsOpenBtn, aboutBtn];
 const updateMenuState = () => {
   const isPreview = getWorkspaceState() === "previewGroupModel";
   menuButtons.forEach((btn) => btn?.classList.toggle("hidden", isPreview));

@@ -441,7 +441,7 @@ export function createUnfold2dManager(
     geom.setIndex(indices);
     geom.computeVertexNormals();
     const mesh = new Mesh(geom, createUnfoldFaceMaterial());
-    const meshIntersect = new Mesh(geom, createWarnningMaterial(3, Math.PI * 0.25 - (getGroupPlaceAngle(groupId)??0), 0.1));
+    const meshIntersect = new Mesh(geom, createWarnningMaterial(4, Math.PI * 0.25 - (getGroupPlaceAngle(groupId)??0), 0.15));
     mesh.userData.groupId = groupId;
     mesh.userData.main = true;
     renderer2d.root.add(mesh);
