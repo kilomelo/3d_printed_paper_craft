@@ -7,15 +7,19 @@ type HintItem = { key: string; label: string };
 type HintConfig = { left: HintItem[]; right: HintItem[] };
 
 const hintTable: Record<WorkspaceState, HintConfig> = {
+  loading: {
+    left: [],
+    right: [],
+  },
   normal: {
     left: [
       { key: "view-rotate", label: "左键旋转视角" },
-      { key: "view-pan", label: "右键平移视角" },
       { key: "view-zoom", label: "滚轮缩放视角" },
+      { key: "view-pan", label: "右键平移视角" },
     ],
     right: [
-      { key: "view-pan", label: "右键平移视角" },
       { key: "view-zoom", label: "滚轮缩放视角" },
+      { key: "view-pan", label: "右键平移视角" },
       { key: "rename-group", label: "左键长按标签改名" },
     ],
   },
@@ -24,21 +28,21 @@ const hintTable: Record<WorkspaceState, HintConfig> = {
       { key: "group-add-face", label: "左键添加面到展开组" },
       { key: "group-remove-face", label: "右键移出展开组三角面" },
       { key: "view-rotate", label: "左键旋转视角" },
-      { key: "view-pan", label: "右键平移视角" },
       { key: "view-zoom", label: "滚轮缩放视角" },
+      { key: "view-pan", label: "右键平移视角" },
     ],
     right: [
       { key: "group-rotate", label: "左键旋转展开组" },
-      { key: "view-pan", label: "右键平移视角" },
       { key: "view-zoom", label: "滚轮缩放视角" },
+      { key: "view-pan", label: "右键平移视角" },
       { key: "rename-group", label: "左键长按标签改名" },
     ],
   },
   previewGroupModel: {
     left: [
       { key: "view-rotate", label: "左键旋转视角" },
-      { key: "view-pan", label: "右键平移视角" },
       { key: "view-zoom", label: "滚轮缩放视角" },
+      { key: "view-pan", label: "右键平移视角" },
     ],
     right: [],
   },
@@ -67,6 +71,7 @@ export function createOperationHints(params: { leftMount: HTMLElement; rightMoun
 
   const renderSide = (side: Side, state: WorkspaceState) => {
     const cfg = hintTable[state];
+    if (!cfg) return;
     const target = side === "left" ? left : right;
     target.list.innerHTML = "";
     target.items.clear();

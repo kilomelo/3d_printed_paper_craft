@@ -55,6 +55,9 @@ export type AppEvents = {
   historyErased: number[]; // 被抹掉的历史记录的uid
   userOperation: { side: "left" | "right" | "both"; op: string; highlightDuration?: number };
   userOperationDone: { side: "left" | "right" | "both"; op: string };
+  groupVisibilityChanged: { groupId: number; visible: boolean };
+  groupBreathStart: number; // 开始呼吸动画的组ID
+  groupBreathEnd: number; // 结束呼吸动画的组ID
 };
 
 export const appEventBus = createEventBus<AppEvents>();

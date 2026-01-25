@@ -4,7 +4,6 @@ import { Mesh } from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import { createFrontMaterial } from "./materials";
 import { snapGeometryPositions } from "./geometry";
 import { load3dppc, type PPCFile } from "./ppc";
 
@@ -24,20 +23,16 @@ export async function loadRawObject(
     let importedSeting: Object | undefined;
     if (ext === "obj") {
       const loaded = await objLoader.loadAsync(url);
-      const mat = createFrontMaterial();
       loaded.traverse((child) => {
         if ((child as Mesh).isMesh) {
-          (child as Mesh).material = mat.clone();
           snapGeometryPositions((child as Mesh).geometry);
         }
       });
       object = loaded;
     } else if (ext === "fbx") {
       const loaded = await fbxLoader.loadAsync(url);
-      const mat = createFrontMaterial();
       loaded.traverse((child) => {
         if ((child as Mesh).isMesh) {
-          (child as Mesh).material = mat.clone();
           snapGeometryPositions((child as Mesh).geometry);
         }
       });
@@ -45,10 +40,9 @@ export async function loadRawObject(
     } else if (ext === "stl") {
       const geometry = await stlLoader.loadAsync(url);
       snapGeometryPositions(geometry);
-      const material = createFrontMaterial();
-      object = new Mesh(geometry, material);
+      object = new Mesh(geometry);
     } else {
-      const loaded = await load3dppc(url, createFrontMaterial());
+      const loaded = await load3dppc(url);
       object = loaded.object;
       importedGroups = loaded.groups;
       importedColorCursor = loaded.colorCursor;

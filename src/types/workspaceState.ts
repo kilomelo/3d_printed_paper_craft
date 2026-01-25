@@ -1,6 +1,6 @@
-export type WorkspaceState = "normal" | "editingGroup" | "previewGroupModel";
+export type WorkspaceState = "mainPage" | "normal" | "editingGroup" | "previewGroupModel" | "loading";
 
-let currentWorkspaceState: WorkspaceState = "normal";
+let currentWorkspaceState: WorkspaceState = "mainPage";
 
 export const getWorkspaceState = () => currentWorkspaceState;
 

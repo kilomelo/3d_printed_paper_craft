@@ -120,7 +120,7 @@ export function download3dppc(data: PPCFile): string {
   return name;
 }
 
-export async function load3dppc(url: string, frontMaterial: Mesh["material"]) {
+export async function load3dppc(url: string) {
   const res = await fetch(url);
   const json = (await res.json()) as PPCFile;
   if (!Array.isArray(json.vertices) || !Array.isArray(json.triangles)) {
@@ -146,7 +146,7 @@ export async function load3dppc(url: string, frontMaterial: Mesh["material"]) {
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
 
-  const mesh = new Mesh(geometry, frontMaterial);
+  const mesh = new Mesh(geometry);
   group.add(mesh);
 
   const colorCursor =

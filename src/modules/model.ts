@@ -1,6 +1,7 @@
 // 模型与几何工具：存储当前模型引用、最近文件名，并提供几何预处理（功能 mesh 生成、索引构建）。
 import { BufferGeometry, Group, Mesh, Object3D, Vector3, Float32BufferAttribute } from "three";
-import { createBackMaterial, createEdgeMaterial } from "./materials";
+import { createFrontMaterial, createBackMaterial, createEdgeMaterial, createSilhouetteMaterial, createDepthMaterial,
+  patchOpaquePass, patchTranslucentPass } from "./materials";
 import { v3 } from "../types/geometryTypes";
 import { pointKey3D } from "./mathUtils";
 export type EdgeRecord = { id: number; key: string; faces: Set<number>; vertices: [string, string] };
@@ -52,13 +53,14 @@ function applyDefaultFaceColors(mesh: Mesh) {
   const position = geometry.getAttribute("position");
   if (!position) return;
   const vertexCount = position.count;
-  const colors = new Float32Array(vertexCount * 3);
+  const colors = new Float32Array(vertexCount * 4);
   for (let i = 0; i < vertexCount; i++) {
     colors[i * 3] = 1;
     colors[i * 3 + 1] = 1;
     colors[i * 3 + 2] = 1;
+    colors[i * 3 + 3] = 1;
   }
-  geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
+  geometry.setAttribute("color", new Float32BufferAttribute(colors, 4));
 }
 
 export function generateFunctionalMeshes(root: Object3D, target: Object3D) {
@@ -67,20 +69,48 @@ export function generateFunctionalMeshes(root: Object3D, target: Object3D) {
       const mesh = child as Mesh;
       if (mesh.userData.functional) return;
       applyDefaultFaceColors(mesh);
-      const geomBack = mesh.geometry.clone();
-      const meshBack = new Mesh(geomBack, createBackMaterial());
+      const frontMat = createFrontMaterial();
+      patchOpaquePass(frontMat);
+      mesh.material = frontMat;
+
+      // 用于绘制模型背面的材质
+      const geomBack = mesh.geometry;
+      const matBack = createBackMaterial();
+      patchOpaquePass(matBack);
+      const meshBack = new Mesh(geomBack, matBack);
+      meshBack.name = mesh.name ? `${mesh.name}-back` : "back-only";
       meshBack.userData.functional = "back";
       meshBack.castShadow = false;
       meshBack.receiveShadow = false;
-      meshBack.name = mesh.name ? `${mesh.name}-back` : "back-only";
+      meshBack.renderOrder = 1;
       root.add(meshBack);
-      const geomWireframe = mesh.geometry.clone();
-      const meshWireframe = new Mesh(geomWireframe, createEdgeMaterial());
+      // 用于绘制三角面线框的材质
+      const geomWireframe = mesh.geometry;
+      const matWireframe = createEdgeMaterial();
+      patchOpaquePass(matWireframe);
+      const meshWireframe = new Mesh(geomWireframe, matWireframe);
       meshWireframe.userData.functional = "edge";
       meshWireframe.castShadow = false;
       meshWireframe.receiveShadow = false;
       meshWireframe.name = mesh.name ? `${mesh.name}-wireframe` : "wireframe-only";
+      meshWireframe.renderOrder = 2;
       root.add(meshWireframe);
+      // 用于绘制模型剪影的材质
+      const geoSilhouette = mesh.geometry;
+      const meshSilhouette = new Mesh(geoSilhouette, createSilhouetteMaterial());
+      meshSilhouette.name = mesh.name ? `${mesh.name}-silhouette` : "silhouette-only";
+      const meshDepth = new Mesh(geoSilhouette, createDepthMaterial());
+      meshDepth.name = mesh.name ? `${mesh.name}-depth` : "depth-only";
+      meshSilhouette.userData.functional = "silhouette";
+      meshDepth.userData.functional = "depth";
+      meshSilhouette.castShadow = false;
+      meshDepth.castShadow = false;
+      meshSilhouette.receiveShadow = false;
+      meshDepth.receiveShadow = false;
+      meshSilhouette.renderOrder = 1000;
+      meshDepth.renderOrder = 1001;
+      root.add(meshSilhouette);
+      root.add(meshDepth);
     }
   });
 }
@@ -121,43 +151,44 @@ export function prepareGeometryData(object: Object3D): GeometryPrep {
     const geometry = mesh.geometry;
     const indexAttr = geometry.index;
     const position = geometry.getAttribute("position");
-    if (!position) return;
-    const faceCount = indexAttr ? indexAttr.count / 3 : position.count / 3;
+    if (position) {
+      const faceCount = indexAttr ? indexAttr.count / 3 : position.count / 3;
 
-    if (!meshFaceIdMap.has(mesh.uuid)) {
-      meshFaceIdMap.set(mesh.uuid, new Map<number, number>());
-    }
-    const localMap = meshFaceIdMap.get(mesh.uuid)!;
+      if (!meshFaceIdMap.has(mesh.uuid)) {
+        meshFaceIdMap.set(mesh.uuid, new Map<number, number>());
+      }
+      const localMap = meshFaceIdMap.get(mesh.uuid)!;
 
-    for (let f = 0; f < faceCount; f++) {
-      faceIndexMap.set(faceId, { mesh, localFace: f });
-      localMap.set(f, faceId);
-      const [a, b, c] = getFaceVertexIndices(geometry, f);
-      const va = vertexKey(position, a);
-      const vb = vertexKey(position, b);
-      const vc = vertexKey(position, c);
-      if (!vertexKeyToPos.has(va)) vertexKeyToPos.set(va, v3([position.getX(a), position.getY(a), position.getZ(a)]));
-      if (!vertexKeyToPos.has(vb)) vertexKeyToPos.set(vb, v3([position.getX(b), position.getY(b), position.getZ(b)]));
-      if (!vertexKeyToPos.has(vc)) vertexKeyToPos.set(vc, v3([position.getX(c), position.getY(c), position.getZ(c)]));
-      const faceEdges: number[] = [];
-      const edgePairs = [
-        [va, vb],
-        [vb, vc],
-        [vc, va],
-      ];
-      edgePairs.forEach(([p1, p2]) => {
-        const key = [p1, p2].sort().join("|");
-        let edgeId = edgeKeyToId.get(key);
-        if (edgeId === undefined) {
-          edgeId = edges.length;
-          edgeKeyToId.set(key, edgeId);
-          edges.push({ id: edgeId, key, faces: new Set<number>(), vertices: [p1, p2] });
-        }
-        edges[edgeId].faces.add(faceId);
-        faceEdges.push(edgeId);
-      });
-      faceToEdges.set(faceId, faceEdges as [number, number, number]);
-      faceId++;
+      for (let f = 0; f < faceCount; f++) {
+        faceIndexMap.set(faceId, { mesh: mesh, localFace: f });
+        localMap.set(f, faceId);
+        const [a, b, c] = getFaceVertexIndices(geometry, f);
+        const va = vertexKey(position, a);
+        const vb = vertexKey(position, b);
+        const vc = vertexKey(position, c);
+        if (!vertexKeyToPos.has(va)) vertexKeyToPos.set(va, v3([position.getX(a), position.getY(a), position.getZ(a)]));
+        if (!vertexKeyToPos.has(vb)) vertexKeyToPos.set(vb, v3([position.getX(b), position.getY(b), position.getZ(b)]));
+        if (!vertexKeyToPos.has(vc)) vertexKeyToPos.set(vc, v3([position.getX(c), position.getY(c), position.getZ(c)]));
+        const faceEdges: number[] = [];
+        const edgePairs = [
+          [va, vb],
+          [vb, vc],
+          [vc, va],
+        ];
+        edgePairs.forEach(([p1, p2]) => {
+          const key = [p1, p2].sort().join("|");
+          let edgeId = edgeKeyToId.get(key);
+          if (edgeId === undefined) {
+            edgeId = edges.length;
+            edgeKeyToId.set(key, edgeId);
+            edges.push({ id: edgeId, key, faces: new Set<number>(), vertices: [p1, p2] });
+          }
+          edges[edgeId].faces.add(faceId);
+          faceEdges.push(edgeId);
+        });
+        faceToEdges.set(faceId, faceEdges as [number, number, number]);
+        faceId++;
+      }
     }
   });
 

@@ -19,20 +19,18 @@ import {
   Sprite,
   SpriteMaterial,
   CanvasTexture,
-  BufferAttribute,
   Vector2 as ThreeVector2,
+  LineDashedMaterial,
 } from "three";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { getModel, setModel } from "./model";
-import { load3dppc, type PPCFile } from "./ppc";
-import { resetSettings, getSettings } from "./settings";
+import { getSettings } from "./settings";
 import { createScene, fitCameraToObject } from "./scene";
-import { FACE_DEFAULT_COLOR, createFrontMaterial, createPreviewMaterial, createEdgeMaterial, createHoverLineMaterial } from "./materials";
+import { FACE_DEFAULT_COLOR, createPreviewMaterial, createEdgeMaterial, createHoverLineMaterial } from "./materials";
 import {
   createRaycaster,
   initInteractionController,
-  type HoverState,
 } from "./interactions";
 import { type EdgeRecord, generateFunctionalMeshes } from "./model";
 import { createFaceColorService } from "./faceColorService";
@@ -50,6 +48,8 @@ export type GroupApi = {
   getGroupFaces: (groupId: number) => Set<number> | undefined;
   getGroupColor: (groupId: number) => Color | undefined;
   getFaceGroupMap: () => Map<number, number | null>;
+  getGroupVisibility: (groupId: number) => boolean;
+  getGroupParentTree: (groupId: number) => Map<number, number | null> | undefined;
 };
 
 export function createRenderer3D(
@@ -59,10 +59,7 @@ export function createRenderer3D(
   getViewport: () => { width: number; height: number },
   mountRenderer: (canvas: HTMLElement) => void,
 ) {
-  const BREATH_PERIOD = 300; // ms
-  const BREATH_CYCLES = 3; // 呼吸循环次数
-  const BREATH_DURATION = BREATH_PERIOD * BREATH_CYCLES;
-  const BREATH_SCALE = 0.4; // 呼吸幅度
+  const BREATH_DURATION = 800;
   let edgesVisible = true;
   let seamsVisible = true;
   let facesVisible = true;
@@ -97,7 +94,7 @@ export function createRenderer3D(
   scene.add(hoverEdgeLine);
 
   const interactionController = initInteractionController({
-    view: getViewport(),
+    viewportSizeProvider: getViewport,
     scene,
     renderer,
     camera,
@@ -105,12 +102,24 @@ export function createRenderer3D(
     raycaster,
     pointer,
     getModel,
+    isFaceVisible: (faceId) => {
+      const gid = groupApi.getFaceGroupMap().get(faceId);
+      if (gid === undefined || gid === null) return true;
+      return groupApi.getGroupVisibility(gid);
+    },
     facesVisible: () => facesVisible,
     canEdit: () => getWorkspaceState() === "editingGroup",
     isPointerLocked: () => pointerLocked,
-    pickFace,
-    onAddFace: groupApi.handleAddFace,
-    onRemoveFace: groupApi.handleRemoveFace,
+    mapFaceId: (mesh, faceIndex) => geometryIndex.getFaceId(mesh, faceIndex ?? -1),
+    onAddFace: (faceId: number) => {
+      stopGroupBreath();
+      return groupApi.handleAddFace(faceId);
+    },
+
+    onRemoveFace: (faceId: number) => {
+      stopGroupBreath();
+      return groupApi.handleRemoveFace(faceId);
+    },
     // hoverState,
     emitFaceHover: (faceId) => {
       if (faceId === null) {
@@ -212,9 +221,11 @@ export function createRenderer3D(
     modelGroup,
     getViewport,
     () => edges,
-    () => groupApi.getFaceGroupMap(),
     () => vertexKeyToPos,
     (edgeId: number) => geometryIndex.getEdgeWorldPositions(edgeId),
+    groupApi.getGroupVisibility,
+    groupApi.getFaceGroupMap,
+    groupApi.getGroupParentTree,
     () => seamsVisible,
   );
 
@@ -223,13 +234,14 @@ export function createRenderer3D(
   function syncGroupStateFromData(groupId: number) {
     interactionController?.endBrush();
     stopGroupBreath();
-    startGroupBreath(groupId);
+    if (groupApi.getGroupFaces(groupId)?.size) startGroupBreath(groupId);
   }
 
   const faceColorService = createFaceColorService({
     getFaceIndexMap: () => faceIndexMap,
     getFaceGroupMap: () => groupApi.getFaceGroupMap(),
     getGroupColor: groupApi.getGroupColor,
+    getGroupVisibility: groupApi.getGroupVisibility,
     defaultColor: FACE_DEFAULT_COLOR,
   });
 
@@ -246,21 +258,11 @@ export function createRenderer3D(
   
   let previewCameraState: { position: Vector3; target: Vector3 } | null = null;
 
-  function applyFrontMaterialToMeshes(root: Object3D) {
-    const mat = createFrontMaterial();
-    root.traverse((child) => {
-      if (!(child as Mesh).isMesh) return;
-      const mesh = child as Mesh;
-      if (mesh.userData.functional) return;
-      mesh.material = mat.clone();
-    });
-  }
-
   function buildRenderableRoot(object: Object3D, name: string): Group {
     const root = new Group();
     root.name = name;
     root.add(object);
-    applyFrontMaterialToMeshes(root);
+    // applyFrontMaterialToMeshes(root);
     generateFunctionalMeshes(root, object);
     return root;
   }
@@ -467,36 +469,13 @@ export function createRenderer3D(
     interactionController.hideHoverLines();
   }
 
-  function getFaceIdFromIntersection(mesh: Mesh, localFace: number | undefined): number | null {
-    return geometryIndex.getFaceId(mesh, localFace);
-  }
-
-  function pickFace(event: PointerEvent): number | null {
-    if (previewModelGroup.visible) return null;
-    const model = getModel();
-    if (!model) return null;
-    const rect = el.getBoundingClientRect();
-    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(pointer, camera);
-    const intersects = raycaster.intersectObject(model, true).filter((i) => {
-      const mesh = i.object as Mesh;
-      return (mesh as Mesh).isMesh && !(mesh as Mesh).userData.functional;
-    });
-    if (!intersects.length) return null;
-    const hit = intersects[0];
-    const faceIndex = hit.faceIndex ?? -1;
-    if (faceIndex < 0) return null;
-    return getFaceIdFromIntersection(hit.object as Mesh, faceIndex);
-  }
-
   function applyFaceVisibility() {
     const model = getWorkspaceState() === "previewGroupModel" ? previewModelGroup : modelGroup;
     if (!model) return;
     model.traverse((child) => {
       if (!(child as Mesh).isMesh) return;
       const mesh = child as Mesh;
-      if (mesh.userData.functional && mesh.userData.functional !== "back") return;
+      if (mesh.userData.functional && mesh.userData.functional !== "back" && mesh.userData.functional !== "opaque") return;
       if ((mesh.material as MeshStandardMaterial).visible !== undefined) {
         (mesh.material as MeshStandardMaterial).visible = facesVisible;
       }
@@ -513,6 +492,7 @@ export function createRenderer3D(
     axesCamera.updateProjectionMatrix();
     const mat = hoverEdgeLine.material as any;
     mat.resolution?.set(w, h);
+    seamManager.updateSeamResolution();
   }
 
   window.addEventListener("resize", resizeRenderer3D);
@@ -654,7 +634,6 @@ export function createRenderer3D(
   appEventBus.on("settingsChanged", updateBBox);
   appEventBus.on("historyApplied", updateBBox);
   appEventBus.on("edgeHover2D", ({ p1, p2 }) => {
-    // if (hoverState.hoveredFaceId !== null) return;
     (hoverEdgeLine.geometry as LineSegmentsGeometry).setPositions(
       new Float32Array([p1[0], p1[1], p1[2], p2[0], p2[1], p2[2]]),
     );
@@ -663,22 +642,40 @@ export function createRenderer3D(
   appEventBus.on("edgeHover2DClear", () => {
     hoverEdgeLine.visible = false;
   });
+  appEventBus.on("groupVisibilityChanged", ({ groupId, visible }) => {
+    if (!stopGroupBreath()) specialEdgeManager.updateVisibility(
+      () => edges,
+      groupApi.getFaceGroupMap,
+      groupApi.getGroupVisibility,
+    );
+  });
 
-  function stopGroupBreath() {
+  function stopGroupBreath(): boolean {
+    if (!breathGroupId) return false;
+    appEventBus.emit("groupBreathEnd", breathGroupId??-1);
+    specialEdgeManager.updateVisibility(
+      () => edges,
+      groupApi.getFaceGroupMap,
+      groupApi.getGroupVisibility,
+    );
     if (breathRaf !== null) {
       cancelAnimationFrame(breathRaf);
       breathRaf = null;
     }
     const gid = breathGroupId;
     breathGroupId = null;
-    if (gid !== null) {
-      const faces = groupApi.getGroupFaces(gid);
-      faces?.forEach((faceId) => faceColorService.updateFaceColorById(faceId));
-    }
+    return true;
   }
 
   function startGroupBreath(groupId: number) {
     stopGroupBreath();
+    appEventBus.emit("groupBreathStart", groupId);
+    specialEdgeManager.updateVisibility(
+      () => edges,
+      groupApi.getFaceGroupMap,
+      groupApi.getGroupVisibility,
+      groupId
+    );
     breathGroupId = groupId;
     breathStart = performance.now();
     const faces = groupApi.getGroupFaces(groupId);
@@ -693,18 +690,9 @@ export function createRenderer3D(
       const elapsed = now - breathStart;
       const progress = Math.min(1, elapsed / BREATH_DURATION);
       if (progress >= 1) {
-        faces.forEach((faceId) => faceColorService.updateFaceColorById(faceId));
         stopGroupBreath();
         return;
       }
-      const factor = (1 + BREATH_SCALE) + BREATH_SCALE * Math.sin((progress + 0.25) * Math.PI * 2 * BREATH_CYCLES);
-      const baseColor = groupApi.getGroupColor(groupId)??FACE_DEFAULT_COLOR;
-      const scaled = baseColor.clone().multiplyScalar(factor);
-      faces.forEach((faceId) => {
-        const mapping = faceIndexMap.get(faceId);
-        if (!mapping) return;
-        faceColorService.setFaceColor(mapping.mesh, mapping.localFace, scaled);
-      });
       breathRaf = requestAnimationFrame(loop);
     };
     breathRaf = requestAnimationFrame(loop);
@@ -731,10 +719,26 @@ export function createRenderer3D(
     // appEventBus.emit("modelLoaded", undefined);
     rebuildSpecialEdges(modelGroup);
     bboxBox = new Box3().setFromObject(modelGroup);
+    const boxSize = bboxBox.getSize(new Vector3());
+    // const minDimension = Math.min(boxSize.x, boxSize.y, boxSize.z);
     bboxHelper = new Box3Helper(bboxBox, new Color(0x00ff88));
+    bboxHelper.renderOrder = 3;
+    // bboxHelper.material = new LineDashedMaterial({
+    //   color: 0x00ff88,
+    //   dashSize: 0.05,
+    //   gapSize: 0.025,
+    //   depthTest: true,   // 需要始终显示在最上层可设为 false
+    //   depthWrite: false, // 通常线框不写深度更稳
+    // });
+    // 关键：虚线要求非 indexed geometry
+    const g = bboxHelper.geometry as THREE.BufferGeometry;
+    if (g.index) {
+      bboxHelper.geometry = g.toNonIndexed(); // 转为非索引几何 
+    }
+    bboxHelper.computeLineDistances();
     gizmosGroup.add(bboxHelper);
     const { scale } = getSettings();
-    const size = bboxBox.getSize(new Vector3()).multiplyScalar(scale);
+    const size = boxSize.multiplyScalar(scale);
     bboxLabels = [
       createLabelSprite(size.x.toFixed(1)),
       createLabelSprite(size.y.toFixed(1)),

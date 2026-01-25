@@ -7,6 +7,7 @@
   --text: #e5e7eb;
   --textSecondary: #e5e7eb88;
   --muted: #94a3b8;
+  --hoverHighLigt: #fff;
   --textShadow: 1px 1px 4px rgba(0, 0, 0, 0.05);
   --shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
 }
@@ -113,7 +114,7 @@ textarea {
   border-radius: 12px;
   padding: 10px 14px;
   cursor: pointer;
-  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease, background 140ms ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
   font-size: 14px;
 }
 
@@ -130,8 +131,18 @@ textarea {
 }
 
 .btn:hover {
-  transform: translateY(-1px);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--hoverHighLigt);
+}
+
+/* 统一各变体的 hover 覆盖效果，与 tab-btn 一致 */
+.btn.primary:hover,
+.btn.ghost:hover,
+.btn.sm:hover,
+.btn.toggle:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--hoverHighLigt);
 }
 
 .btn:active {
@@ -223,7 +234,7 @@ textarea {
   display: grid;
   grid-template-columns: 1fr 1fr;
   grid-template-rows: 1fr;
-  gap: 10px;
+  gap: 0;
   padding: 0;
   background: var(--panel-muted);
   border: 1px solid var(--border);
@@ -245,6 +256,18 @@ textarea {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 50;
+  pointer-events: auto;
+}
+
+.loading-overlay.hidden {
+  display: none;
 }
 
 .preview-toolbar {
@@ -313,6 +336,12 @@ textarea {
 .tab-btn.active {
   border-color: rgba(56, 189, 248, 0.8);
   background: rgba(56, 189, 248, 0.16);
+}
+
+.tab-btn:hover {
+  transition: background 0.2s border-color 0.2s ease;
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--hoverHighLigt);
 }
 
 .tab-btn.tab-super {
@@ -499,12 +528,13 @@ textarea {
   padding: 4px 6px;
   border-left: 4px solid transparent;
   border-left-color: rgba(56, 189, 248, 1);
-  background: linear-gradient(90deg, rgba(56, 189, 248, 0.16), rgba(56, 189, 248, 0));
+  background: linear-gradient(90deg, #00609114, #00000000);
   text-shadow: var(--textShadow);
 }
 .history-entry:hover {
+  transition: border-left 0.2s ease, border-left-color 0.2s ease;
   border-left: 4px solid transparent;
-  border-left-color: rgba(56, 189, 248, 0.6);
+  border-left-color: var(--hoverHighLigt);
 }
 .history-entry-past {
   color: #e5e7ebaa;
@@ -620,6 +650,22 @@ textarea {
   flex: 1;
 }
 
+/* 对话框/设置按钮的 hover 过渡与 tab-btn 逻辑一致但去掉跳动 */
+.settings-footer .btn,
+.rename-modal .btn {
+  transition: border-color 140ms ease;
+  box-shadow: none;
+  transform: none;
+}
+
+.settings-footer .btn:hover,
+.rename-modal .btn:hover {
+  box-shadow: none;
+  transform: none;
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--hoverHighLigt);
+}
+
 .setting-row {
   display: flex;
   flex-direction: column;
@@ -634,13 +680,14 @@ textarea {
 }
 
 .settings-nav-item {
+  font-size: 14px;
   width: 100%;
   text-align: left;
   padding: 10px 12px;
-  border: 1px solid var(--border);
+  border: 0;
   background: rgba(255, 255, 255, 0.05);
   color: var(--text-muted);
-  border-left: 3px solid transparent;
+  border-left: 4px solid transparent;
 }
 
 .settings-nav-item.active {
@@ -649,6 +696,12 @@ textarea {
   border-left-color: rgba(56, 189, 248, 0.9);
   color: #e8f7ff;
   font-weight: 700;
+}
+
+.settings-nav-item:hover {
+  transition: border-left 0.2s ease, border-left-color 0.2s ease;
+  border-left: 4px solid transparent;
+  border-left-color: var(--hoverHighLigt);
 }
 
 .settings-content {
@@ -722,6 +775,7 @@ textarea {
 }
 
 .setting-row input {
+  font-size: 13px;
   flex: 1;
   padding: 6px 8px;
   border: 1px solid var(--border);
@@ -747,36 +801,96 @@ textarea {
   z-index: 5;
 }
 
-.color-swatch.overlay-btn {
-  top: 10px;
+.overlay-group-meta {
+  position: absolute;
+  top: 8px;
   left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 5;
+}
+
+.overlay-group-meta .overlay-btn {
+  position: static;
+}
+
+.overlay-group-meta .group-faces-count {
+  position: static;
+}
+
+.color-swatch.overlay-btn {
   width: 28px;
   height: 28px;
   border-radius: 6px;
-  border: 2px solid #fff;
+  border: 2px solid #ddd;
   padding: 0;
   cursor: pointer;
 }
 
+.color-swatch.overlay-btn:hover {
+  transition: border-color 0.2s ease;
+  border-color: var(--hoverHighLigt);
+}
+
+.overlay-visibility.overlay-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.overlay-visibility svg {
+  width: 18px;
+  height: 18px;
+  fill: var(--text);
+}
+
+.overlay-visibility.overlay-btn:hover {
+  transition: border-color 0.2s ease;
+  border-color: var(--hoverHighLigt);
+}
+
+.overlay-visibility .hidden {
+  display: none;
+}
+
 .tab-delete.overlay-btn {
-  top: 10px;
+  font-size: 14px;
+  height: 30px;
+  top: 8px;
   right: 10px;
-  padding: 6px 10px;
+  padding: 4px 10px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--border);
   color: var(--text);
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.tab-delete.overlay-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--hoverHighLigt);
 }
 
 .overlay-label.group-faces-count {
-  position: absolute;
-  left: 48px;
-  top: 10px;
-  font-size: 12px;
-  color: var(--muted);
-  background: rgba(0, 0, 0, 0.35);
+  height: 30px;
   padding: 4px 8px;
   border-radius: 6px;
+  color: var(--muted);
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  background: rgba(0, 0, 0, 0.25);
   border: 1px solid var(--border);
   z-index: 6;
   pointer-events: none;

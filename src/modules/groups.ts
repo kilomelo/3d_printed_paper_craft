@@ -12,8 +12,8 @@ export type GroupData = {
 
 const GROUP_COLOR_PALETTE = [0x759fff, 0xff5757, 0xffff00, 0x00ee00, 0x00ffff, 0xff70ff];
 
-let groups: GroupData[] = [];
-let faceGroupMap: Map<number, number | null> = new Map();
+const groups: GroupData[] = [];
+const faceGroupMap: Map<number, number | null> = new Map();
 let groupColorCursor = 0;
 
 function nextPaletteColor(): Color {
@@ -48,14 +48,13 @@ export function nextGroupName(): string {
 }
 
 export function resetGroups() {
-  groups = [];
-  faceGroupMap = new Map();
+  groups.length = 0;
+  faceGroupMap.clear();
   groupColorCursor = 0;
   addGroup(1);
 }
 
 export function addGroup(newGroupId?: number): number | undefined {
-  // console.trace(`[groups] Adding group with id: ${newGroupId}`); 
   newGroupId = newGroupId ?? nextGroupId();
   let exists = findGroup(newGroupId);
   if (exists) return undefined;
@@ -87,7 +86,7 @@ export function deleteGroup(
     }
   });
   // 移除组数据
-  groups = groups.filter((g) => g.id !== groupId);
+  groups.splice(groups.indexOf(target), 1);
   return true;
 }
 
@@ -311,8 +310,8 @@ export function applyImportedGroups(
   faceAdjacency: Map<number, Set<number>>,
 ) {
   if (!imported || !imported.length) return;
-  groups = [];
-  faceGroupMap = new Map<number, number | null>();
+  groups.length = 0;
+  faceGroupMap.clear();
   groupColorCursor = 0;
 
   imported

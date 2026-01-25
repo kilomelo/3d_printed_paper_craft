@@ -8,6 +8,7 @@ export type FaceColorDeps = {
   getFaceIndexMap: () => Map<number, { mesh: Mesh; localFace: number }>;
   getFaceGroupMap: () => Map<number, number | null>;
   getGroupColor: (id: number) => THREE.Color | undefined;
+  getGroupVisibility: (id: number) => boolean;
   defaultColor?: Color;
 };
 
@@ -38,16 +39,46 @@ export function createFaceColorService(deps: FaceColorDeps) {
     });
   });
 
+  appEventBus.on("groupVisibilityChanged", ({ groupId }) => {
+    deps.getFaceGroupMap().forEach((gid, faceId) => {
+      if (gid === groupId) {
+        updateFaceColorById(faceId, gid);
+      }
+    });
+  });
+
+  appEventBus.on("groupBreathStart", (groupId) => {
+    deps.getFaceIndexMap().forEach((_, faceId) => {
+      const gid = deps.getFaceGroupMap().get(faceId) ?? null;
+      updateFaceColorWithForceVisibility( gid === groupId, faceId, gid);
+    });
+  });
+
+  appEventBus.on("groupBreathEnd", repaintAllFaces);
+
   appEventBus.on("projectChanged", repaintAllFaces);
   appEventBus.on("historyApplied", repaintAllFaces);
 
-  function setFaceColor(mesh: Mesh, faceIndex: number, color: Color) {
+  function setFaceColor(mesh: Mesh, localFaceIdx: number, color: Color, alhpa: number = 1) {
+    if (!mesh) return;
     const geometry = mesh.geometry;
     const colorsAttr = geometry.getAttribute("color") as Float32BufferAttribute;
     if (!colorsAttr) return;
-    const indices = getFaceVertexIndices(geometry, faceIndex);
+    const indices = getFaceVertexIndices(geometry, localFaceIdx);
     indices.forEach((idx) => {
-      color.toArray(colorsAttr.array as Float32Array, idx * 3);
+      colorsAttr.setXYZW(idx, color.r, color.g, color.b, alhpa);
+    });
+    colorsAttr.needsUpdate = true;
+  }
+
+  function setFaceAlpha(mesh: Mesh, localFaceIdx: number, alpha: number) {
+    if (!mesh) return;
+    const geometry = mesh.geometry;
+    const colorsAttr = geometry.getAttribute("color") as Float32BufferAttribute;
+    if (!colorsAttr) return;
+    const indices = getFaceVertexIndices(geometry, localFaceIdx);
+    indices.forEach((idx) => {
+      colorsAttr.setW(idx, alpha);
     });
     colorsAttr.needsUpdate = true;
   }
@@ -57,7 +88,18 @@ export function createFaceColorService(deps: FaceColorDeps) {
     if (!mapping) return;
     groupId = groupId??deps.getFaceGroupMap().get(faceId)??null;
     const baseColor = groupId !== null ? deps.getGroupColor(groupId) : defaultColor;
-    setFaceColor(mapping.mesh, mapping.localFace, baseColor??defaultColor);
+    const visible = groupId !== null ? deps.getGroupVisibility?.(groupId) ?? true : true;
+    const finalColor = (baseColor ?? defaultColor).clone();
+    setFaceColor(mapping.mesh, mapping.localFace, finalColor, visible ? 1 : 0);
+  }
+
+  function updateFaceColorWithForceVisibility(visible: boolean, faceId: number, groupId: number | null) {
+    const mapping = deps.getFaceIndexMap().get(faceId);
+    if (!mapping) return;
+    groupId = groupId??deps.getFaceGroupMap().get(faceId)??null;
+    const baseColor = groupId !== null ? deps.getGroupColor(groupId) : defaultColor;
+    const finalColor = (baseColor ?? defaultColor).clone();
+    setFaceColor(mapping.mesh, mapping.localFace, finalColor, visible ? 1 : 0);
   }
 
   function repaintAllFaces() {
@@ -67,5 +109,5 @@ export function createFaceColorService(deps: FaceColorDeps) {
     });
   }
 
-  return { setFaceColor, updateFaceColorById };
+  return { setFaceColor, setFaceAlpha,  updateFaceColorById, repaintAllFaces };
 }

@@ -3,19 +3,29 @@ import {
   BufferGeometry,
   Mesh,
   Vector3,
+  Vector2,
+  Color,
   Float32BufferAttribute,
   Matrix4,
   Quaternion,
   BufferAttribute,
   InterleavedBufferAttribute,
 } from "three";
+import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { EdgeRecord, getFaceVertexIndices } from "./model";
 import { sharedEdgeIsSeam } from "./groups";
 import {  } from "./model";
 import { AngleIndex } from "./geometry";
 import { appEventBus } from "./eventBus";
 import type { Renderer2DContext } from "./renderer2d";
-import { createUnfoldEdgeMaterial, createUnfoldFaceMaterial } from "./materials";
+import {
+  createUnfoldFaceMaterial,
+  createScreenCheckerMaterial,
+  createWarnningMaterial,
+  createUnfoldEdgeLineFoldinMaterial,
+  createUnfoldEdgeLineFoldoutMaterial,
+  ensurePlanarUVWorldScale, ensurePlanarUVScreenSpaceCSS } from "./materials";
 import type { Point2D, Point3D, Vec3, TriangleWithEdgeInfo as TriangleData } from "../types/geometryTypes";
 import { p3, v3 } from "../types/geometryTypes";
 import {
@@ -31,6 +41,7 @@ import {
   triIntersect2D,
 } from "./mathUtils";
 import { getSettings } from "./settings";
+import { disposeGroupDeep } from "./threeUtils";
 
 // 记录“3D → 2D”变换矩阵，后续将按组树关系进行累乘展开。
 type TransformTree = Map<number, Matrix4>;
@@ -46,6 +57,7 @@ export function createUnfold2dManager(
   getPreviewGroupId: () => number,
   getFaceGroupMap: () => Map<number, number | null>,
   getGroupColor: (id: number) => THREE.Color | undefined,
+  getGroupVisibility: (id: number) => boolean,
   getGroupTreeParent: (id: number) => Map<number, number | null> | undefined,
   getFaceToEdges: () => Map<number, [number, number, number]>,
   getEdgesArray: () => EdgeRecord[],
@@ -81,14 +93,7 @@ export function createUnfold2dManager(
   let lastBounds: { minX: number; maxX: number; minY: number; maxY: number } | null = null;
 
   const clearScene = () => {
-    renderer2d.root.children.forEach((child) => {
-      if ((child as Mesh).isMesh) {
-        const mesh = child as Mesh;
-        (mesh.geometry as BufferGeometry).dispose();
-        (mesh.material as any)?.dispose?.();
-      }
-    });
-    renderer2d.root.clear();
+    disposeGroupDeep(renderer2d.root);
     renderer2d.root.rotation.set(0, 0, 0);
     renderer2d.root.updateMatrixWorld(true);
     groupEdgesCache.clear();
@@ -101,17 +106,18 @@ export function createUnfold2dManager(
       out.set(0, 0, 1);
       return;
     }
-    const geom = mapping.mesh.geometry;
+    const mesh = mapping.mesh;
+    const geom = mesh.geometry;
     const pos = geom.getAttribute("position");
     if (!pos) {
       out.set(0, 0, 1);
       return;
     }
     const [ia, ib, ic] = getFaceVertexIndices(geom, mapping.localFace);
-    mapping.mesh.updateWorldMatrix(true, false);
-    tmpA.set(pos.getX(ia), pos.getY(ia), pos.getZ(ia)).applyMatrix4(mapping.mesh.matrixWorld);
-    tmpB.set(pos.getX(ib), pos.getY(ib), pos.getZ(ib)).applyMatrix4(mapping.mesh.matrixWorld);
-    tmpC.set(pos.getX(ic), pos.getY(ic), pos.getZ(ic)).applyMatrix4(mapping.mesh.matrixWorld);
+    mesh.updateWorldMatrix(true, false);
+    tmpA.set(pos.getX(ia), pos.getY(ia), pos.getZ(ia)).applyMatrix4(mesh.matrixWorld);
+    tmpB.set(pos.getX(ib), pos.getY(ib), pos.getZ(ib)).applyMatrix4(mesh.matrixWorld);
+    tmpC.set(pos.getX(ic), pos.getY(ic), pos.getZ(ic)).applyMatrix4(mesh.matrixWorld);
     out.subVectors(tmpB, tmpA).cross(tmpC.sub(tmpA)).normalize();
   };
 
@@ -176,6 +182,7 @@ export function createUnfold2dManager(
     renderer2d.root.traverse((obj) => {
       const mesh = obj as Mesh;
       if (!(mesh as any).isMesh) return;
+      if (mesh.userData.main !== true) return;
       const posAttr = mesh.geometry.getAttribute("position");
       if (!posAttr) return;
       for (let i = 0; i < posAttr.count; i++) {
@@ -238,6 +245,7 @@ export function createUnfold2dManager(
     buildTransformsForGroup(groupId);
     const faceToEdges = getFaceToEdges();
     const faceIndexMap = getFaceIndexMap();
+    const parentMap = getGroupTreeParent(groupId);
     const makeVertexKey = (pos: BufferAttribute | InterleavedBufferAttribute, idx: number) =>
       pointKey3D([pos.getX(idx), pos.getY(idx), pos.getZ(idx)]);
     const snap = (v: number) => (Math.abs(v) < 1e-6 ? 0 : v);
@@ -279,8 +287,12 @@ export function createUnfold2dManager(
         [c.x, c.y],
       ];
       tris.forEach((t) => {
-        // 跳过共享边的相邻三角形（共边不视为自交）；仅共享顶点仍需检测
-        if (t.edgeIds.some((eid) => edgeIds.includes(eid))) return;
+        // 跳过展开树中的父子三角形（共边，不视为自交）；仅共享顶点仍需检测
+        if (parentMap) {
+          const parentOfNew = parentMap.get(fid);
+          const parentOfOld = parentMap.get(t.faceId);
+          if (parentOfNew === t.faceId || parentOfOld === fid) return;
+        }
         // bbox 预检查
         const bb = t.bbox;
         if (
@@ -351,14 +363,15 @@ export function createUnfold2dManager(
     const faceIndexMap = getFaceIndexMap();
     const mapping = faceIndexMap.get(faceId);
     if (!mapping) return null;
-    const geom = mapping.mesh.geometry;
+    const mesh = mapping.mesh;
+    const geom = mesh.geometry;
     const pos = geom.getAttribute("position");
     if (!pos) return null;
     const [ia, ib, ic] = getFaceVertexIndices(geom, mapping.localFace);
-    mapping.mesh.updateWorldMatrix(true, false);
-    tmpA.set(pos.getX(ia), pos.getY(ia), pos.getZ(ia)).applyMatrix4(mapping.mesh.matrixWorld);
-    tmpB.set(pos.getX(ib), pos.getY(ib), pos.getZ(ib)).applyMatrix4(mapping.mesh.matrixWorld);
-    tmpC.set(pos.getX(ic), pos.getY(ic), pos.getZ(ic)).applyMatrix4(mapping.mesh.matrixWorld);
+    mesh.updateWorldMatrix(true, false);
+    tmpA.set(pos.getX(ia), pos.getY(ia), pos.getZ(ia)).applyMatrix4(mesh.matrixWorld);
+    tmpB.set(pos.getX(ib), pos.getY(ib), pos.getZ(ib)).applyMatrix4(mesh.matrixWorld);
+    tmpC.set(pos.getX(ic), pos.getY(ic), pos.getZ(ic)).applyMatrix4(mesh.matrixWorld);
 
     const applyChain = (v: Vector3) => {
       const out = v.clone();
@@ -379,14 +392,15 @@ export function createUnfold2dManager(
       const faceIndexMap = getFaceIndexMap();
       const mapping = faceIndexMap.get(faceId);
       if (!mapping) return;
-      const geom = mapping.mesh.geometry;
+      const mesh = mapping.mesh;
+      const geom = mesh.geometry;
       const pos = geom.getAttribute("position");
       if (!pos) return;
       const [ia, ib, ic] = getFaceVertexIndices(geom, mapping.localFace);
-      mapping.mesh.updateWorldMatrix(true, false);
-      tmpA.set(pos.getX(ia), pos.getY(ia), pos.getZ(ia)).applyMatrix4(mapping.mesh.matrixWorld);
-      tmpB.set(pos.getX(ib), pos.getY(ib), pos.getZ(ib)).applyMatrix4(mapping.mesh.matrixWorld);
-      tmpC.set(pos.getX(ic), pos.getY(ic), pos.getZ(ic)).applyMatrix4(mapping.mesh.matrixWorld);
+      mesh.updateWorldMatrix(true, false);
+      tmpA.set(pos.getX(ia), pos.getY(ia), pos.getZ(ia)).applyMatrix4(mesh.matrixWorld);
+      tmpB.set(pos.getX(ib), pos.getY(ib), pos.getZ(ib)).applyMatrix4(mesh.matrixWorld);
+      tmpC.set(pos.getX(ic), pos.getY(ic), pos.getZ(ic)).applyMatrix4(mesh.matrixWorld);
 
       normal.crossVectors(tmpB.clone().sub(tmpA), tmpC.clone().sub(tmpA)).normalize();
       if (normal.lengthSq() === 0) return;
@@ -411,17 +425,7 @@ export function createUnfold2dManager(
     const positions: number[] = [];
     const colors: number[] = [];
     tris.forEach(({ faceId, tri, intersected }) => {
-      const [a, b, c] = tri;
-      const gid = getFaceGroupMap().get(faceId);
-      const col = gid !== null && gid !== undefined ? getGroupColor(gid) : getGroupColor(groupId);
-      const flagged = intersected === true;
-      const cr = flagged ? 1 : col?.r ?? 255;
-      const cg = flagged ? 0 : col?.g ?? 255;
-      const cb = flagged ? 1 : col?.b ?? 255;
-      [a, b, c].forEach((v) => {
-        positions.push(v.x, v.y, 0);
-        colors.push(cr, cg, cb);
-      });
+      paintFace(groupId, faceId, tri, intersected, positions, colors);
     });
     if (positions.length === 0) {
       renderer2d.bboxRuler.hide();
@@ -429,7 +433,7 @@ export function createUnfold2dManager(
     }
     const geom = new BufferGeometry();
     geom.setAttribute("position", new Float32BufferAttribute(positions, 3));
-    geom.setAttribute("color", new Float32BufferAttribute(colors, 3));
+    geom.setAttribute("color", new Float32BufferAttribute(colors, 4));
     const indices: number[] = [];
     for (let i = 0; i < positions.length / 3; i += 3) {
       indices.push(i, i + 1, i + 2);
@@ -437,12 +441,11 @@ export function createUnfold2dManager(
     geom.setIndex(indices);
     geom.computeVertexNormals();
     const mesh = new Mesh(geom, createUnfoldFaceMaterial());
-    const edgeGeom = geom.clone();
-    const edgeMesh = new Mesh(edgeGeom, createUnfoldEdgeMaterial());
+    const meshIntersect = new Mesh(geom, createWarnningMaterial(3, Math.PI * 0.25 - (getGroupPlaceAngle(groupId)??0), 0.1));
     mesh.userData.groupId = groupId;
-    edgeMesh.userData.groupId = groupId;
+    mesh.userData.main = true;
     renderer2d.root.add(mesh);
-    renderer2d.root.add(edgeMesh);
+    renderer2d.root.add(meshIntersect);
 
     // 缓存展开边信息（未应用 placeAngle）
     const edgeCache = new Map<number, EdgeCache[]>();
@@ -496,9 +499,32 @@ export function createUnfold2dManager(
     })();
     groupEdgesCache.set(groupId, { edges: edgeCache, medianEdgeLength });
 
+    // 展开边线段渲染
+    const sizeVec = new Vector2();
+    renderer2d.renderer.getSize(sizeVec);
+    edgeCache.forEach((rec, eid) => {
+      if (!rec || rec.length === 0) return;
+      rec.forEach((unfoldedEdge) => {
+        const p1 = unfoldedEdge.unfoldedPos[0];
+        const p2 = unfoldedEdge.unfoldedPos[1];
+        const lineGeom = new LineSegmentsGeometry();
+        lineGeom.setPositions(new Float32Array([p1.x, p1.y, 0, p2.x, p2.y, 1]));
+        const angleRad = angleIndex.getAngle(eid);
+        const mat =
+        angleRad > Math.PI
+        ? createUnfoldEdgeLineFoldinMaterial({ width: sizeVec.x || 1, height: sizeVec.y || 1 })
+        : createUnfoldEdgeLineFoldoutMaterial({ width: sizeVec.x || 1, height: sizeVec.y || 1 });
+        const line = new LineSegments2(lineGeom, mat);
+        line.computeLineDistances();
+        renderer2d.root.add(line);
+      });
+    });
+
     renderer2d.root.rotateOnAxis(new Vector3(0, 0, 1), getGroupPlaceAngle(groupId)??0);
     renderer2d.root.updateMatrixWorld(true);
     const bounds = getMeshVertexBounds();
+    const maxDim = Math.max(Math.abs(bounds.maxX - bounds.minX), Math.abs(bounds.maxY - bounds.minY));
+    ensurePlanarUVWorldScale(geom, maxDim / 15, "xy");
     updateCamera(bounds.minX, bounds.maxX, bounds.minY, bounds.maxY);
     updateBBoxRuler(bounds.minX, bounds.maxX, bounds.minY, bounds.maxY);
   };
@@ -792,7 +818,7 @@ export function createUnfold2dManager(
   };
 
   appEventBus.on("clearAppStates", () => {
-    clearScene();
+    // clearScene();
     clearTransforms();
     cachedSnapped = null;
   });
@@ -806,23 +832,47 @@ export function createUnfold2dManager(
     if (groupId !== current) return;
     rebuildGroup2D(groupId, true);
   });
+  type XY = { x: number; y: number };
+
+  const paintFace = (
+    groupId: number,
+    faceId: number,
+    tri: [XY, XY, XY],
+    intersected: boolean | undefined,
+    positions: number[] | null,
+    colors: number[],
+  ) => {
+    const gid = getFaceGroupMap().get(faceId) ?? groupId;
+    const groupColor = getGroupColor(gid) ?? getGroupColor(groupId) ?? new Color(0xffffff);
+    const visible = getGroupVisibility(gid);
+    const color = visible ? groupColor : new Color(0x898e9c);
+    const verts = tri;
+    verts.forEach((v) => {
+      if (positions) {
+        positions.push(v.x, v.y, 0);
+      }
+      colors.push(color.r, color.g, color.b, intersected ? 1 : 0);
+    });
+  };
+
   const repaintGroupColor = (groupId: number) => {
+    const cache = cachedSnapped;
+    if (!cache || cache.groupId !== groupId) return false;
+    const colors: number[] = [];
+    cache.tris.forEach(({ faceId, tri, intersected }) => {
+      paintFace(groupId, faceId, tri, intersected, null, colors);
+    });
     let painted = false;
-    const col = getGroupColor(groupId);
-    const cr = col?.r ?? 255;
-    const cg = col?.g ?? 255;
-    const cb = col?.b ?? 255;
     renderer2d.root.children.forEach((child) => {
       const mesh = child as Mesh;
       if (!(mesh as any).isMesh) return;
       if (mesh.userData.groupId !== groupId) return;
       const colorAttr = (mesh.geometry as BufferGeometry).getAttribute("color") as Float32BufferAttribute | undefined;
       if (!colorAttr) return;
+      if (colorAttr.count * 4 !== colors.length) return;
       const arr = colorAttr.array as Float32Array;
-      for (let i = 0; i < arr.length; i += 3) {
-        arr[i] = cr;
-        arr[i + 1] = cg;
-        arr[i + 2] = cb;
+      for (let i = 0; i < colors.length; i++) {
+        arr[i] = colors[i];
       }
       colorAttr.needsUpdate = true;
       painted = true;
@@ -831,6 +881,12 @@ export function createUnfold2dManager(
   };
 
   appEventBus.on("groupColorChanged", ({ groupId }) => {
+    const ok = repaintGroupColor(groupId);
+    if (!ok) {
+      rebuildGroup2D(groupId, true);
+    }
+  });
+  appEventBus.on("groupVisibilityChanged", ({ groupId }) => {
     const ok = repaintGroupColor(groupId);
     if (!ok) {
       rebuildGroup2D(groupId, true);

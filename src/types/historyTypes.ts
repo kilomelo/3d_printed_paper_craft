@@ -7,5 +7,6 @@ export type ProjectState = {
   colorCursor: number;
   previewGroupId: number;
   settings: Settings;
+  groupVisibility: Array<[number, boolean]>;
 };
 export type Snapshot = { data: ProjectState; action: MetaAction; uid: number };
