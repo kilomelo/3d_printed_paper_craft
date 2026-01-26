@@ -25,6 +25,7 @@ import {
 } from "./groups";
 import { type PPCFile } from "./ppc";
 import { appEventBus } from "./eventBus";
+import { t } from "./i18n";
 
 export type GroupControllerApi = ReturnType<typeof createGroupController>;
 
@@ -89,16 +90,16 @@ export function createGroupController(
       if (assignFaceToGroup(faceId, null)) {
         rebuildGroupTreeData(groupId, getFaceAdjacency());
         const groupName = getGroupNameData(groupId) ?? `展开组 ${getGroupIdsData().indexOf(groupId) + 1}`;
-        log(`已从 ${groupName} 移除`, "success");
+        log(t("log.group.faceRemoved", { group: groupName }), "success");
         appEventBus.emit("groupFaceRemoved", { groupId: groupId, faceId });
           return true;
       }
       else{
-        log(`移除失败`, "error");
+        log(t("log.group.removeFail"), "error");
         return false;
       }
     } else {
-      log("移除会导致展开组不连通，已取消", "error");
+      log(t("log.group.removeDisconnectCancel"), "error");
       return false;
     }
   }
@@ -107,7 +108,7 @@ export function createGroupController(
     // console.log('[GroupController] addFace called with faceId:', faceId, 'groupId:', groupId, 'getFaceAdjacency', getFaceAdjacency);
     if (groupId === null) return false;
     if (!getGroupVisibility(groupId)) {
-      log("无法为隐藏的组添加面，请先取消隐藏", "error");
+      log(t("log.group.hiddenAddBlocked"), "error");
       return false;
     }
     const currentGroup = getFaceGroupMapData().get(faceId) ?? null;
@@ -115,12 +116,12 @@ export function createGroupController(
     const targetSet = getGroupFacesData(groupId) ?? new Set<number>();
 
     if (currentGroup !== null && !canRemoveFaceData(currentGroup, faceId, getFaceAdjacency())) {
-      log("该面所在的组移出后会断开，未加入当前组", "error");
+      log(t("log.group.removeWillDisconnect"), "error");
       return false;
     }
 
     if (targetSet.size > 0 && !shareEdgeWithGroupData(faceId, groupId, getFaceAdjacency())) {
-      log("该面与当前组无共边，未加入当前组", "error");
+      log(t("log.group.noSharedEdge"), "error");
       return false;
     }
 
@@ -129,7 +130,7 @@ export function createGroupController(
     if (currentGroup) rebuildGroupTreeData(currentGroup, getFaceAdjacency());
 
     const groupName = getGroupNameData(groupId) ?? `展开组 ${getGroupIdsData().indexOf(groupId) + 1}`;
-    log(`已加入 ${groupName}`, "success");
+    log(t("log.group.faceAdded", { group: groupName }), "success");
     appEventBus.emit("groupFaceAdded", { groupId: groupId, faceId });
     if (currentGroup !== null) {
       appEventBus.emit("groupFaceRemoved", { groupId: currentGroup, faceId });
@@ -147,7 +148,7 @@ export function createGroupController(
       return;
     }
     if (ids.length <= 1) {
-      log("至少保留一个展开组，删除取消", "error");
+      log(t("log.group.deleteKeepOne"), "error");
       return;
     }
     const nextPreviewId = indexOfGroup === ids.length - 1 ? ids[indexOfGroup - 1] : ids[indexOfGroup + 1];
@@ -159,7 +160,7 @@ export function createGroupController(
         groupName,
         faces: deletedGroupFaces ?? new Set<number>(),
       });
-      log(`已删除 ${groupName}`, "success");
+      log(t("log.group.deleted", { group: groupName }), "success");
     }
   }
 
@@ -180,7 +181,7 @@ export function createGroupController(
       previewGroupId = newGroupId;
       groupVisibility.set(newGroupId, true);
       appEventBus.emit("groupAdded", { groupId: newGroupId, groupName });
-      log(`已创建 ${groupName}`, "success");
+      log(t("log.group.created", { group: groupName }), "success");
       appEventBus.emit("groupCurrentChanged", previewGroupId);
     }
   }

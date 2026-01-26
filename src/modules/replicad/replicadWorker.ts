@@ -8,9 +8,9 @@ import { applySettings, type Settings } from "../settings";
 import type { LogTone } from "../log";
 
 type WorkerRequest =
-  | { id: number; type: "step"; triangles: TriangleWithEdgeInfo[]; settings: Settings }
-  | { id: number; type: "stl"; triangles: TriangleWithEdgeInfo[]; settings: Settings }
-  | { id: number; type: "mesh"; triangles: TriangleWithEdgeInfo[]; settings: Settings };
+  | { id: number; type: "step"; triangles: TriangleWithEdgeInfo[]; settings: Settings; lang?: string }
+  | { id: number; type: "stl"; triangles: TriangleWithEdgeInfo[]; settings: Settings; lang?: string }
+  | { id: number; type: "mesh"; triangles: TriangleWithEdgeInfo[]; settings: Settings; lang?: string };
 
 type MeshPayload = {
   positions: ArrayBuffer;
@@ -20,9 +20,9 @@ type MeshPayload = {
 };
 
 type WorkerResponse =
-  | { id: number; ok: true; type: "step"; buffer: ArrayBuffer; mime: string; earClipNumTotal: number }
-  | { id: number; ok: true; type: "stl"; buffer: ArrayBuffer; mime: string; earClipNumTotal: number }
-  | { id: number; ok: true; type: "mesh"; buffer: ArrayBuffer; mime: string; earClipNumTotal: number }
+  | { id: number; ok: true; type: "step"; buffer: ArrayBuffer; mime: string; tabClipNumTotal: number }
+  | { id: number; ok: true; type: "stl"; buffer: ArrayBuffer; mime: string; tabClipNumTotal: number }
+  | { id: number; ok: true; type: "mesh"; buffer: ArrayBuffer; mime: string; tabClipNumTotal: number }
   | { id: number; ok: true; type: "progress"; message: number }
   | { id: number; ok: true; type: "log"; message: string; tone?: LogTone }
   | { id: number; ok: false; error: string };
@@ -58,7 +58,7 @@ const serializeMesh = async (
 };
 
 ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
-  const { id, type, settings } = event.data;
+  const { id, type, settings, lang } = event.data;
   try {
     // 这句话不能删除
     applySettings(settings);
@@ -66,24 +66,24 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     const reportLog = (msg: string, tone: LogTone = "error") =>
       ctx.postMessage({ id, ok: true, type: "log", message: msg, tone } as WorkerResponse);
     if (type === "step") {
-      const { blob, earClipNumTotal } = await buildGroupStepFromTriangles(event.data.triangles, report, reportLog);
+      const { blob, tabClipNumTotal } = await buildGroupStepFromTriangles(event.data.triangles, report, reportLog, lang);
       const buffer = await blob.arrayBuffer();
-      const resp: WorkerResponse = { id, ok: true, type: "step", buffer, mime: "application/step", earClipNumTotal };
+      const resp: WorkerResponse = { id, ok: true, type: "step", buffer, mime: "application/step", tabClipNumTotal };
       ctx.postMessage(resp, [resp.buffer]);
       return;
     }
     if (type === "stl") {
-      const { blob, earClipNumTotal } = await buildGroupStlFromTriangles(event.data.triangles, report, reportLog);
+      const { blob, tabClipNumTotal } = await buildGroupStlFromTriangles(event.data.triangles, report, reportLog, lang);
       const buffer = await blob.arrayBuffer();
-      const resp: WorkerResponse = { id, ok: true, type: "stl", buffer, mime: "model/stl", earClipNumTotal };
+      const resp: WorkerResponse = { id, ok: true, type: "stl", buffer, mime: "model/stl", tabClipNumTotal };
       ctx.postMessage(resp, [resp.buffer]);
       return;
     }
     if (type === "mesh") {
       // 通过生成 STL，再由主线程解析为 mesh，减少重复建模路径
-      const { blob, earClipNumTotal } = await buildGroupStlFromTriangles(event.data.triangles, report, reportLog);
+      const { blob, tabClipNumTotal } = await buildGroupStlFromTriangles(event.data.triangles, report, reportLog, lang);
       const buffer = await blob.arrayBuffer();
-      const resp: WorkerResponse = { id, ok: true, type: "mesh", buffer, mime: "model/stl", earClipNumTotal };
+      const resp: WorkerResponse = { id, ok: true, type: "mesh", buffer, mime: "model/stl", tabClipNumTotal };
       ctx.postMessage(resp, [resp.buffer]);
       return;
     }

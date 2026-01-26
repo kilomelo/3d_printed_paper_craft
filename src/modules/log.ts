@@ -1,3 +1,5 @@
+import { t } from "./i18n";
+
 export type LogTone = "info" | "error" | "success" | "progress";
 
 type LogEntry = {
@@ -19,7 +21,7 @@ export function createLog(listEl: HTMLElement): LogController {
     const totalBars = 25;
     const filled = Math.round((pct / 100) * totalBars);
     const bar = `${"█".repeat(filled)}${"-".repeat(totalBars - filled)}`;
-    return `工作进度: |${bar}| ${pct}%`;
+    return t("log.progress.bar", { bar, pct });
   };
 
   const render = () => {

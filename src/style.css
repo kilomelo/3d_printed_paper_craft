@@ -95,6 +95,7 @@ textarea {
 .home-title {
   font-size: 22px;
   letter-spacing: 0.6px;
+  height: 30px;
 }
 
 .home-subtitle {
@@ -103,6 +104,7 @@ textarea {
 }
 
 .home-meta {
+  height: 18px;
   color: var(--muted);
   font-size: 13px;
 }
@@ -119,12 +121,20 @@ textarea {
 }
 
 .btn.sm {
+  height: 30px;
   padding: 6px 10px;
   border-radius: 10px;
   margin-right: 6px;
   font-size: 13px;
+  display: inline-flex;
+  align-items: center;
 }
-
+.btn.toggle {
+  height: 30px;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+}
 .btn.toggle.active {
   border-color: rgba(56, 189, 248, 0.8);
   background: rgba(56, 189, 248, 0.16);
@@ -150,11 +160,13 @@ textarea {
 }
 
 .btn.primary {
+  height: 42px;
   border-color: rgba(56, 189, 248, 0.8);
   background: linear-gradient(135deg, rgba(56, 189, 248, 0.24), rgba(56, 189, 248, 0.18));
 }
 
 .btn.ghost {
+  height: 40px;
   background: rgba(255, 255, 255, 0.04);
 }
 
@@ -167,6 +179,12 @@ textarea {
   justify-content: space-between;
   background: linear-gradient(90deg, rgba(50, 51, 120, 0.8), rgba(28, 90, 124, 0.8));
   border: 1px solid var(--border);
+}
+
+.editor-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0;
 }
 
 .editor-title {
@@ -185,7 +203,11 @@ textarea {
 }
 
 .version-badge {
-  padding: 6px 10px;
+  display: inline-flex;
+  align-items: center;
+  height: 29px;
+  min-height: 29px;
+  padding: 0 10px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--border);
@@ -198,9 +220,42 @@ textarea {
   top: 12px;
   right: 12px;
   z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  height: 29px;
+  min-height: 29px;
+  padding: 0 10px;
+}
+
+.version-lang-toggle {
+  position: fixed;
+  top: 12px;
+  right: 85px;
+  z-index: 10;
+  padding: 6px 10px;
+  font-size: 12px;
+  height: 29px;
+  min-height: 29px;
+  line-height: 20px;
+  display: inline-flex;
+  align-items: center;
+}
+
+#lang-toggle,
+#lang-toggle-global {
+  height: 29px;
+  min-height: 29px;
+  line-height: 20px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.hidden-global {
+  display: none !important;
 }
 
 .editor-menu {
+  height: 60px;
   display: flex;
   flex-wrap: nowrap;
   white-space: nowrap;
@@ -351,7 +406,7 @@ textarea {
 
 .group-tabs {
   display: flex;
-  gap: 5px;
+  gap: 4px;
   align-items: center;
   flex: 1 1 auto;
   min-width: 0;
@@ -360,13 +415,12 @@ textarea {
 }
 
 .tab-btn {
+  height: 30px;
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text);
   border-radius: 8px;
   padding: 6px 10px;
-  height: 32px;
-  min-height: 32px;
   justify-content: center;
   margin-right: 1px;
   font-size: 13px;
@@ -407,8 +461,11 @@ textarea {
 }
 
 .tab-add {
+  height: 30px;
+  width: 30px;
   padding: 6px 10px;
   font-size: 13px;
+  margin-left: 4px;
   margin-right: 0;
   border-radius: 8px;
   flex-shrink: 0;
@@ -512,6 +569,7 @@ textarea {
 }
 
 .log-entry {
+  height: 20px;
   color: #e5e7eb;
   text-shadow: var(--textShadow);
 }
@@ -537,7 +595,7 @@ textarea {
   top: 4px;
   left: 2px;
   /* min-height: 200px;; */
-  height: 288px;
+  height: 270px;
   background: transparent;
   -webkit-mask-image: linear-gradient(to bottom, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 1) 15%, rgba(255, 255, 255, 0) 40%, rgba(255, 255, 255, 0) 100%);
   mask-image: linear-gradient(to bottom, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 1) 15%, rgba(255, 255, 255, 0) 40%, rgba(255, 255, 255, 0) 100%);
@@ -566,8 +624,10 @@ textarea {
 }
 
 .history-entry {
+  height: 26px;
   color: #e5e7ebff;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   width: max-content;
   pointer-events: auto; /* 仅文字区域可点击 */
   padding: 4px 6px;
@@ -712,6 +772,7 @@ textarea {
 }
 
 .setting-row {
+  height: 55px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -810,13 +871,19 @@ textarea {
 }
 
 .settings-inline-btn {
+  height: 29px;
   white-space: nowrap;
   min-width: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
 }
 
 .setting-label {
-  min-width: 65px;
+  /* min-width: 65px; */
   color: var(--text);
+  white-space: nowrap;
 }
 
 .setting-row input {
@@ -832,7 +899,6 @@ textarea {
   font-size: 12px;
   padding-left: 10px;
   color: var(--muted);
-  line-height: 1.4;
 }
 
 .setting-range-value {
@@ -984,12 +1050,13 @@ textarea {
   height: 0;
 }
 
-@media (max-width: 960px) {
-  .page.active {
-    padding: 18px;
+@media (max-width: 1200px) {
+  #layout-workspace.page.active {
+    padding: 0;
   }
 
   .editor-preview {
     grid-template-columns: 1fr;
+    grid-template-rows: repeat(2, minmax(0, 1fr));
   }
 }

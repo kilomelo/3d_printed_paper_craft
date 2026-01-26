@@ -20,7 +20,6 @@ import {
   SpriteMaterial,
   CanvasTexture,
   Vector2 as ThreeVector2,
-  LineDashedMaterial,
 } from "three";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
@@ -28,10 +27,7 @@ import { getModel, setModel } from "./model";
 import { getSettings } from "./settings";
 import { createScene, fitCameraToObject } from "./scene";
 import { FACE_DEFAULT_COLOR, createPreviewMaterial, createEdgeMaterial, createHoverLineMaterial } from "./materials";
-import {
-  createRaycaster,
-  initInteractionController,
-} from "./interactions";
+import { initInteractionController } from "./interactions";
 import { type EdgeRecord, generateFunctionalMeshes } from "./model";
 import { createFaceColorService } from "./faceColorService";
 import { createSeamManager } from "./seamManager";
@@ -41,6 +37,7 @@ import { type GeometryContext, createGeometryContext } from "./geometry";
 import { getWorkspaceState } from "@/types/workspaceState";
 import { isSafari } from "./utils";
 import { disposeGroupDeep } from "./threeUtils";
+import { t } from "./i18n";
 
 export type GroupApi = {
   handleRemoveFace: (faceId: number) => boolean;
@@ -64,7 +61,6 @@ export function createRenderer3D(
   let seamsVisible = true;
   let facesVisible = true;
   const geometryIndex = geometryContext.geometryIndex;
-  const angleIndex = geometryContext.angleIndex;
   const previewGeometryContext = createGeometryContext();
   let faceAdjacency = geometryIndex.getFaceAdjacency();
   let faceIndexMap = geometryIndex.getFaceIndexMap();
@@ -73,7 +69,6 @@ export function createRenderer3D(
   let edges: EdgeRecord[] = geometryIndex.getEdgesArray();
   let edgeKeyToId = geometryIndex.getEdgeKeyToId();
   let vertexKeyToPos = geometryIndex.getVertexKeyToPos();
-  const { raycaster, pointer } = createRaycaster();
   let breathGroupId: number | null = null;
   let breathStart = 0;
   let breathRaf: number | null = null;
@@ -99,8 +94,6 @@ export function createRenderer3D(
     renderer,
     camera,
     controls,
-    raycaster,
-    pointer,
     getModel,
     isFaceVisible: (faceId) => {
       const gid = groupApi.getFaceGroupMap().get(faceId);
@@ -539,24 +532,28 @@ export function createRenderer3D(
     ambient.intensity = enabled ? 0.8 : 5;
     return enabled;
   };
+  const isLightEnabled = () => dir.visible;
 
   const toggleEdges = () => {
     edgesVisible = !edgesVisible;
     applyEdgeVisibility();
     return edgesVisible;
   };
+  const isEdgesEnabled = () => edgesVisible;
 
   const toggleSeams = () => {
     seamsVisible = !seamsVisible;
     setSeamsVisibility(seamsVisible);
     return seamsVisible;
   };
+  const isSeamsEnabled = () => seamsVisible;
 
   const toggleFaces = () => {
     facesVisible = !facesVisible;
     applyFaceVisibility();
     return facesVisible;
   };
+  const isFacesEnabled = () => facesVisible;
   const toggleBBox = () => {
     gizmosVisible = !gizmosVisible;
     gizmosGroup.visible = gizmosVisible;
@@ -595,11 +592,11 @@ export function createRenderer3D(
     if (logSpecialEdges) {
       if (openCount > 0 || nonManifoldCount > 0) {
         if (openCount > 0 && nonManifoldCount === 0) {
-          log(`检测到 ${openCount} 条未封闭边`);
+          log(t("log.model.edges.open", { count: openCount }));
         } else if (openCount === 0 && nonManifoldCount > 0) {
-          log(`检测到 ${nonManifoldCount} 条非流形边`);
+          log(t("log.model.edges.nonManifold", { count: nonManifoldCount }));
         } else {
-          log(`检测到 ${openCount} 条未封闭边，及 ${nonManifoldCount} 条非流形边`);
+          log(t("log.model.edges.openAndNonManifold", { openCount, nonManifoldCount }));
         }
       }
     }
@@ -715,7 +712,7 @@ export function createRenderer3D(
     applyEdgeVisibility();
     modelGroup.add(model);
     fitCameraToObject(model, camera, controls);
-    log(`已加载：${name} · 三角面 ${geometryIndex.getTriangleCount()}`, "success");
+    log(t("log.model.loaded", { name, triCount: geometryIndex.getTriangleCount() }), "success");
     // appEventBus.emit("modelLoaded", undefined);
     rebuildSpecialEdges(modelGroup);
     bboxBox = new Box3().setFromObject(modelGroup);
@@ -818,9 +815,13 @@ export function createRenderer3D(
     clearModel,
     resetView,
     toggleLight,
+    isLightEnabled,
     toggleEdges,
+    isEdgesEnabled,
     toggleSeams,
+    isSeamsEnabled,
     toggleFaces,
+    isFacesEnabled,
     toggleBBox,
     getBBoxVisible,
     getTriCount,

@@ -7,6 +7,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { v3 } from "../types/geometryTypes";
 import { createHoverLineMaterial } from "./materials";
 import { appEventBus } from "./eventBus";
+import { getWorkspaceState } from "@/types/workspaceState";
 
 export type HoverState = {
   hoverLines: LineSegments2[];
@@ -19,8 +20,6 @@ export type InteractionOptions = {
   renderer: THREE.WebGLRenderer;
   camera: THREE.PerspectiveCamera;
   controls: OrbitControls;
-  raycaster: Raycaster;
-  pointer: Vector2;
   getModel: () => THREE.Object3D | null;
   mapFaceId: (mesh: Mesh, faceIndex: number | undefined) => number | null;
   isFaceVisible: (faceId: number) => boolean;
@@ -33,7 +32,7 @@ export type InteractionOptions = {
 };
 
 
-export function createRaycaster() {
+function createRaycaster() {
   return { raycaster: new Raycaster(), pointer: new Vector2() };
 }
 
@@ -51,6 +50,7 @@ function getFaceVertexIndices(geometry: THREE.BufferGeometry, faceIndex: number)
 
 // 交互控制器：统一管理 pointer 事件、刷子状态、拾取与面添加/移除回调，解耦渲染器与 DOM 事件。
 export function initInteractionController(opts: InteractionOptions) {
+  const { raycaster, pointer } = createRaycaster();
   let brushMode = -1;
   // brush过程中是否有效地修改过组数据
   let brushPaintedCnt: number = 0;
@@ -117,10 +117,10 @@ export function initInteractionController(opts: InteractionOptions) {
   }
 
   const hideHoverLines = () => {
-    hoverState.hoverLines.forEach((line) => {
-      line.visible = false;
-    });
     if (hoverState.hoveredFaceId !== null) {
+      hoverState.hoverLines.forEach((line) => {
+        line.visible = false;
+      });
       opts.emitFaceHover?.(null);
       hoverState.hoveredFaceId = null;
     }
@@ -171,7 +171,7 @@ export function initInteractionController(opts: InteractionOptions) {
   }
 
   const onPointerMove = (event: PointerEvent) => {
-    if (opts.isPointerLocked()) {
+    if (opts.isPointerLocked() || getWorkspaceState() === "previewGroupModel") {
       hideHoverLines();
       return;
     }
@@ -208,10 +208,10 @@ export function initInteractionController(opts: InteractionOptions) {
     const rect = opts.renderer.domElement.getBoundingClientRect();
     lastClientPos.x = event.clientX;
     lastClientPos.y = event.clientY;
-    opts.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    opts.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    opts.raycaster.setFromCamera(opts.pointer, opts.camera);
-    const intersects = opts.raycaster.intersectObject(model, true).filter((i) => {
+    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, opts.camera);
+    const intersects = raycaster.intersectObject(model, true).filter((i) => {
       const mesh = i.object as Mesh;
       return mesh.isMesh && !mesh.userData.functional;
     });
