@@ -1,9 +1,10 @@
 import { appEventBus } from "./eventBus";
+import { t, onLanguageChanged } from "./i18n";
 import type { WorkspaceState } from "../types/workspaceState";
 
 type Side = "left" | "right";
 
-type HintItem = { key: string; label: string };
+type HintItem = { key: string; i18n: string };
 type HintConfig = { left: HintItem[]; right: HintItem[] };
 
 const hintTable: Record<WorkspaceState, HintConfig> = {
@@ -13,36 +14,36 @@ const hintTable: Record<WorkspaceState, HintConfig> = {
   },
   normal: {
     left: [
-      { key: "view-rotate", label: "左键旋转视角" },
-      { key: "view-zoom", label: "滚轮缩放视角" },
-      { key: "view-pan", label: "右键平移视角" },
+      { key: "view-rotate", i18n: "op.view.rotate" },
+      { key: "view-zoom", i18n: "op.view.zoom" },
+      { key: "view-pan", i18n: "op.view.pan" },
     ],
     right: [
-      { key: "view-zoom", label: "滚轮缩放视角" },
-      { key: "view-pan", label: "右键平移视角" },
-      { key: "rename-group", label: "左键长按标签改名" },
+      { key: "view-zoom", i18n: "op.view.zoom" },
+      { key: "view-pan", i18n: "op.view.pan" },
+      { key: "rename-group", i18n: "op.group.rename" },
     ],
   },
   editingGroup: {
     left: [
-      { key: "group-add-face", label: "左键添加面到展开组" },
-      { key: "group-remove-face", label: "右键移出展开组三角面" },
-      { key: "view-rotate", label: "左键旋转视角" },
-      { key: "view-zoom", label: "滚轮缩放视角" },
-      { key: "view-pan", label: "右键平移视角" },
+      { key: "group-add-face", i18n: "op.group.face.add" },
+      { key: "group-remove-face", i18n: "op.group.face.remove" },
+      { key: "view-rotate", i18n: "op.view.rotate" },
+      { key: "view-zoom", i18n: "op.view.zoom" },
+      { key: "view-pan", i18n: "op.view.pan" },
     ],
     right: [
-      { key: "group-rotate", label: "左键旋转展开组" },
-      { key: "view-zoom", label: "滚轮缩放视角" },
-      { key: "view-pan", label: "右键平移视角" },
-      { key: "rename-group", label: "左键长按标签改名" },
+      { key: "group-rotate", i18n: "op.group.rotate" },
+      { key: "view-zoom", i18n: "op.view.zoom" },
+      { key: "view-pan", i18n: "op.view.pan" },
+      { key: "rename-group", i18n: "op.group.rename" },
     ],
   },
   previewGroupModel: {
     left: [
-      { key: "view-rotate", label: "左键旋转视角" },
-      { key: "view-zoom", label: "滚轮缩放视角" },
-      { key: "view-pan", label: "右键平移视角" },
+      { key: "view-rotate", i18n: "op.view.rotate" },
+      { key: "view-zoom", i18n: "op.view.zoom" },
+      { key: "view-pan", i18n: "op.view.pan" },
     ],
     right: [],
   },
@@ -83,7 +84,7 @@ export function createOperationHints(params: { leftMount: HTMLElement; rightMoun
     hints.forEach((hint) => {
       const li = document.createElement("li");
       li.className = "op-hints-item";
-      li.textContent = hint.label;
+      li.textContent = t(hint.i18n);
       li.dataset.op = hint.key;
       target.list.appendChild(li);
       target.items.set(hint.key, li);
@@ -166,6 +167,9 @@ export function createOperationHints(params: { leftMount: HTMLElement; rightMoun
   const clearWatcher = appEventBus.on("clearAppStates", () => {
     resetHighlights();
   });
+  const langWatcher = onLanguageChanged(() => {
+    renderAll(getWorkspaceState());
+  });
 
   // 初始渲染
   renderAll(getWorkspaceState());
@@ -178,6 +182,7 @@ export function createOperationHints(params: { leftMount: HTMLElement; rightMoun
       opWatcher();
       opDoneWatcher();
       clearWatcher();
+      langWatcher();
       left.wrap.remove();
       right.wrap.remove();
     },

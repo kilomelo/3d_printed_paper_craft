@@ -22,22 +22,22 @@ import {
   buildStlInWorker,
   buildMeshInWorker,
   onWorkerBusyChange,
-  isWorkerBusy,
 } from "./modules/replicad/replicadWorkerClient";
-import { buildEarClip } from "./modules/replicad/replicadModeling";
+import { buildTabClip } from "./modules/replicad/replicadModeling";
 import { startNewProject, getCurrentProject } from "./modules/project";
 import { historyManager } from "./modules/history";
 import type { MetaAction } from "./types/historyTypes.js";
 import { loadRawObject } from "./modules/fileLoader";
-import { createHistoryPanel } from "./modules/historyPanel";
+import { createHistoryPanel, formatHistoryAction } from "./modules/historyPanel";
 import type { Snapshot, ProjectState } from "./types/historyTypes.js";
 import { exportGroupsData, getGroupColorCursor } from "./modules/groups";
 import { importSettings, getSettings, resetSettings } from "./modules/settings";
 import { createOperationHints } from "./modules/operationHints";
+import { initI18n, t, getCurrentLang, setLanguage, onLanguageChanged } from "./modules/i18n";
 
 const VERSION = packageJson.version ?? "0.0.0.0";
 
-type PreviewMeshCacheItem = { mesh: Mesh, earClipNumTotal: number, groupId: number, historyUidCreated: number, historyUidAbandoned: number };
+type PreviewMeshCacheItem = { mesh: Mesh, tabClipNumTotal: number, groupId: number, historyUidCreated: number, historyUidAbandoned: number };
 // 预览模型缓存，带有效期 
 const previewMeshCache: PreviewMeshCacheItem[] = [];
 const MAX_PREVIEW_MESH_CACHE_SIZE = 30;
@@ -49,11 +49,102 @@ if (!app) {
   throw new Error("未找到应用容器 #app");
 }
 
+let langToggleBtn: HTMLButtonElement | null = null;
+let langToggleGlobalBtn: HTMLButtonElement | null = null;
+let refreshToggleTextLabels: (() => void) | null = null;
+
 const setProjectNameLabel = (name: string) => {
   if (projectNameLabel) {
     projectNameLabel.textContent = isFileSaved ? `${name}` : `${name} *`;
   }
 };
+
+const refreshToggleTexts = (
+  toggles: {
+    btn: HTMLButtonElement | null;
+    keyOn: string;
+    keyOff: string;
+    isOn: () => boolean;
+  }[],
+) => {
+  toggles.forEach(({ btn, keyOn, keyOff, isOn }) => {
+    if (!btn) return;
+    btn.textContent = t(isOn() ? keyOn : keyOff);
+  });
+};
+
+const applyI18nTexts = () => {
+  document.querySelectorAll<HTMLElement>("[data-i18n]").forEach((el) => {
+    const key = el.dataset.i18n;
+    if (!key) return;
+    el.textContent = t(key);
+  });
+  document.querySelectorAll<HTMLElement>("[data-i18n-title]").forEach((el) => {
+    const key = el.dataset.i18nTitle;
+    if (!key) return;
+    el.title = t(key);
+  });
+  const layerHeightDesc = document.querySelector<HTMLElement>('[data-i18n="settings.layerHeight.desc"]');
+  if (layerHeightDesc) {
+    layerHeightDesc.textContent = t("settings.layerHeight.desc", {
+      max: limits.layerHeight.max,
+      def: defaultSettings.layerHeight,
+    });
+  }
+  const connectionDesc = document.querySelector<HTMLElement>('[data-i18n="settings.connectionLayers.desc"]');
+  if (connectionDesc) {
+    connectionDesc.textContent = t("settings.connectionLayers.desc", {
+      min: limits.connectionLayers.min,
+      max: limits.connectionLayers.max,
+      def: defaultSettings.connectionLayers,
+    });
+  }
+  const bodyLayersDesc = document.querySelector<HTMLElement>('[data-i18n="settings.bodyLayers.desc"]');
+  if (bodyLayersDesc) {
+    bodyLayersDesc.textContent = t("settings.bodyLayers.desc", {
+      min: limits.bodyLayers.min,
+      max: limits.bodyLayers.max,
+      def: defaultSettings.bodyLayers,
+    });
+  }
+  const tabWidthDesc = document.querySelector<HTMLElement>('[data-i18n="settings.tabWidth.desc"]');
+  if (tabWidthDesc) {
+    tabWidthDesc.textContent = t("settings.tabWidth.desc", {
+      min: limits.tabWidth.min,
+      max: limits.tabWidth.max,
+      def: defaultSettings.tabWidth,
+    });
+  }
+  const tabThicknessDesc = document.querySelector<HTMLElement>('[data-i18n="settings.tabThickness.desc"]');
+  if (tabThicknessDesc) {
+    tabThicknessDesc.textContent = t("settings.tabThickness.desc", {
+      min: limits.tabThickness.min,
+      max: limits.tabThickness.max,
+      def: defaultSettings.tabThickness,
+    });
+  }
+  const tabClipDesc = document.querySelector<HTMLElement>('[data-i18n="settings.tabClipGap.desc"]');
+  if (tabClipDesc) {
+    tabClipDesc.textContent = t("settings.tabClipGap.desc", {
+      min: limits.tabClipGap.min,
+      max: limits.tabClipGap.max,
+      def: defaultSettings.tabClipGap,
+    });
+  }
+  const wireframeDesc = document.querySelector<HTMLElement>('[data-i18n="settings.wireframeThickness.desc"]');
+  if (wireframeDesc) {
+    wireframeDesc.textContent = t("settings.wireframeThickness.desc", {
+      min: limits.wireframeThickness.min,
+      max: limits.wireframeThickness.max,
+      def: defaultSettings.wireframeThickness,
+    });
+  }
+  refreshToggleTextLabels?.();
+  groupUI.render(buildGroupUIState());
+  // 语言切换时刷新历史面板条目文本
+  historyPanelUI?.render();
+};
+
 // 文件已保存状态
 let isFileSaved = true;
 const setFileSaved = (value: boolean) => {
@@ -93,43 +184,48 @@ const applyProjectState = (snap: Snapshot) => {
 app.innerHTML = `
   <main class="shell">
     <div class="version-badge version-badge-global">v${VERSION}</div>
+    <button class="btn sm ghost version-lang-toggle" id="lang-toggle-global" data-i18n="language.toggle">Language: ZH</button>
     <input id="file-input" type="file" accept=".obj,.fbx,.stl,.3dppc,application/json" style="display:none" autocomplete="off" />
 
     <section id="layout-empty" class="page home active">
       <div class="home-card">
-        <div class="home-title">3D打印纸艺</div>
-        <div class="home-subtitle">选择一个模型文件开始编辑</div>
-        <button id="home-start" class="btn primary">打开模型</button>
-        <div class="home-meta">支持 OBJ / FBX / STL / 3dppc</div>
+        <div class="home-title" data-i18n="app.title">3D打印纸艺</div>
+        <div class="home-meta" data-i18n="mainpage.format.supported">支持 OBJ / FBX / STL / 3dppc</div>
+        <button id="home-start" class="btn primary" data-i18n="mainpage.guide">选择模型文件</button>
       </div>
     </section>
 
     <section id="layout-workspace" class="page">
       <header class="editor-header">
         <div class="editor-title">
-          <span class="editor-title-main">3D打印纸艺</span>
+          <span class="editor-title-main" data-i18n="app.title">3D打印纸艺</span>
           <span class="editor-title-project" id="project-name-label"></span>
         </div>
-        <div class="version-badge">v${VERSION}</div>
+        <div class="editor-header-right">
+          <button class="btn sm ghost" id="lang-toggle" data-i18n="language.toggle">Language: ZH</button>
+          <div class="version-badge">v${VERSION}</div>
+        </div>
       </header>
     <nav class="editor-menu">
-        <button class="btn ghost hidden" id="exit-preview-btn">退出预览</button>
-        <button class="btn ghost" id="menu-open">打开模型</button>
-        <button class="btn ghost" id="export-btn">保存 .3dppc</button>
-        <button class="btn ghost" id="export-group-step-btn">导出展开组 STEP</button>
-        <button class="btn ghost" id="export-group-stl-btn">导出展开组 STL</button>
-        <button class="btn ghost" id="export-ear-clip-btn">导出拼接边固定夹 STL</button>
-        <button class="btn ghost" id="preview-group-model-btn">预览展开组模型</button>
-        <button class="btn ghost" id="settings-open-btn">项目设置</button>
+        <button class="btn ghost hidden" id="exit-preview-btn" data-i18n="menu.preview.exit">退出预览</button>
+        <button class="btn ghost" id="menu-open" data-i18n="menu.model.open">打开模型</button>
+        <button class="btn ghost" id="export-3dppc-btn" data-i18n="menu.save3dppc">保存 .3dppc</button>
+        <button class="btn ghost" id="export-group-step-btn" data-i18n="menu.export.step">导出展开组 STEP</button>
+        <button class="btn ghost" id="export-group-stl-btn" data-i18n="menu.export.stl">导出展开组 STL</button>
+        <button class="btn ghost" id="export-seam-clip-btn" data-i18n="menu.export.seamClamp.stl">导出拼接边固定夹 STL</button>
+        <button class="btn ghost" id="preview-group-model-btn" data-i18n="menu.preview.group">预览展开组模型</button>
+        <button class="btn ghost" id="settings-open-btn" data-i18n="menu.project.settings">项目设置</button>
+        <div class="about-spacer"></div>
+        <button class="btn ghost" id="about-btn" data-i18n="menu.about">帮助 & 关于</button>
         <div id="menu-blocker" class="menu-blocker"></div>
       </nav>
   <section class="editor-preview">
     <div class="preview-panel">
       <div class="preview-toolbar">
-        <button class="btn sm ghost" id="reset-view-btn">重置视角</button>
+        <button class="btn sm" id="reset-view-btn" data-i18n="toolbar.l.resetView">重置视角</button>
         <button class="btn sm toggle active" id="light-toggle">光源：开</button>
-        <button class="btn sm toggle" id="edges-toggle">线框：关</button>
-        <button class="btn sm toggle" id="seams-toggle">拼接边：关</button>
+        <button class="btn sm toggle" id="edges-toggle">线框：开</button>
+        <button class="btn sm toggle" id="seams-toggle">拼接边：开</button>
         <button class="btn sm toggle active" id="faces-toggle">面渲染：开</button>
         <button class="btn sm toggle" id="bbox-toggle">包围盒：关</button>
         <div class="toolbar-spacer"></div>
@@ -146,12 +242,12 @@ app.innerHTML = `
             <button class="btn sm toggle" id="group-edit-toggle">编辑展开组</button>
             <div class="group-tabs" id="group-tabs"></div>
             <div class="toolbar-spacer"></div>
-            <button class="btn sm tab-add" id="group-add">+</button>
+            <button class="btn tab-add" id="group-add" data-i18n-title="toolbar.right.groupAdd.tooltip" title="添加展开组">+</button>
           </div>
           <div class="preview-area" id="group-preview">
             <div class="overlay-group-meta">
-              <button class="overlay-btn color-swatch" id="group-color-btn" title="选择组颜色"></button>
-              <button class="overlay-btn overlay-visibility" id="group-visibility-toggle" title="显示/隐藏展开组">
+              <button class="overlay-btn color-swatch" id="group-color-btn" data-i18n-title="preview.right.groupColor.tooltip" title="修改组颜色"></button>
+              <button class="overlay-btn overlay-visibility" id="group-visibility-toggle" data-i18n-title="preview.right.groupVisibility.tooltip" title="显示/隐藏展开组">
                 <svg class="icon-visible" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
                   <path d="M-896-256H384v800H-896z" style="fill:none"/>
                   <path d="M32.513 13.926C43.087 14.076 51.654 23.82 56 32c0 0-1.422 2.892-2.856 4.895a46.344 46.344 0 0 1-2.191 2.826 41.265 41.265 0 0 1-1.698 1.898c-5.237 5.5-12.758 9.603-20.7 8.01C19.732 47.859 12.823 40.131 8.497 32c0 0 1.248-2.964 2.69-4.964a45.105 45.105 0 0 1 2.034-2.617 41.618 41.618 0 0 1 1.691-1.897c4.627-4.876 10.564-8.63 17.601-8.596Zm-.037 4c-5.89-.022-10.788 3.267-14.663 7.35a37.553 37.553 0 0 0-1.527 1.713 41.472 41.472 0 0 0-1.854 2.386c-.544.755-1.057 1.805-1.451 2.59 3.773 6.468 9.286 12.323 16.361 13.742 6.563 1.317 12.688-2.301 17.016-6.846a37.224 37.224 0 0 0 1.534-1.715c.7-.833 1.366-1.694 1.999-2.579.557-.778 1.144-1.767 1.588-2.567-3.943-6.657-10.651-13.944-19.003-14.074Z"/>
@@ -164,10 +260,10 @@ app.innerHTML = `
                   <path d="m25.054 27.92 2.399 2.398a4.843 4.843 0 0 0 6.114 6.114l2.399 2.399A8.02 8.02 0 0 1 25.054 27.92Zm6.849-4.101.148-.002a8.021 8.021 0 0 1 8.017 8.017l-.001.148-8.164-8.163Z"/>
                 </svg>
               </button>
-              <span class="overlay-label group-faces-count" id="group-faces-count">面数量 0</span>
+              <span class="overlay-label group-faces-count" id="group-faces-count">面数量：0</span>
             </div>
-            <button class="overlay-btn tab-delete" id="group-delete" title="删除展开组">删除组</button>
-            <div id="group-preview-empty" class="preview-2d-empty hidden">
+            <button class="overlay-btn tab-delete" id="group-delete" data-i18n="preview.right.groupDelete.btn">删除展开组</button>
+            <div id="group-preview-empty" class="preview-2d-empty hidden" data-i18n="preview.right.placeholder">
               点击【编辑展开组】按钮进行编辑
             </div>
             <input type="color" id="group-color-input" class="color-input" autocomplete="off" />
@@ -180,128 +276,136 @@ app.innerHTML = `
   <div id="log-panel" class="log-panel hidden">
     <div id="log-list" class="log-list"></div>
   </div>
+  <div id="about-overlay" class="about-overlay hidden">
+    <div id="about-modal" class="about-modal">
+      <div class="about-body" id="about-content" data-i18n="about.loading">加载中...</div>
+      <div class="about-footer">
+        <button id="about-back-btn" class="btn primary" data-i18n="about.close.btn">返回</button>
+      </div>
+    </div>
+  </div>
 
   <div id="settings-overlay" class="settings-overlay hidden">
     <div class="settings-modal">
       <div class="settings-header">
-        <div class="settings-title">项目设置</div>
+        <div class="settings-title" data-i18n="settings.title">项目设置</div>
       </div>
       <div class="settings-body">
         <div class="settings-nav">
-          <button class="settings-nav-item active" id="settings-nav-basic">基础设置</button>
-          <button class="settings-nav-item" id="settings-nav-experiment">实验设置</button>
+          <button class="settings-nav-item active" id="settings-nav-basic" data-i18n="settings.nav.basic">基础设置</button>
+          <button class="settings-nav-item" id="settings-nav-experiment" data-i18n="settings.nav.experimental">实验设置</button>
         </div>
         <div class="settings-content">
           <div class="settings-panel active" id="settings-panel-basic">
             <div class="setting-row">
               <div class="setting-label-row">
-                <label for="setting-scale" class="setting-label">缩放比例</label>
-                <span class="setting-desc">模型整体缩放比例，太小会导致打印文件生成失败</span>
+                <label for="setting-scale" class="setting-label" data-i18n="settings.scale.label">缩放比例</label>
+                <span class="setting-desc" data-i18n="settings.scale.desc">模型整体缩放比例，太小会导致打印文件生成失败</span>
               </div>
               <div class="setting-field">
                 <input id="setting-scale" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
-                <button id="setting-scale-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+                <button id="setting-scale-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
             <div class="setting-row">
               <div class="setting-label-row">
-                <label for="setting-layer-height" class="setting-label">打印层高</label>
-                <span class="setting-desc">实际打印时的层高设置，最大${limits.layerHeight.max}，默认${defaultSettings.layerHeight}，单位mm</span>
+                <label for="setting-layer-height" class="setting-label" data-i18n="settings.layerHeight.label">打印层高</label>
+                <span class="setting-desc" data-i18n="settings.layerHeight.desc">实际打印时的层高设置，最大${limits.layerHeight.max}，默认${defaultSettings.layerHeight}，单位mm</span>
               </div>
               <div class="setting-field">
                 <input id="setting-layer-height" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
-                <button id="setting-layer-height-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+                <button id="setting-layer-height-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
             <div class="setting-row">
               <div class="setting-label-row">
-                <span class="setting-label">连接层数</span>
-                <span class="setting-desc">面之间连接处的层数，${limits.connectionLayers.min}-${limits.connectionLayers.max}，默认${defaultSettings.connectionLayers}</span>
+                <span class="setting-label" data-i18n="settings.connectionLayers.label">连接层数</span>
+                <span class="setting-desc" data-i18n="settings.connectionLayers.desc">面之间连接处的层数，${limits.connectionLayers.min}-${limits.connectionLayers.max}，默认${defaultSettings.connectionLayers}</span>
               </div>
               <div class="setting-field">
                 <div class="setting-counter-group">
-                  <button id="setting-connection-layers-dec" class="btn ghost settings-inline-btn">-</button>
+                  <button id="setting-connection-layers-dec" class="btn settings-inline-btn">-</button>
                   <span id="setting-connection-layers-value" class="setting-range-value"></span>
-                  <button id="setting-connection-layers-inc" class="btn ghost settings-inline-btn">+</button>
+                  <button id="setting-connection-layers-inc" class="btn settings-inline-btn">+</button>
                 </div>
-                <button id="setting-connection-layers-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+                <button id="setting-connection-layers-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
             <div class="setting-row">
               <div class="setting-label-row">
-                <span class="setting-label">主体额外层数</span>
-                <span class="setting-desc">面主体的额外层数，${limits.bodyLayers.min}-${limits.bodyLayers.max}，默认${defaultSettings.bodyLayers}</span>
+                <span class="setting-label" data-i18n="settings.bodyLayers.label">主体额外层数</span>
+                <span class="setting-desc" data-i18n="settings.bodyLayers.desc">面主体的额外层数，${limits.bodyLayers.min}-${limits.bodyLayers.max}，默认${defaultSettings.bodyLayers}</span>
               </div>
               <div class="setting-field">
                 <div class="setting-counter-group">
-                  <button id="setting-body-layers-dec" class="btn ghost settings-inline-btn">-</button>
+                  <button id="setting-body-layers-dec" class="btn settings-inline-btn">-</button>
                   <span id="setting-body-layers-value" class="setting-range-value"></span>
-                  <button id="setting-body-layers-inc" class="btn ghost settings-inline-btn">+</button>
+                  <button id="setting-body-layers-inc" class="btn settings-inline-btn">+</button>
                 </div>
-                <button id="setting-body-layers-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+                <button id="setting-body-layers-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
             <div class="setting-row">
               <div class="setting-label-row">
-                <label for="setting-ear-width" class="setting-label">拼接边耳朵宽度</label>
-                <span class="setting-desc">用于拼接边粘接的耳朵宽度，${limits.earWidth.min}-${limits.earWidth.max}，默认${defaultSettings.earWidth}，单位mm</span>
+                <label for="setting-tab-width" class="setting-label" data-i18n="settings.tabWidth.label">拼接边舌片宽度</label>
+                <span class="setting-desc" data-i18n="settings.tabWidth.desc">用于拼接边粘接的舌片宽度，${limits.tabWidth.min}-${limits.tabWidth.max}，默认${defaultSettings.tabWidth}，单位mm</span>
               </div>
               <div class="setting-field">
-                <input id="setting-ear-width" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
-                <button id="setting-ear-width-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+                <input id="setting-tab-width" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-tab-width-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
             <div class="setting-row">
               <div class="setting-label-row">
-                <label for="setting-ear-thickness" class="setting-label">拼接边耳朵厚度</label>
-                <span class="setting-desc">用于拼接边粘接的耳朵厚度，${limits.earThickness.min}-${limits.earThickness.max}，默认${defaultSettings.earThickness}，单位mm</span>
+                <label for="setting-tab-thickness" class="setting-label" data-i18n="settings.tabThickness.label">拼接边舌片厚度</label>
+                <span class="setting-desc" data-i18n="settings.tabThickness.desc">用于拼接边粘接的舌片厚度，${limits.tabThickness.min}-${limits.tabThickness.max}，默认${defaultSettings.tabThickness}，单位mm</span>
               </div>
               <div class="setting-field">
-                <input id="setting-ear-thickness" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
-                <button id="setting-ear-thickness-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+                <input id="setting-tab-thickness" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-tab-thickness-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
             <div class="setting-row">
               <div class="setting-label-row">
-                <label for="setting-ear-clip-gap" class="setting-label">夹子配合间隙</label>
-                <span class="setting-desc">连接耳朵的夹子松紧程度，值越大越容易安装，${limits.earClipGap.min}-${limits.earClipGap.max}，默认${defaultSettings.earClipGap}</span>
+                <label for="setting-tab-clip-gap" class="setting-label" data-i18n="settings.tabClipGap.label">夹子配合间隙</label>
+                <span class="setting-desc" data-i18n="settings.tabClipGap.desc">连接舌片的夹子松紧程度，值越大越容易安装，${limits.tabClipGap.min}-${limits.tabClipGap.max}，默认${defaultSettings.tabClipGap}</span>
               </div>
               <div class="setting-field">
-                <input id="setting-ear-clip-gap" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
-                <button id="setting-ear-clip-gap-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+                <input id="setting-tab-clip-gap" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-tab-clip-gap-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
           </div>
           <div class="settings-panel" id="settings-panel-experiment">
             <div class="setting-row">
               <div class="setting-label-row">
-                <span class="setting-label">镂空风格</span>
-                <span class="setting-desc">去除三角面的中间部分，默认关闭</span>
+                <span class="setting-label" data-i18n="settings.hollow.label">镂空风格</span>
+                <span class="setting-desc" data-i18n="settings.hollow.desc">去除三角面的中间部分，默认关闭</span>
               </div>
               <div class="setting-field">
                 <div class="settings-toggle-group">
-                  <button id="setting-hollow-off" class="btn ghost settings-inline-btn">关闭</button>
-                  <button id="setting-hollow-on" class="btn ghost settings-inline-btn">开启</button>
+                  <button id="setting-hollow-off" class="btn settings-inline-btn" data-i18n="settings.hollow.off">关闭</button>
+                  <button id="setting-hollow-on" class="btn settings-inline-btn" data-i18n="settings.hollow.on">开启</button>
                 </div>
-                <button id="setting-hollow-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+                <button id="setting-hollow-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
             <div class="setting-row">
               <div class="setting-label-row">
-                <label for="setting-wireframe-thickness" class="setting-label">线框粗细</label>
-                <span class="setting-desc">镂空风格下线框的粗细，单位mm，${limits.wireframeThickness.min}-${limits.wireframeThickness.max}，默认${defaultSettings.wireframeThickness}</span>
+                <label for="setting-wireframe-thickness" class="setting-label" data-i18n="settings.wireframeThickness.label">线框粗细</label>
+                <span class="setting-desc" data-i18n="settings.wireframeThickness.desc">镂空风格下线框的粗细，${limits.wireframeThickness.min}-${limits.wireframeThickness.max}，默认${defaultSettings.wireframeThickness}，单位mm</span>
               </div>
               <div class="setting-field">
                 <input id="setting-wireframe-thickness" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
-                <button id="setting-wireframe-thickness-reset" class="btn ghost settings-inline-btn">恢复默认</button>
+                <button id="setting-wireframe-thickness-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
           </div>
         </div>
       </div>
       <div class="settings-footer">
-        <button id="settings-cancel-btn" class="btn ghost settings-action">取消</button>
-        <button id="settings-confirm-btn" class="btn primary settings-action">确定</button>
+        <button id="settings-cancel-btn" class="btn ghost settings-action" data-i18n="settings.cancel.btn">取消</button>
+        <button id="settings-confirm-btn" class="btn primary settings-action" data-i18n="settings.confirm.btn">确定</button>
       </div>
     </div>
   </div>
@@ -337,10 +441,10 @@ const lightToggle = document.querySelector<HTMLButtonElement>("#light-toggle");
 const edgesToggle = document.querySelector<HTMLButtonElement>("#edges-toggle");
 const seamsToggle = document.querySelector<HTMLButtonElement>("#seams-toggle");
 const facesToggle = document.querySelector<HTMLButtonElement>("#faces-toggle");
-const exportBtn = document.querySelector<HTMLButtonElement>("#export-btn");
+const exportBtn = document.querySelector<HTMLButtonElement>("#export-3dppc-btn");
 const exportGroupStepBtn = document.querySelector<HTMLButtonElement>("#export-group-step-btn");
 const exportGroupStlBtn = document.querySelector<HTMLButtonElement>("#export-group-stl-btn");
-const exportEarClipBtn = document.querySelector<HTMLButtonElement>("#export-ear-clip-btn");
+const exportTabClipBtn = document.querySelector<HTMLButtonElement>("#export-seam-clip-btn");
 const previewGroupModelBtn = document.querySelector<HTMLButtonElement>("#preview-group-model-btn");
 const settingsOpenBtn = document.querySelector<HTMLButtonElement>("#settings-open-btn");
 const triCounter = document.querySelector<HTMLDivElement>("#tri-counter");
@@ -357,6 +461,12 @@ const renameInput = document.querySelector<HTMLInputElement>("#rename-input");
 const renameCancelBtn = document.querySelector<HTMLButtonElement>("#rename-cancel-btn");
 const renameConfirmBtn = document.querySelector<HTMLButtonElement>("#rename-confirm-btn");
 const loadingOverlay = document.querySelector<HTMLDivElement>("#loading-overlay");
+const aboutOverlay = document.querySelector<HTMLDivElement>("#about-overlay");
+const aboutContent = document.querySelector<HTMLDivElement>("#about-content");
+const aboutBackBtn = document.querySelector<HTMLButtonElement>("#about-back-btn");
+const aboutBtn = document.querySelector<HTMLButtonElement>("#about-btn");
+langToggleBtn = document.querySelector<HTMLButtonElement>("#lang-toggle");
+langToggleGlobalBtn = document.querySelector<HTMLButtonElement>("#lang-toggle-global");
 
 const showLoadingOverlay = () => loadingOverlay?.classList.remove("hidden");
 const hideLoadingOverlay = () => loadingOverlay?.classList.add("hidden");
@@ -374,12 +484,12 @@ const settingBodyLayersDecBtn = document.querySelector<HTMLButtonElement>("#sett
 const settingBodyLayersIncBtn = document.querySelector<HTMLButtonElement>("#setting-body-layers-inc");
 const settingBodyLayersValue = document.querySelector<HTMLSpanElement>("#setting-body-layers-value");
 const settingBodyLayersResetBtn = document.querySelector<HTMLButtonElement>("#setting-body-layers-reset");
-const settingEarWidthInput = document.querySelector<HTMLInputElement>("#setting-ear-width");
-const settingEarWidthResetBtn = document.querySelector<HTMLButtonElement>("#setting-ear-width-reset");
-const settingEarThicknessInput = document.querySelector<HTMLInputElement>("#setting-ear-thickness");
-const settingEarThicknessResetBtn = document.querySelector<HTMLButtonElement>("#setting-ear-thickness-reset");
-const settingEarClipGapInput = document.querySelector<HTMLInputElement>("#setting-ear-clip-gap");
-const settingEarClipGapResetBtn = document.querySelector<HTMLButtonElement>("#setting-ear-clip-gap-reset");
+const settingTabWidthInput = document.querySelector<HTMLInputElement>("#setting-tab-width");
+const settingTabWidthResetBtn = document.querySelector<HTMLButtonElement>("#setting-tab-width-reset");
+const settingTabThicknessInput = document.querySelector<HTMLInputElement>("#setting-tab-thickness");
+const settingTabThicknessResetBtn = document.querySelector<HTMLButtonElement>("#setting-tab-thickness-reset");
+const settingTabClipGapInput = document.querySelector<HTMLInputElement>("#setting-tab-clip-gap");
+const settingTabClipGapResetBtn = document.querySelector<HTMLButtonElement>("#setting-tab-clip-gap-reset");
 const settingHollowOffBtn = document.querySelector<HTMLButtonElement>("#setting-hollow-off");
 const settingHollowOnBtn = document.querySelector<HTMLButtonElement>("#setting-hollow-on");
 const settingHollowResetBtn = document.querySelector<HTMLButtonElement>("#setting-hollow-reset");
@@ -440,8 +550,8 @@ if (
   !settingsConfirmBtn ||
   !settingScaleInput ||
   !settingScaleResetBtn ||
-  !settingEarWidthInput ||
-  !settingEarWidthResetBtn ||
+  !settingTabWidthInput ||
+  !settingTabWidthResetBtn ||
   !settingLayerHeightInput ||
   !settingLayerHeightResetBtn ||
   !settingConnectionLayersDecBtn ||
@@ -452,10 +562,10 @@ if (
   !settingBodyLayersIncBtn ||
   !settingBodyLayersValue ||
   !settingBodyLayersResetBtn ||
-  !settingEarThicknessInput ||
-  !settingEarThicknessResetBtn ||
-  !settingEarClipGapInput ||
-  !settingEarClipGapResetBtn ||
+  !settingTabThicknessInput ||
+  !settingTabThicknessResetBtn ||
+  !settingTabClipGapInput ||
+  !settingTabClipGapResetBtn ||
   !settingHollowOffBtn ||
   !settingHollowOnBtn ||
   !settingHollowResetBtn ||
@@ -478,6 +588,10 @@ fileInput.setAttribute("accept", ".obj,.fbx,.stl,.3dppc");
 document.querySelectorAll("input").forEach((inp) => inp.setAttribute("autocomplete", "off"));
 
 const { log } = createLog(logListEl);
+(async () => {
+  await initI18n();
+})();
+onLanguageChanged(applyI18nTexts);
 const changeWorkspaceState = (state: WorkspaceState) => {
   const previousState = getWorkspaceState();
   if (previousState === state) return;
@@ -487,15 +601,48 @@ const changeWorkspaceState = (state: WorkspaceState) => {
   } else {
     hideLoadingOverlay();
   }
-  if (previousState === "editingGroup") log("已退出展开组编辑模式", "info");
-  if (state === "editingGroup") log("已进入展开组编辑模式", "info");
-  if (previousState === "previewGroupModel") log("已退出组模型预览", "info");
-  if (state === "previewGroupModel") log("展开组预览模型已加载", "info");
+  if (previousState === "editingGroup") log(t("log.workspace.edit.exit"), "info");
+  if (state === "editingGroup") log(t("log.workspace.edit.enter"), "info");
+  if (previousState === "previewGroupModel") log(t("log.preview.exit"), "info");
+  if (state === "previewGroupModel") log(t("log.preview.loaded"), "info");
   appEventBus.emit("workspaceStateChanged", { previous: previousState, current: state });
 };
 
+aboutBackBtn?.addEventListener("click", () => {
+  aboutOverlay?.classList.add("hidden");
+});
+aboutBtn?.addEventListener("click", async () => {
+  if (!aboutOverlay || !aboutContent) return;
+  aboutOverlay.classList.remove("hidden");
+  try {
+    const lang = getCurrentLang();
+    const aboutPath = lang.startsWith("zh") ? "about_cn.html" : "about_en.html";
+    const res = await fetch(aboutPath, { cache: "no-cache" });
+    if (res.ok) {
+      aboutContent.innerHTML = await res.text();
+    } else {
+      aboutContent.textContent = "加载关于页面失败";
+    }
+  } catch (err) {
+    aboutContent.textContent = "加载关于页面失败";
+  }
+});
+
+langToggleBtn?.addEventListener("click", async () => {
+  const lang = getCurrentLang();
+  const next = lang.startsWith("zh") ? "en" : "zh";
+  await setLanguage(next);
+});
+langToggleGlobalBtn?.addEventListener("click", async () => {
+  const lang = getCurrentLang();
+  const next = lang.startsWith("zh") ? "en" : "zh";
+  await setLanguage(next);
+});
+
 const clearAppStates = () => {
   changeWorkspaceState("loading");
+  document.querySelector(".version-badge-global")?.classList.add("hidden-global");
+  document.querySelector(".version-lang-toggle")?.classList.add("hidden-global");
   previewMeshCache.length = 0;
   historyAbandonJudgeMethods.clear();
   historyManager.reset();
@@ -513,12 +660,12 @@ const settingsUI = createSettingsUI(
     confirmBtn: settingsConfirmBtn,
     scaleInput: settingScaleInput,
     scaleResetBtn: settingScaleResetBtn,
-    earWidthInput: settingEarWidthInput,
-    earWidthResetBtn: settingEarWidthResetBtn,
-    earThicknessInput: settingEarThicknessInput,
-    earThicknessResetBtn: settingEarThicknessResetBtn,
-    earClipGapInput: settingEarClipGapInput,
-    earClipGapResetBtn: settingEarClipGapResetBtn,
+    tabWidthInput: settingTabWidthInput,
+    tabWidthResetBtn: settingTabWidthResetBtn,
+    tabThicknessInput: settingTabThicknessInput,
+    tabThicknessResetBtn: settingTabThicknessResetBtn,
+    tabClipGapInput: settingTabClipGapInput,
+    tabClipGapResetBtn: settingTabClipGapResetBtn,
     hollowOnBtn: settingHollowOnBtn,
     hollowOffBtn: settingHollowOffBtn,
     hollowResetBtn: settingHollowResetBtn,
@@ -546,7 +693,7 @@ const settingsUI = createSettingsUI(
 const geometryContext = createGeometryContext();
 const groupController = createGroupController(log, () => geometryContext.geometryIndex.getFaceAdjacency());
 
-const getCachedPreviewMesh = (groupId: number): { mesh: Mesh, earClipNumTotal: number, angle: number } | null => {
+const getCachedPreviewMesh = (groupId: number): { mesh: Mesh, tabClipNumTotal: number, angle: number } | null => {
   const currentHistoryUid = historyManager.getCurrentSnapshotUid()?? -1;
   const cached = previewMeshCache.find((c) => c.groupId === groupId && c.historyUidCreated <= currentHistoryUid && c.historyUidAbandoned > currentHistoryUid);
   if (!cached) return null;
@@ -558,14 +705,14 @@ const getCachedPreviewMesh = (groupId: number): { mesh: Mesh, earClipNumTotal: n
   mesh.updateMatrixWorld(true);
   mesh.geometry?.computeBoundingBox?.();
   mesh.geometry?.computeBoundingSphere?.();
-  return { mesh, earClipNumTotal: cached.earClipNumTotal, angle };
+  return { mesh, tabClipNumTotal: cached.tabClipNumTotal, angle };
 };
 
-const addCachedPreviewMesh = (groupId: number, mesh: Mesh, earClipNumTotal: number) => {
+const addCachedPreviewMesh = (groupId: number, mesh: Mesh, tabClipNumTotal: number) => {
   const currentHistoryUid = historyManager.getCurrentSnapshotUid()?? -1;
   previewMeshCache.push({
     mesh,
-    earClipNumTotal,
+    tabClipNumTotal,
     groupId,
     historyUidCreated: currentHistoryUid,
     historyUidAbandoned: Infinity,
@@ -619,12 +766,12 @@ const isValidGroupName = (val: string) => !!val && /\S/.test(val);
 const handleRenameConfirm = () => {
   const val = renameInput.value ?? "";
   if (!isValidGroupName(val)) {
-    log("组名无效，请输入至少一个可见字符", "error");
+    log(t("log.group.rename.invalid"), "error");
     closeRenameDialog();
     return;
   }
   groupController.setGroupName(groupController.getPreviewGroupId(), val.trim());
-  log("展开组名称修改成功", "success");
+  log(t("log.group.rename.success"), "success");
   closeRenameDialog();
 };
 renameConfirmBtn.addEventListener("click", handleRenameConfirm);
@@ -661,21 +808,33 @@ const renderer3d = createRenderer3D(
   (canvas) => viewer.appendChild(canvas),
 );
 const bboxToggle = document.querySelector<HTMLButtonElement>("#bbox-toggle")!;
+bboxToggle.classList.add("active");
+refreshToggleTextLabels = () => {
+  refreshToggleTexts([
+    { btn: lightToggle, keyOn: "toolbar.left.light.on", keyOff: "toolbar.left.light.off", isOn: () => renderer3d.isLightEnabled() },
+    { btn: edgesToggle, keyOn: "toolbar.left.wireframe.on", keyOff: "toolbar.left.wireframe.off", isOn: () => renderer3d.isEdgesEnabled() },
+    { btn: seamsToggle, keyOn: "toolbar.left.seam.on", keyOff: "toolbar.left.seam.off", isOn: () => renderer3d.isSeamsEnabled() },
+    { btn: facesToggle, keyOn: "toolbar.left.surface.on", keyOff: "toolbar.left.surface.off", isOn: () => renderer3d.isFacesEnabled() },
+    { btn: bboxToggle, keyOn: "toolbar.left.bbox.on", keyOff: "toolbar.left.bbox.off", isOn: () => renderer3d.getBBoxVisible() },
+    { btn: groupEditToggle, keyOn: "toolbar.right.groupEdit.on", keyOff: "toolbar.right.groupEdit.off", isOn: () => getWorkspaceState() === "editingGroup" },
+  ]);
+};
+refreshToggleTextLabels?.();
 bboxToggle.addEventListener("click", () => {
   const visible = renderer3d.toggleBBox();
   bboxToggle.classList.toggle("active", visible);
-  bboxToggle.textContent = `包围盒：${visible ? "开" : "关"}`;
+  refreshToggleTextLabels?.();
 });
 appEventBus.on("workspaceStateChanged", ({ current, previous }) => {
   const isPreview = current === "previewGroupModel";
   bboxToggle.classList.toggle("hidden", isPreview);
   if (isPreview) {
     bboxToggle.classList.remove("active");
-    bboxToggle.textContent = "包围盒：关";
+    refreshToggleTextLabels?.();
   } else {
     const visible = (renderer3d as any).getBBoxVisible?.() ?? false;
     bboxToggle.classList.toggle("active", visible);
-    bboxToggle.textContent = `包围盒：${visible ? "开" : "关"}`;
+    refreshToggleTextLabels?.();
   }
   if (historyPanelUI) {
     const panel = document.getElementById("history-panel");
@@ -697,7 +856,9 @@ appEventBus.on("historyApplySnapshot", ({ current, direction, snapPassed} ) => {
     }
   }
   historyManager.markApplied(current.action);
-  log(`已回溯至 [${current.action.description}] (${Math.floor((Date.now() - current.action.timestamp) / 60000)}分钟前)`, "info", false);
+  const desc = formatHistoryAction(current.action);
+  const minutesAgo = Math.floor((Date.now() - current.action.timestamp) / 60000);
+  log(t("log.history.rewind", { desc, minutes: minutesAgo }), "info", false);
   setFileSaved(false);
 });
 
@@ -741,7 +902,7 @@ const projectLoaded = () => {
   updateMenuState();
   groupUI.render(buildGroupUIState());
   historyManager.reset();
-  historyManager.push(captureProjectState(), { name: "载入模型", description: "载入了模型", timestamp: Date.now()});
+  historyManager.push(captureProjectState(), { name: "loadModel", timestamp: Date.now(), payload: {}});
   historyPanelUI?.render();
 };
 
@@ -765,7 +926,7 @@ const handleFileSelected = async () => {
   }
   const ext = getExtension(file.name);
   if (!allowedExtensions.includes(ext)) {
-    log("不支持的格式，请选择 OBJ / FBX / STL。", "error");
+    log(t("log.file.unsupported"), "error");
     return;
   }
   try {
@@ -790,7 +951,7 @@ const handleFileSelected = async () => {
     if ((error as Error)?.stack) {
       console.error((error as Error).stack);
     }
-    log("加载失败，请检查文件格式是否正确。", "error");
+    log(t("log.file.loadFailed"), "error");
     renderer3d.clearModel();
     resetSettings();
   }
@@ -832,39 +993,34 @@ resetViewBtn.addEventListener("click", () => renderer3d.resetView());
 lightToggle.addEventListener("click", () => {
   const enabled = renderer3d.toggleLight();
   lightToggle.classList.toggle("active", enabled);
-  lightToggle.textContent = `光源：${enabled ? "开" : "关"}`;
+  refreshToggleTextLabels?.();
 });
 edgesToggle.addEventListener("click", () => {
   const enabled = renderer3d.toggleEdges();
   edgesToggle.classList.toggle("active", enabled);
-  edgesToggle.textContent = `线框：${enabled ? "开" : "关"}`;
+  refreshToggleTextLabels?.();
 });
 seamsToggle.addEventListener("click", () => {
   const enabled = renderer3d.toggleSeams();
   seamsToggle.classList.toggle("active", enabled);
-  seamsToggle.textContent = `拼接边：${enabled ? "开" : "关"}`;
+  refreshToggleTextLabels?.();
 });
 facesToggle.addEventListener("click", () => {
   const enabled = renderer3d.toggleFaces();
   facesToggle.classList.toggle("active", enabled);
-  facesToggle.textContent = `面渲染：${enabled ? "开" : "关"}`;
+  refreshToggleTextLabels?.();
 });
 
 // 初始化开关状态（renderer 默认全开启）
 lightToggle.classList.add("active");
-lightToggle.textContent = "光源：开";
 edgesToggle.classList.add("active");
-edgesToggle.textContent = "线框：开";
 seamsToggle.classList.add("active");
-seamsToggle.textContent = "拼接边：开";
 facesToggle.classList.add("active");
-facesToggle.textContent = "面渲染：开";
-bboxToggle.classList.add("active");
-bboxToggle.textContent = "包围盒：开";
+refreshToggleTextLabels?.();
 
 // 三角形计数跟随渲染器
 const syncTriCount = () => {
-  triCounter.textContent = `渲染负载：${renderer3d.getTriCount()}`;
+  triCounter.textContent = t("toolbar.left.renderLoad.label", { count: renderer3d.getTriCount() });
   requestAnimationFrame(syncTriCount);
 };
 requestAnimationFrame(syncTriCount);
@@ -902,7 +1058,7 @@ renderer2d.setEdgeQueryProviders({
   getFaceIdToEdges: () => geometryContext.geometryIndex.getFaceToEdges(),
   getPreviewGroupId: groupController.getPreviewGroupId,
 });
-const menuButtons = [menuOpenBtn, exportBtn, exportGroupStepBtn, exportGroupStlBtn, exportEarClipBtn, previewGroupModelBtn, settingsOpenBtn];
+const menuButtons = [menuOpenBtn, exportBtn, exportGroupStepBtn, exportGroupStlBtn, exportTabClipBtn, previewGroupModelBtn, settingsOpenBtn, aboutBtn];
 const updateMenuState = () => {
   const isPreview = getWorkspaceState() === "previewGroupModel";
   menuButtons.forEach((btn) => btn?.classList.toggle("hidden", isPreview));
@@ -966,20 +1122,18 @@ const groupUI = createGroupUI(
 );
 
 const updateGroupEditToggle = () => {
-  const ws = getWorkspaceState();
-  groupEditToggle.classList.toggle("active", ws === "editingGroup");
-  groupEditToggle.textContent = ws !== "editingGroup" ? "编辑展开组" : "结束编辑";
+  groupEditToggle.classList.toggle("active", getWorkspaceState() === "editingGroup");
 };
 
 appEventBus.on("groupAdded", ({ groupId, groupName }) => {
   groupUI.render(buildGroupUIState());
-  historyManager.push(captureProjectState(), { name: "新建展开组", description: `新建展开组 ${groupName}`, timestamp: Date.now() });
+  historyManager.push(captureProjectState(), { name: "groupCreate", timestamp: Date.now(), payload: { name: groupName } });
   historyPanelUI?.render();
   setFileSaved(false);
 });
 appEventBus.on("groupRemoved", ({ groupId, groupName, faces }) => {
   groupUI.render(buildGroupUIState());
-  const pushResult = historyManager.push(captureProjectState(), { name: "删除展开组", description: `删除展开组 ${groupName}`, timestamp: Date.now() });
+  const pushResult = historyManager.push(captureProjectState(), { name: "groupDelete", timestamp: Date.now(), payload: { name: groupName } });
   if (pushResult > 0) {
     const judgeMethod = (cache: PreviewMeshCacheItem) => {
       return cache.historyUidAbandoned === Infinity;
@@ -999,7 +1153,7 @@ appEventBus.on("groupColorChanged", ({ groupId, color }) => {
 });
 appEventBus.on("groupNameChanged", ({ groupId, name }) => {
   groupUI.render(buildGroupUIState());
-  const pushResult = historyManager.push(captureProjectState(), { name: "展开组重命名", description: `展开组重命名为 ${name}`, timestamp: Date.now() });
+  const pushResult = historyManager.push(captureProjectState(), { name: "groupRename", timestamp: Date.now(), payload: { name } });
   if (pushResult > 0) {
     historyPanelUI?.render();
   }
@@ -1018,11 +1172,11 @@ appEventBus.on("brushOperationDone", ({ facePaintedCnt }) => {
   const currentGroupName = groupController.getGroupName(groupController.getPreviewGroupId()) ?? "???";
   let pushResult = -1;
   if (facePaintedCnt > 0) {
-    pushResult = historyManager.push(captureProjectState(), { name: "面增减", description: `添加 ${facePaintedCnt} 个面到 ${currentGroupName}`, timestamp: Date.now() });
+    pushResult = historyManager.push(captureProjectState(), { name: "faceAdd", timestamp: Date.now(), payload: { count: facePaintedCnt, group: currentGroupName } });
   } else if (facePaintedCnt < 0) {
-    pushResult = historyManager.push(captureProjectState(), { name: "面增减", description: `从 ${currentGroupName} 移除 ${-facePaintedCnt} 个面`, timestamp: Date.now() });
+    pushResult = historyManager.push(captureProjectState(), { name: "faceRemove", timestamp: Date.now(), payload: { count: -facePaintedCnt, group: currentGroupName } });
   }
-  // 一个组的拓扑变化可能会影响到其他组拼接边的耳朵角度，所以需要全部清理
+  // 一个组的拓扑变化可能会影响到其他组拼接边的舌片角度，所以需要全部清理
   if (pushResult > 0) {
     const judgeMethod = (cache: PreviewMeshCacheItem) => {
       return cache.historyUidAbandoned === Infinity;
@@ -1035,13 +1189,15 @@ appEventBus.on("brushOperationDone", ({ facePaintedCnt }) => {
 appEventBus.on("groupPlaceAngleChanged", () => { setFileSaved(false); });
 
 appEventBus.on("groupPlaceAngleRotateDone", ({ deltaAngle }) => {
-  historyManager.push(captureProjectState(), { name: "旋转展开组", description: `旋转展开组 ${deltaAngle.toFixed(1)} 度`, timestamp: Date.now(), payload: {
+  historyManager.push(captureProjectState(), { name: "groupRotate", timestamp: Date.now(), payload: {
     groupId: groupController.getPreviewGroupId(),
     angle: deltaAngle,
     stack: (actionA: MetaAction, actionB: MetaAction) => {
-      if (actionA.payload?.groupId !== actionB.payload?.groupId) return undefined;
-      return {name: actionB.name, description: `旋转展开组 ${(actionA.payload.angle + actionB.payload.angle).toFixed(1)} 度`, timestamp: actionB.timestamp,
-        payload: { groupId: actionB.payload.groupId, angle: actionA.payload.angle + actionB.payload.angle }};
+      if (!actionA.payload || !actionB.payload) return undefined;
+      if (actionA.payload.groupId !== actionB.payload.groupId) return undefined;
+      const angle = (actionA.payload.angle as number) + (actionB.payload.angle as number);
+      return {name: actionB.name, timestamp: actionB.timestamp,
+        payload: { groupId: actionB.payload.groupId, angle, stack: actionA.payload.stack }};
     }
   }});
   historyPanelUI?.render();
@@ -1053,7 +1209,7 @@ appEventBus.on("workspaceStateChanged", ({ previous, current }) =>  {
   updateMenuState();
 });
 appEventBus.on("settingsChanged", (changedItemCnt) => {
-  const pushResult = historyManager.push(captureProjectState(), { name: "修改设置", description: `修改了 ${changedItemCnt} 个设置项`, timestamp: Date.now() });
+  const pushResult = historyManager.push(captureProjectState(), { name: "settingsChange", timestamp: Date.now(), payload: { count: changedItemCnt } });
   if (pushResult > 0) {
     const judgeMethod = (cache: PreviewMeshCacheItem) => {
       return cache.historyUidAbandoned === Infinity;
@@ -1107,36 +1263,44 @@ groupAddBtn.addEventListener("click", () => {
   }
 });
 groupEditToggle.addEventListener("click", () => {
-  // const currentGroupId = groupController.getPreviewGroupId();
   if (getWorkspaceState() === "editingGroup") {
     changeWorkspaceState("normal");
   } else {
-    if (isWorkerBusy()) {
-      log("正在生成展开组模型，请稍后再编辑", "info");
-      return;
-    }
+    // if (isWorkerBusy()) {
+    //   log("正在生成展开组模型，请稍后再编辑", "info");
+    //   return;
+    // }
     changeWorkspaceState("editingGroup");
   }
 });
-exportBtn.addEventListener("click", async () => {
+const handleExport3dppc = async () => {
   exportBtn.disabled = true;
   const model = getModel();
   if (!model) {
-    log("没有可导出的模型", "error");
+    log(t("log.export.none"), "error");
     return;
   }
   try {
-    log("正在保存 .3dppc ...", "info");
+    log(t("log.export.3dppc.start"), "info");
     const data = await build3dppcData(model);
     const fileName = download3dppc(data);
-    log(`3dppc 已保存：下载目录/${fileName}`, "success");
+    log(t("log.export.3dppc.success", { fileName }), "success");
     setFileSaved(true);
   } catch (error) {
     console.error("保存失败", error);
-    log("保存失败，请重试。", "error");
+    log(t("log.export.3dppc.fail"), "error");
   }
   finally {
     exportBtn.disabled = false;
+  }
+};
+exportBtn.addEventListener("click", handleExport3dppc);
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+    e.preventDefault();
+    if (getWorkspaceState() === "normal") {
+      handleExport3dppc();
+    }
   }
 });
 exportGroupStepBtn.addEventListener("click", async () => {
@@ -1144,18 +1308,18 @@ exportGroupStepBtn.addEventListener("click", async () => {
   try {
     const targetGroupId = groupController.getPreviewGroupId();
     if (unfold2d.hasGroupIntersection(targetGroupId)) {
-      log("当前展开组存在自交，无法生成模型", "error");
+      log(t("log.export.selfIntersect"), "error");
       return;
     }
     const groupName = groupController.getGroupName(targetGroupId) ?? `group-${targetGroupId}`;
     const projectName = getCurrentProject().name || "未命名工程";
     const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
     if (!trisWithAngles.length) {
-      log("当前展开组没有三角面，无法导出。", "error");
+      log(t("log.export.noFaces"), "error");
       return;
     }
-    log("正在导出展开组 STEP...", "info");
-    const { blob, earClipNumTotal } = await buildStepInWorker(
+    log(t("log.export.step.start"), "info");
+    const { blob, tabClipNumTotal } = await buildStepInWorker(
       trisWithAngles,
       (progress) => log(progress, "progress"),
       (msg, tone) => log(msg, (tone as any) ?? "error"),
@@ -1163,23 +1327,23 @@ exportGroupStepBtn.addEventListener("click", async () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${projectName}-${groupName}-${earClipNumTotal}Clips.step`;
+    a.download = `${projectName}-${groupName}-${tabClipNumTotal}Clips.step`;
     a.style.display = "none";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    log(`展开组 STEP 已导出：下载目录/${projectName}-${groupName}-${earClipNumTotal}Clips.step`, "success");
+    log(t("log.export.step.success", { fileName: `${projectName}-${groupName}-${tabClipNumTotal}Clips.step` }), "success");
   } catch (error) {
     console.error("展开组 STEP 导出失败", error);
-    log("展开组 STEP 导出失败，请查看控制台日志。", "error");
+    log(t("log.export.step.fail"), "error");
   } finally {
     exportGroupStepBtn.disabled = false;
   }
 });
 exportGroupStlBtn.addEventListener("click", async () => {
   exportGroupStlBtn.disabled = true;
-  const downloadMesh = (groupName: string, mesh: Mesh, earClipNumTotal: number) => {
+  const downloadMesh = (groupName: string, mesh: Mesh, tabClipNumTotal: number) => {
       const projectName = getCurrentProject().name || "未命名工程";
       const exporter = new STLExporter();
       const stlResult = exporter.parse(mesh, { binary: true });
@@ -1193,18 +1357,18 @@ exportGroupStlBtn.addEventListener("click", async () => {
       const url = URL.createObjectURL(new Blob([stlCopy.buffer], { type: "model/stl" }));
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${projectName}-${groupName}-${earClipNumTotal}Clips.stl`;
+      a.download = `${projectName}-${groupName}-${tabClipNumTotal}Clips.stl`;
       a.style.display = "none";
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      log(`展开组 STL 已导出：下载目录/${projectName}-${groupName}-${earClipNumTotal}Clips.stl`, "success");
+      log(t("log.export.stl.success", { fileName: `${projectName}-${groupName}-${tabClipNumTotal}Clips.stl` }), "success");
     };
   try {
     const targetGroupId = groupController.getPreviewGroupId();
     if (unfold2d.hasGroupIntersection(targetGroupId)) {
-      log("当前展开组存在自交，无法生成模型", "error");
+      log(t("log.export.selfIntersect"), "error");
       return;
     }
     const groupName = groupController.getGroupName(targetGroupId) ?? `group-${targetGroupId}`;
@@ -1212,11 +1376,11 @@ exportGroupStlBtn.addEventListener("click", async () => {
     if (!cached) {
       const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
       if (!trisWithAngles.length) {
-        log("当前展开组没有三角面，无法导出。", "error");
+        log(t("log.export.noFaces"), "error");
         return;
       }
-      log("正在导出展开组 STL...", "info");
-      const { blob, earClipNumTotal } = await buildStlInWorker(
+      log(t("log.export.stl.start"), "info");
+      const { blob, tabClipNumTotal } = await buildStlInWorker(
         trisWithAngles,
         (progress) => log(progress, "progress"),
         (msg, tone) => log(msg, (tone as any) ?? "error"),
@@ -1226,16 +1390,16 @@ exportGroupStlBtn.addEventListener("click", async () => {
       snapGeometryPositions(geometry);
       const mesh = new Mesh(geometry);
       mesh.name = "Replicad Mesh";
-      addCachedPreviewMesh(targetGroupId, mesh, earClipNumTotal);
+      addCachedPreviewMesh(targetGroupId, mesh, tabClipNumTotal);
       const cached = getCachedPreviewMesh(targetGroupId);
-      if (cached) downloadMesh(groupName, cached.mesh, cached.earClipNumTotal);
+      if (cached) downloadMesh(groupName, cached.mesh, cached.tabClipNumTotal);
     } else {
-      log("使用缓存 mesh 导出展开组 STL...", "info");
-      downloadMesh(groupName, cached.mesh, cached.earClipNumTotal);
+      log(t("log.export.stl.cached"), "info");
+      downloadMesh(groupName, cached.mesh, cached.tabClipNumTotal);
     }
   } catch (error) {
     console.error("展开组 STL 导出失败", error);
-    log("展开组 STL 导出失败，请查看控制台日志。", "error");
+    log(t("log.export.stl.fail"), "error");
   } finally {
     exportGroupStlBtn.disabled = false;
   }
@@ -1246,7 +1410,7 @@ previewGroupModelBtn.addEventListener("click", async () => {
   try {
     const targetGroupId = groupController.getPreviewGroupId();
     if (unfold2d.hasGroupIntersection(targetGroupId)) {
-      log("当前展开组存在自交，无法生成模型", "error");
+      log(t("log.export.selfIntersect"), "error");
       return;
     }
     const cached = getCachedPreviewMesh(targetGroupId);
@@ -1255,39 +1419,39 @@ previewGroupModelBtn.addEventListener("click", async () => {
     } else {
       const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
       if (!trisWithAngles.length) {
-        log("当前展开组没有三角面，无法导出。", "error");
+        log(t("log.export.noFaces"), "error");
         return;
       }
       // log("正在用 Replicad 生成 mesh...", "info");
-      const { mesh, earClipNumTotal } = await buildMeshInWorker(
+      const { mesh, tabClipNumTotal } = await buildMeshInWorker(
         trisWithAngles,
         (progress) => log(progress, "progress"),
         (msg, tone) => log(msg, (tone as any) ?? "error"),
       );
       snapGeometryPositions(mesh.geometry);
-      addCachedPreviewMesh(targetGroupId, mesh, earClipNumTotal);
+      addCachedPreviewMesh(targetGroupId, mesh, tabClipNumTotal);
       const cached = getCachedPreviewMesh(targetGroupId);
       if (cached) renderer3d.loadPreviewModel(cached.mesh, cached.angle);
     }
     changeWorkspaceState("previewGroupModel");
   } catch (error) {
     console.error("Replicad mesh 生成失败", error);
-    log("Replicad mesh 生成失败，请检查控制台日志。", "error");
+    log(t("log.replicad.mesh.fail"), "error");
   } finally {
     previewGroupModelBtn.disabled = false;
   }
 });
 
-exportEarClipBtn?.addEventListener("click", async () => {
-  if (!exportEarClipBtn) return;
-  exportEarClipBtn.disabled = true;
+exportTabClipBtn?.addEventListener("click", async () => {
+  if (!exportTabClipBtn) return;
+  exportTabClipBtn.disabled = true;
   try {
-    log("正在生成拼接边固定夹...", "info");
-    const solid = await buildEarClip();
+    log(t("log.export.seamClip.start"), "info");
+    const solid = await buildTabClip();
     const blob = solid.blobSTL({ binary: true });
     const buffer = await blob.arrayBuffer();
     const baseName = getCurrentProject().name || "未命名工程";
-    const fileName = `${baseName}_earClip.stl`;
+    const fileName = `${baseName}_tabClip.stl`;
     const url = URL.createObjectURL(new Blob([buffer], { type: "model/stl" }));
     const a = document.createElement("a");
     a.href = url;
@@ -1297,12 +1461,12 @@ exportEarClipBtn?.addEventListener("click", async () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    log(`拼接边固定夹 STL 已导出：下载目录/${fileName}`, "success");
+    log(t("log.export.seamClip.success", { fileName }), "success");
   } catch (error) {
     console.error("拼接边固定夹导出失败", error);
-    log("拼接边固定夹导出失败，请查看控制台日志。", "error");
+    log(t("log.export.seamClip.fail"), "error");
   } finally {
-    exportEarClipBtn.disabled = false;
+    exportTabClipBtn.disabled = false;
   }
 });
 

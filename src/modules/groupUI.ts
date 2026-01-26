@@ -1,5 +1,6 @@
 // 展开组 UI 组件：渲染组标签、预览面板、颜色选择与删除按钮，并将用户操作回调给上层。
 import { Color } from "three";
+import { t } from "./i18n";
 
 export type GroupUIState = {
   groupCount: number;
@@ -129,8 +130,7 @@ export function createGroupUI(
     const hex = `#${color?.getHexString()}`;
     ui.groupColorBtn.style.background = hex;
     ui.groupColorInput.value = hex;
-    const count = state.getGroupFacesCount(state.previewGroupId);
-    ui.groupFacesCountLabel.textContent = `面数量 ${count}`;
+    ui.groupFacesCountLabel.textContent = t("preview.right.faceCount.label", { count: state.getGroupFacesCount(state.previewGroupId) });
     ui.groupDeleteBtn.style.display = state.deletable ? "inline-flex" : "none";
     if (ui.groupVisibilityBtn) {
       const visible = state.getGroupVisibility(state.previewGroupId);

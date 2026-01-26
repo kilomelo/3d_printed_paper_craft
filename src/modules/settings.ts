@@ -6,9 +6,9 @@ export type Settings = {
   layerHeight: number;
   connectionLayers: number;
   bodyLayers: number;
-  earWidth: number;
-  earThickness: number;
-  earClipGap: number;
+  tabWidth: number;
+  tabThickness: number;
+  tabClipGap: number;
   hollowStyle: boolean;
   wireframeThickness: number;
 };
@@ -18,9 +18,9 @@ export const SETTINGS_LIMITS = {
   layerHeight: { min: 0, max: 0.5 },
   connectionLayers: { min: 1, max: 4 },
   bodyLayers: { min: 1, max: 8 },
-  earWidth: { min: 0, max: 20 },
-  earThickness: { min: 1, max: 2 },
-  earClipGap: { min: 0.1, max: 0.25 },
+  tabWidth: { min: 0, max: 20 },
+  tabThickness: { min: 1, max: 2 },
+  tabClipGap: { min: 0.1, max: 0.25 },
   wireframeThickness: { min: 4, max: 10 },
 } as const;
 
@@ -29,9 +29,9 @@ const defaultSettings: Settings = {
   layerHeight: 0.2,
   connectionLayers: 1,
   bodyLayers: 3,
-  earWidth: 4,
-  earThickness: 1,
-  earClipGap: 0.15,
+  tabWidth: 4,
+  tabThickness: 1,
+  tabClipGap: 0.15,
   hollowStyle: false,
   wireframeThickness: 5,
 };
@@ -77,19 +77,19 @@ export function setBodyLayers(val: number) {
   current = { ...current, bodyLayers: val };
 }
 
-export function setEarWidth(val: number) {
-  if (Number.isNaN(val) || val < SETTINGS_LIMITS.earWidth.min || val >= SETTINGS_LIMITS.earWidth.max) return;
-  current = { ...current, earWidth: val };
+export function setTabWidth(val: number) {
+  if (Number.isNaN(val) || val < SETTINGS_LIMITS.tabWidth.min || val >= SETTINGS_LIMITS.tabWidth.max) return;
+  current = { ...current, tabWidth: val };
 }
 
-export function setEarThickness(val: number) {
-  if (Number.isNaN(val) || val < SETTINGS_LIMITS.earThickness.min || val > SETTINGS_LIMITS.earThickness.max) return;
-  current = { ...current, earThickness: val };
+export function setTabThickness(val: number) {
+  if (Number.isNaN(val) || val < SETTINGS_LIMITS.tabThickness.min || val > SETTINGS_LIMITS.tabThickness.max) return;
+  current = { ...current, tabThickness: val };
 }
 
-export function setEarClipGap(val: number) {
-  if (Number.isNaN(val) || val < SETTINGS_LIMITS.earClipGap.min || val > SETTINGS_LIMITS.earClipGap.max) return;
-  current = { ...current, earClipGap: val };
+export function setTabClipGap(val: number) {
+  if (Number.isNaN(val) || val < SETTINGS_LIMITS.tabClipGap.min || val > SETTINGS_LIMITS.tabClipGap.max) return;
+  current = { ...current, tabClipGap: val };
 }
 
 export function setHollowStyle(val: boolean) {

@@ -14,6 +14,21 @@ import {
   makeVerticalPlaneNormalAB,
   sketchFromContourPoints,
 } from "./replicadUtils";
+import { t, initI18n, setLanguage } from "../i18n";
+
+let i18nReady: Promise<void> | null = null;
+let desiredLang: string | null = null;
+export const setReplicadModelingLang = (lang: string) => {
+  desiredLang = lang;
+};
+const ensureI18nReady = async (lang?: string) => {
+  if (!i18nReady) i18nReady = initI18n();
+  await i18nReady;
+  const target = lang ?? desiredLang;
+  if (target) {
+    await setLanguage(target);
+  }
+};
 
 type OcFactory = (opts?: { locateFile?: (path: string) => string }) => Promise<OpenCascadeInstance>;
 let ocReady: Promise<void> | null = null;
@@ -44,15 +59,15 @@ const isOcctValid = (shape: { wrapped: any }) => {
   return ok;
 };
 
-const earClipGemometry = () => {
-  const { earThickness, earWidth, earClipGap } = getSettings();
-  // 耳朵卡子相关定义
-  const earClipKeelThickness = 2 * earThickness;
-  const earClipWingThickness = earClipKeelThickness;
-  const earClipWingLength = Math.sqrt(earClipWingThickness) * 5;
-  const earClipMinSpacing = earClipWingLength + 1;
-  const earClipMaxSpacing = earClipWingLength * 4 + earWidth;
-  return { earClipKeelThickness, earClipWingThickness, earClipWingLength, earClipMinSpacing, earClipMaxSpacing, earClipGap };
+const tabClipGemometry = () => {
+  const { tabThickness, tabWidth, tabClipGap } = getSettings();
+  // 舌片卡子相关定义
+  const tabClipKeelThickness = 2 * tabThickness;
+  const tabClipWingThickness = tabClipKeelThickness;
+  const tabClipWingLength = Math.sqrt(tabClipWingThickness) * 5;
+  const tabClipMinSpacing = tabClipWingLength + 1;
+  const tabClipMaxSpacing = tabClipWingLength * 4 + tabWidth;
+  return { tabClipKeelThickness, tabClipWingThickness, tabClipWingLength, tabClipMinSpacing, tabClipMaxSpacing, tabClipGap };
 };
 
 // 实际实行参数化建模的方法
@@ -60,9 +75,11 @@ const buildSolidFromTrianglesWithAngles = async (
   trianglesWithAngles: TriangleWithEdgeInfo[],
   onProgress?: (progress: number) => void,
   onLog?: (msg: string) => void,
-): Promise<{ solid: Shape3D; earClipNumTotal: number }> => {
+  lang?: string,
+): Promise<{ solid: Shape3D; tabClipNumTotal: number }> => {
+  await ensureI18nReady(lang);
   onProgress?.(0);
-  const { layerHeight, connectionLayers, bodyLayers, earWidth, earThickness, hollowStyle, wireframeThickness } = getSettings();
+  const { layerHeight, connectionLayers, bodyLayers, tabWidth, tabThickness, hollowStyle, wireframeThickness } = getSettings();
   const bodyThickness = bodyLayers * layerHeight;
   const connectionThickness = connectionLayers * layerHeight;
   onProgress?.(1);
@@ -70,30 +87,30 @@ const buildSolidFromTrianglesWithAngles = async (
   // 第一步：生成连接层和主体
   const outerResult  = triangles2Outer(trianglesWithAngles);
   if (!outerResult || !outerResult.outer || outerResult.outer.length < 3) {
-    onLog?.("外轮廓查找失败");
+    onLog?.(t("log.replicad.outer.fail"));
     throw new Error("外轮廓查找失败");
   }
   const connectionSketch = sketchFromContourPoints(outerResult.outer, "XY", -outerResult.maxEdgeLen);
   if (!connectionSketch) {
-    onLog?.("连接层草图生成失败");
+    onLog?.(t("log.replicad.connSketch.fail"));
     throw new Error("连接层草图生成失败");
   }
   let connectionSolid = connectionSketch.extrude(connectionThickness + bodyThickness + outerResult.maxEdgeLen).simplify();
   if (!connectionSolid) {
-    onLog?.("连接层建模失败");
+    onLog?.(t("log.replicad.connModel.fail"));
     throw new Error("连接层建模失败");
   }
   onProgress?.(2);
   const progressPerTriangle = 48 / trianglesWithAngles.length;
-  const earCutToolMarginMin = earWidth * 1.5;
-  const slopToolHeight = 1e-3 + Math.hypot(earWidth, earThickness) + bodyThickness * 2 + connectionThickness + 1;
+  const tabCutToolMarginMin = tabWidth * 1.5;
+  const slopToolHeight = 1e-3 + Math.hypot(tabWidth, tabThickness) + bodyThickness * 2 + connectionThickness + 1;
   const slopeTools: Shape3D[] = [];
   const vertexAngleMap = new Map<string, { position: Point2D; minAngle: number }>();
   // 生成的几何体的面最小间距
   const minDistance = 0.2 * connectionLayers;
-  // 耳朵外沿倒角
-  const chamferSize = earThickness - layerHeight;
-  let earClipNumTotal: number = 0;
+  // 舌片外沿倒角
+  const chamferSize = tabThickness - layerHeight;
+  let tabClipNumTotal: number = 0;
   let booleanOperations: number = 0;
   trianglesWithAngles.forEach((triData, i) => {
     const isDefined = <T,>(v: T | undefined | null): v is T => v != null;
@@ -109,14 +126,14 @@ const buildSolidFromTrianglesWithAngles = async (
     // 基准顺序：AC, CB, BA 对应 [p0->p2, p2->p1, p1->p0]
     const planes = [makeVerticalPlaneNormalAB(p2, p1), makeVerticalPlaneNormalAB(p0, p2), makeVerticalPlaneNormalAB(p1, p0)];
     if (!planes.every(isDefined)) {
-      onLog?.("创建切边平面失败，跳过三角形");
+      onLog?.(t("log.replicad.edgePlane.fail"));
       console.warn('[ReplicadModeling] failed to create edge cutting planes for triangle, skip this triangle', triData);
       return;
     }
     const dists  = [Math.hypot(p2[0] - p1[0], p2[1] - p1[1]), Math.hypot(p2[0] - p0[0], p2[1] - p0[1]), Math.hypot(p1[0] - p0[0], p1[1] - p0[1])];
     // 准备每条边都要用到的辅助刀具
-    const earExtendMargin = Math.max(...dists);
-    const cutToolMargin = Math.max(earCutToolMarginMin, earExtendMargin);
+    const tabExtendMargin = Math.max(...dists);
+    const cutToolMargin = Math.max(tabCutToolMarginMin, tabExtendMargin);
     const edgeCutToolSketches = [
       sketchFromContourPoints(
         [[0,-cutToolMargin], [0,cutToolMargin], [cutToolMargin,cutToolMargin], [cutToolMargin,-cutToolMargin]],
@@ -132,20 +149,20 @@ const buildSolidFromTrianglesWithAngles = async (
         -cutToolMargin),
     ];
     if (!edgeCutToolSketches.every(isDefined)) {
-      onLog?.("创建切边草图失败，跳过三角形");
+      onLog?.(t("log.replicad.edgeSketch.fail"));
       console.warn('[ReplicadModeling] failed to create edge cut tool sketches for triangle, skip this triangle', triData);
       return;
     }
-    // 这个工具会用来裁剪掉耳朵和坡度刀具超出三角形范围的部分
+    // 这个工具会用来裁剪掉舌片和坡度刀具超出三角形范围的部分
     const edgeCutTools = [
       edgeCutToolSketches[0].extrude(dists[0] + 2 * cutToolMargin),
       edgeCutToolSketches[1].extrude(dists[1] + 2 * cutToolMargin),
       edgeCutToolSketches[2].extrude(dists[2] + 2 * cutToolMargin),
     ];
 
-    // 耳朵卡子相关定义
-    const { earClipKeelThickness, earClipWingThickness, earClipWingLength, earClipMinSpacing, earClipMaxSpacing } = earClipGemometry();
-    const earClipGrooveClearance = 0.1;
+    // 舌片卡子相关定义
+    const { tabClipKeelThickness, tabClipWingThickness, tabClipWingLength, tabClipMinSpacing, tabClipMaxSpacing } = tabClipGemometry();
+    const tabClipGrooveClearance = 0.1;
     triData.edges.forEach((edge, idx) => {
       const pick = (k: 0 | 1 | 2): 0 | 1 | 2 => ((k + (idx % 3) + 3) % 3) as 0 | 1 | 2;
       const [pointA, pointB] = [triData.tri[pick(0)], triData.tri[pick(1)]];
@@ -176,7 +193,7 @@ const buildSolidFromTrianglesWithAngles = async (
             [0, slopToolHeight], [-slopeTopOffset, slopToolHeight]],
           edgePerpendicularPlane, -cutToolMargin);
         if (!slopeToolSketch) {
-          onLog?.("创建坡度刀具草图失败，跳过该边");
+          onLog?.(t("log.replicad.slopeSketch.fail"));
           console.warn('[ReplicadModeling] failed to create slope tool sketch for edge, skip this edge', edge);
           return;
         }
@@ -184,165 +201,166 @@ const buildSolidFromTrianglesWithAngles = async (
         const slopeTool = slopeToolSketch?.extrude(distAB + cutToolMargin).cut(adjEdgeCutToolL.clone()).cut(adjEdgeCutToolR.clone()).simplify();
         booleanOperations += 2;
         if (!slopeTool) {
-          onLog?.("创建坡度刀具失败，跳过该边");
+          onLog?.(t("log.replicad.slopeTool.fail"));
           console.warn('[ReplicadModeling] failed to create slope tool for edge, skip this edge', edge);
           return;
         }
         slopeTools.push(slopeTool);
       }
-      // 设置的耳朵宽度过小时不创建耳朵
-      if (edge.isSeam && earWidth > bodyThickness + connectionThickness) {
-        // 第三步：生成耳朵
-        const earAngleA = edge.earAngle[0];
-        const earAngleB = edge.earAngle[1];
-        const earPointByAngle = buildTriangleByEdgeAndAngles(pointA, pointB, degToRad(earAngleA), degToRad(earAngleB));
-        if (!earPointByAngle) {
-          onLog?.("根据边角度创建耳朵顶点失败，采用默认45度");
+      // 设置的舌片宽度过小时不创建舌片
+      if (edge.isSeam && tabWidth > bodyThickness + connectionThickness) {
+        // 第三步：生成舌片
+        const tabAngleA = edge.tabAngle[0];
+        const tabAngleB = edge.tabAngle[1];
+        const tabPointByAngle = buildTriangleByEdgeAndAngles(pointA, pointB, degToRad(tabAngleA), degToRad(tabAngleB));
+        if (!tabPointByAngle) {
+          onLog?.(t("log.replicad.tabPoint.fallback"));
         }
-        const earPoint = earPointByAngle ?? calculateIsoscelesRightTriangle(pointA, pointB)[0];
-        const distAP = Math.hypot(earPoint[0] - pointA[0], earPoint[1] - pointA[1]);
-        const distBP = Math.hypot(earPoint[0] - pointB[0], earPoint[1] - pointB[1]);
+        const tabPoint = tabPointByAngle ?? calculateIsoscelesRightTriangle(pointA, pointB)[0];
+        const distAP = Math.hypot(tabPoint[0] - pointA[0], tabPoint[1] - pointA[1]);
+        const distBP = Math.hypot(tabPoint[0] - pointB[0], tabPoint[1] - pointB[1]);
 
-        // 根据耳朵宽度裁剪耳朵三角形求出梯形
-        // 首先求得实际耳朵宽度，因为实际宽度需要根据二面角做调整，以保证连接槽的高度一致
-        const earAngle = 180 - radToDeg(edge.angle / 2);
-        const earClipWingExtrWidth = earAngle < 90 ? 0 : earClipWingThickness * Math.tan(degToRad(earAngle - 90));
-        const earExtraWidth = earAngle < 90 ? (bodyThickness + connectionThickness - layerHeight) * Math.sin(degToRad(earAngle))
-          : (bodyThickness + connectionThickness - layerHeight) / Math.cos(degToRad(earAngle - 90))
-          + earThickness * Math.tan(degToRad(earAngle - 90)) + earClipWingExtrWidth;
-        const earTrapezoid = trapezoid(pointA, pointB, earPoint, earWidth + earExtraWidth);
-        const isTriangleEar = earTrapezoid.length === 3;
-        const earLength = isTriangleEar ? 0 : Math.hypot(earTrapezoid[2][0] - earTrapezoid[3][0], earTrapezoid[2][1] - earTrapezoid[3][1]);
-        const earClipNum = 
-          isTriangleEar || earLength < 4 * earClipMinSpacing  ? 1
-          : earLength < 7 * earClipMinSpacing ? 2 
-          : earLength < 10 * earClipMinSpacing ? 3
-          : earLength < 14 * earClipMinSpacing ? 4
-          : Math.max(5, Math.floor(earLength / earClipMaxSpacing));
-        // console.log(`[ReplicadModeling] ear clip num for edge`, { earLength, earClipNum });
-        earClipNumTotal += earClipNum;
-        const earClipSpacing = earClipNum === 1 ? 0 : (earLength - earClipWingLength * 3) / (earClipNum - 1);
-        const earMiddlePoint = isTriangleEar ? earPoint : [
-          (earTrapezoid[2][0] + earTrapezoid[3][0]) / 2,
-          (earTrapezoid[2][1] + earTrapezoid[3][1]) / 2,
+        // 根据舌片宽度裁剪舌片三角形求出梯形
+        // 首先求得实际舌片宽度，因为实际宽度需要根据二面角做调整，以保证连接槽的高度一致
+        const tabAngle = 180 - radToDeg(edge.angle / 2);
+        const tabClipWingExtrWidth = tabAngle < 90 ? 0 : tabClipWingThickness * Math.tan(degToRad(tabAngle - 90));
+        const tabExtraWidth = tabAngle < 90 ? (bodyThickness + connectionThickness - layerHeight) * Math.sin(degToRad(tabAngle))
+          : (bodyThickness + connectionThickness - layerHeight) / Math.cos(degToRad(tabAngle - 90))
+          + tabThickness * Math.tan(degToRad(tabAngle - 90)) + tabClipWingExtrWidth;
+        const tabTrapezoid = trapezoid(pointA, pointB, tabPoint, tabWidth + tabExtraWidth);
+        const isTriangleTab = tabTrapezoid.length === 3;
+        const tabLength = isTriangleTab ? 0 : Math.hypot(tabTrapezoid[2][0] - tabTrapezoid[3][0], tabTrapezoid[2][1] - tabTrapezoid[3][1]);
+        const tabClipNum = 
+          isTriangleTab || tabLength < 4 * tabClipMinSpacing  ? 1
+          : tabLength < 7 * tabClipMinSpacing ? 2 
+          : tabLength < 10 * tabClipMinSpacing ? 3
+          : tabLength < 14 * tabClipMinSpacing ? 4
+          : Math.max(5, Math.floor(tabLength / tabClipMaxSpacing));
+        // console.log(`[ReplicadModeling] tab clip num for edge`, { tabLength, tabClipNum });
+        tabClipNumTotal += tabClipNum;
+        const tabClipSpacing = tabClipNum === 1 ? 0 : (tabLength - tabClipWingLength * 3) / (tabClipNum - 1);
+        const tabMiddlePoint = isTriangleTab ? tabPoint : [
+          (tabTrapezoid[2][0] + tabTrapezoid[3][0]) / 2,
+          (tabTrapezoid[2][1] + tabTrapezoid[3][1]) / 2,
         ] as Point2D;
 
-        // 向下延伸一点点以确保耳朵和主体连接良好
+        // 向下延伸一点点以确保舌片和主体连接良好
         if (edge.angle > Math.PI) {
           const pointA_Incenter_extend: Point2D = [
-            earPoint[0] + (pointA[0] - earPoint[0]) * (earExtendMargin + distAP) / distAP,
-            earPoint[1] + (pointA[1] - earPoint[1]) * (earExtendMargin + distAP) / distAP];
+            tabPoint[0] + (pointA[0] - tabPoint[0]) * (tabExtendMargin + distAP) / distAP,
+            tabPoint[1] + (pointA[1] - tabPoint[1]) * (tabExtendMargin + distAP) / distAP];
           const pointB_Incenter_extend: Point2D = [
-            earPoint[0] + (pointB[0] - earPoint[0]) * (earExtendMargin + distBP) / distBP,
-            earPoint[1] + (pointB[1] - earPoint[1]) * (earExtendMargin + distBP) / distBP];
-          earTrapezoid[0] = pointA_Incenter_extend;
-          earTrapezoid[1] = pointB_Incenter_extend;
+            tabPoint[0] + (pointB[0] - tabPoint[0]) * (tabExtendMargin + distBP) / distBP,
+            tabPoint[1] + (pointB[1] - tabPoint[1]) * (tabExtendMargin + distBP) / distBP];
+          tabTrapezoid[0] = pointA_Incenter_extend;
+          tabTrapezoid[1] = pointB_Incenter_extend;
         }
-        // 耳朵从layerHeight处开始挤出，因为需要确保超小角度时的首层面积符合三角形面积
-        const earSolidSketch = sketchFromContourPoints(earTrapezoid, "XY", layerHeight);
-        if (!earSolidSketch) {
-          onLog?.("创建耳朵草图失败，跳过该边");
-          console.warn('[ReplicadModeling] failed to create ear sketch for edge, skip this edge', edge);
+        // 舌片从layerHeight处开始挤出，因为需要确保超小角度时的首层面积符合三角形面积
+        const tabSolidSketch = sketchFromContourPoints(tabTrapezoid, "XY", layerHeight);
+        if (!tabSolidSketch) {
+          onLog?.(t("log.replicad.tabSketch.fail"));
+          console.warn('[ReplicadModeling] failed to create tab sketch for edge, skip this edge', edge);
           return;
         }
-        let earSolid = earSolidSketch.extrude(earThickness);
-        // 为耳朵卡子切割连接槽
+        let tabSolid = tabSolidSketch.extrude(tabThickness);
+        // 为舌片卡子切割连接槽
         // 先创建挖槽工具
-        const earActualWidth = pointLineDistance2D(earMiddlePoint, pointA, pointB);
-        const grooveDepth = earActualWidth - earExtraWidth + earClipWingExtrWidth;
-        // 耳朵宽度因为内心限制达不到挖槽要求则不挖槽
+        const tabActualWidth = pointLineDistance2D(tabMiddlePoint, pointA, pointB);
+        const grooveDepth = tabActualWidth - tabExtraWidth + tabClipWingExtrWidth;
+        // 舌片宽度因为内心限制达不到挖槽要求则不挖槽
         if (grooveDepth < 1e-1) {
-          onLog?.("耳朵因几何限制宽度太窄，该边无法安装连接夹");
-          console.warn('[ReplicadModeling] ear width is too narrow due to geometry constraint, skip this edge', edge);
+          onLog?.(t("log.replicad.tabGroove.tooNarrow"));
+          console.warn('[ReplicadModeling] tab width is too narrow due to geometry constraint, skip this edge', edge);
         }
         else {
-          const earClipGroovingPlane = new Plane(earMiddlePoint, [(pointA[0]-pointB[0]) / distAB, (pointA[1]-pointB[1]) / distAB, 0], [0, 0, 1]);
-          const earClipGroovingSketch = new Sketcher(earClipGroovingPlane)
-            .movePointerTo([-1.5 * earClipKeelThickness / 2 - earClipGrooveClearance, 0])
-            .lineTo([-earClipKeelThickness / 2 - earClipGrooveClearance, -1.5 * earClipKeelThickness / 2])
-            .lineTo([-earClipKeelThickness / 2 - earClipGrooveClearance, -grooveDepth + 1e-4])
-            .lineTo([earClipKeelThickness / 2 + earClipGrooveClearance, -grooveDepth + 1e-4])
-            .lineTo([earClipKeelThickness / 2 + earClipGrooveClearance, -1.5 * earClipKeelThickness / 2])
-            .lineTo([1.5 * earClipKeelThickness / 2 + earClipGrooveClearance, 0])
+          const tabClipGroovingPlane = new Plane(tabMiddlePoint, [(pointA[0]-pointB[0]) / distAB, (pointA[1]-pointB[1]) / distAB, 0], [0, 0, 1]);
+          const tabClipGroovingSketch = new Sketcher(tabClipGroovingPlane)
+            .movePointerTo([-1.5 * tabClipKeelThickness / 2 - tabClipGrooveClearance, 0])
+            .lineTo([-tabClipKeelThickness / 2 - tabClipGrooveClearance, -1.5 * tabClipKeelThickness / 2])
+            .lineTo([-tabClipKeelThickness / 2 - tabClipGrooveClearance, -grooveDepth + 1e-4])
+            .lineTo([tabClipKeelThickness / 2 + tabClipGrooveClearance, -grooveDepth + 1e-4])
+            .lineTo([tabClipKeelThickness / 2 + tabClipGrooveClearance, -1.5 * tabClipKeelThickness / 2])
+            .lineTo([1.5 * tabClipKeelThickness / 2 + tabClipGrooveClearance, 0])
             .close();
-          if (!earClipGroovingSketch) {
-            onLog?.("创建耳朵卡子挖槽草图失败，跳过该边");
-            console.warn('[ReplicadModeling] failed to create ear clip grooving sketch for edge, skip this edge', edge);
+          if (!tabClipGroovingSketch) {
+            onLog?.(t("log.replicad.tabGrooveSketch.fail"));
+            console.warn('[ReplicadModeling] failed to create tab clip grooving sketch for edge, skip this edge', edge);
           }
           else {
-            if (grooveDepth < earWidth + earClipWingExtrWidth - 1e-6)
-              onLog?.("耳朵因几何限制宽度太窄，连接夹安装可能不牢固");
-            const earClipGroovingTool = earClipGroovingSketch.extrude(earThickness + 2 * layerHeight);
+            if (grooveDepth < tabWidth + tabClipWingExtrWidth - 1e-6) {
+              onLog?.(t("log.replicad.tabGroove.mayLoose"));
+            }
+            const tabClipGroovingTool = tabClipGroovingSketch.extrude(tabThickness + 2 * layerHeight);
             const dirAB = [(pointA[0] - pointB[0]) / distAB, (pointA[1] - pointB[1]) / distAB];
-            for (let clipIdx = 0; clipIdx < earClipNum; clipIdx++) {
-              const distance2MiddlePoint = (-0.5 * earClipNum +clipIdx + 0.5) * earClipSpacing;
-              earSolid = earSolid.cut(earClipGroovingTool.clone().translate(dirAB[0] * distance2MiddlePoint, dirAB[1] * distance2MiddlePoint, 0)).simplify();
+            for (let clipIdx = 0; clipIdx < tabClipNum; clipIdx++) {
+              const distance2MiddlePoint = (-0.5 * tabClipNum +clipIdx + 0.5) * tabClipSpacing;
+              tabSolid = tabSolid.cut(tabClipGroovingTool.clone().translate(dirAB[0] * distance2MiddlePoint, dirAB[1] * distance2MiddlePoint, 0)).simplify();
               booleanOperations += 1;
             }
-            earClipGroovingTool.delete();
+            tabClipGroovingTool.delete();
           }
         }
-        // 耳朵外侧上沿做一个倒角方便卡子安装
-        const earChamferSketch = sketchFromContourPoints([
-          [earActualWidth + 1e-4, earThickness + layerHeight - chamferSize],
-          [earActualWidth + 1e-4, earThickness + layerHeight + 1e-4],
-          [earActualWidth - chamferSize * Math.tan(Math.PI / 3), earThickness + layerHeight + 1e-4],
+        // 舌片外侧上沿做一个倒角方便卡子安装
+        const tabChamferSketch = sketchFromContourPoints([
+          [tabActualWidth + 1e-4, tabThickness + layerHeight - chamferSize],
+          [tabActualWidth + 1e-4, tabThickness + layerHeight + 1e-4],
+          [tabActualWidth - chamferSize * Math.tan(Math.PI / 3), tabThickness + layerHeight + 1e-4],
         ], edgePerpendicularPlane, -1);
-        // 耳朵两端也做倒角防止从一个顶点触发的拼接边耳朵之间的干涉
-        const earEndChamferSketch = sketchFromContourPoints([
-          [ 0, earThickness + layerHeight - chamferSize],
-          [ 0, earThickness + layerHeight + 1e-1],
-          [ -earThickness, earThickness + layerHeight + 1e-1],
-        ], edgePerpendicularPlane, -earExtendMargin);
-        if (!earChamferSketch || !earEndChamferSketch) {
-          onLog?.("创建耳朵倒角草图失败，跳过倒角");
-          console.warn('[ReplicadModeling] failed to create ear chamfer sketch for edge, skip chamfer', edge);
+        // 舌片两端也做倒角防止从一个顶点触发的拼接边舌片之间的干涉
+        const tabEndChamferSketch = sketchFromContourPoints([
+          [ 0, tabThickness + layerHeight - chamferSize],
+          [ 0, tabThickness + layerHeight + 1e-1],
+          [ -tabThickness, tabThickness + layerHeight + 1e-1],
+        ], edgePerpendicularPlane, -tabExtendMargin);
+        if (!tabChamferSketch || !tabEndChamferSketch) {
+          onLog?.(t("log.replicad.tabChamfer.fail"));
+          console.warn('[ReplicadModeling] failed to create tab chamfer sketch for edge, skip chamfer', edge);
         } else {
-          // const earChamferTool = earChamferSketch.extrude(distAB);
-          // earSolid = earSolid.cut(earChamferTool).simplify();
-          // const earEndChamferSolid = earEndChamferSketch.extrude(distAB + 2 * earExtendMargin);
-          // earSolid = earSolid.cut(earEndChamferSolid.clone().rotate(-earAngleA, [pointA[0], pointA[1], 0], [0,0,1])).simplify();
-          // earSolid = earSolid.cut(earEndChamferSolid.rotate(earAngleB, [pointB[0], pointB[1], 0], [0,0,1])).simplify();
+          // const tabChamferTool = tabChamferSketch.extrude(distAB);
+          // tabSolid = tabSolid.cut(tabChamferTool).simplify();
+          // const tabEndChamferSolid = tabEndChamferSketch.extrude(distAB + 2 * tabExtendMargin);
+          // tabSolid = tabSolid.cut(tabEndChamferSolid.clone().rotate(-tabAngleA, [pointA[0], pointA[1], 0], [0,0,1])).simplify();
+          // tabSolid = tabSolid.cut(tabEndChamferSolid.rotate(tabAngleB, [pointB[0], pointB[1], 0], [0,0,1])).simplify();
           booleanOperations += 3;
         }
 
-        earSolid = earSolid.rotate(earAngle, [pointA[0], pointA[1], layerHeight], [pointA[0] - pointB[0], pointA[1] - pointB[1], 0]);
+        tabSolid = tabSolid.rotate(tabAngle, [pointA[0], pointA[1], layerHeight], [pointA[0] - pointB[0], pointA[1] - pointB[1], 0]);
 
-        const earCutTools: Shape3D[] = [adjEdgeCutToolL.clone(), adjEdgeCutToolR.clone()];
-        // 向外翻的耳朵可能需要根据外轮廓顶点角度进行相邻外轮廓耳朵防干涉的裁剪
+        const tabCutTools: Shape3D[] = [adjEdgeCutToolL.clone(), adjEdgeCutToolR.clone()];
+        // 向外翻的舌片可能需要根据外轮廓顶点角度进行相邻外轮廓舌片防干涉的裁剪
         if (edge.angle > Math.PI) {
           const pointAKey = pointKey(pointA);
           const pointBKey = pointKey(pointB);
           const pointAAngle = outerResult.outerPointAngleMap.get(pointAKey);
           const pointBAngle = outerResult.outerPointAngleMap.get(pointBKey);
-          // console.log('[ReplicadModeling] edge info for ear', { pointAAngle, pointBAngle });
+          // console.log('[ReplicadModeling] edge info for tab', { pointAAngle, pointBAngle });
           // 只有拼接边与拼接边相邻，且拼接边与拼接边相邻的顶点角度小于180度（阴角）时才需要进行防干涉
           if (pointAAngle && pointAAngle > 180) {
-            // console.log('[ReplicadModeling] edge info for ear anti-interference', { pointAAngle });
-            const earAntiInterferenceSketch = sketchFromContourPoints(
+            // console.log('[ReplicadModeling] edge info for tab anti-interference', { pointAAngle });
+            const tabAntiInterferenceSketch = sketchFromContourPoints(
               [[0,-cutToolMargin], [0,cutToolMargin], [cutToolMargin,cutToolMargin], [cutToolMargin,-cutToolMargin]],
               edgePerpendicularPlane.clone(), distAB + cutToolMargin);
-            if (earAntiInterferenceSketch) {
-              earCutTools.push(earAntiInterferenceSketch.extrude(-(minDistance / 2 + cutToolMargin))
+            if (tabAntiInterferenceSketch) {
+              tabCutTools.push(tabAntiInterferenceSketch.extrude(-(minDistance / 2 + cutToolMargin))
                 .rotate((pointAAngle - 180) / 2, [pointA[0], pointA[1], 0], [0,0,1]));
             }
           }
           if (pointBAngle && pointBAngle > 180) {
-            // console.log('[ReplicadModeling] edge info for ear anti-interference', { pointBAngle });
-            const earAntiInterferenceSketch = sketchFromContourPoints(
+            // console.log('[ReplicadModeling] edge info for tab anti-interference', { pointBAngle });
+            const tabAntiInterferenceSketch = sketchFromContourPoints(
               [[0,-cutToolMargin], [0,cutToolMargin], [cutToolMargin,cutToolMargin], [cutToolMargin,-cutToolMargin]],
               edgePerpendicularPlane.clone(), -cutToolMargin);
-            if (earAntiInterferenceSketch) {
-              earCutTools.push(earAntiInterferenceSketch.extrude(minDistance / 2 + cutToolMargin)
+            if (tabAntiInterferenceSketch) {
+              tabCutTools.push(tabAntiInterferenceSketch.extrude(minDistance / 2 + cutToolMargin)
                 .rotate(-(pointBAngle - 180) / 2, [pointB[0], pointB[1], 0], [0,0,1]));
             }
           }
         }
-        earCutTools.forEach((tool) => {
-          if (tool) earSolid = earSolid.cut(tool).simplify();
+        tabCutTools.forEach((tool) => {
+          if (tool) tabSolid = tabSolid.cut(tool).simplify();
         });
-        connectionSolid = connectionSolid.fuse(earSolid).simplify();
-        booleanOperations += earCutTools.length + 1;
+        connectionSolid = connectionSolid.fuse(tabSolid).simplify();
+        booleanOperations += tabCutTools.length + 1;
       }
     });
     edgeCutTools.forEach((tool) => tool.delete());
@@ -352,12 +370,12 @@ const buildSolidFromTrianglesWithAngles = async (
 
     if (hollowStyle) {
       const msg: Record<OffsetFailReason, string> = {
-        DEGENERATE_INPUT: "原三角形退化（点重合或面积过小）",
-        PARALLEL_SHIFTED_LINES: "偏移后边线无法相交（偏移过大或近乎平行）",
-        DEGENERATE_RESULT: "偏移结果退化（新三角形面积过小）",
-        FLIPPED: "偏移导致三角形翻转（偏移过大）",
-        OUTSIDE_ORIGINAL: "偏移结果跑到原三角形外（不满足内偏移）",
-        INFEASIBLE_OFFSETS: "偏移导致三角形翻转（偏移过大）",
+        DEGENERATE_INPUT: t("log.replicad.offset.reason.degenerateInput"),
+        PARALLEL_SHIFTED_LINES: t("log.replicad.offset.reason.parallelShiftedLines"),
+        DEGENERATE_RESULT: t("log.replicad.offset.reason.degenerateResult"),
+        FLIPPED: t("log.replicad.offset.reason.flipped"),
+        OUTSIDE_ORIGINAL: t("log.replicad.offset.reason.outsideOriginal"),
+        INFEASIBLE_OFFSETS: t("log.replicad.offset.reason.infeasibleOffsets"),
       };
         // 镂空
         const offsets = triData.edges.map(e => {
@@ -366,7 +384,7 @@ const buildSolidFromTrianglesWithAngles = async (
         // console.log('[ReplicadModeling] offsetting triangle for hollow', { tri: triData.tri, offsets });
         const offsetResult = offsetTriangleSafe(triData.tri, offsets);
         if (!offsetResult.tri) {
-          onLog?.(`三角形内偏移失败，跳过内偏移操作，原因：${msg[offsetResult.reason!]}`);
+          onLog?.(t("log.replicad.offset.fail", { reason: msg[offsetResult.reason!] }));
         }
         else
         {
@@ -379,8 +397,8 @@ const buildSolidFromTrianglesWithAngles = async (
   });
 
   if (!isOcctValid(connectionSolid)) {
-    onLog?.("生成耳朵后实体不是有效的 OCCT 形状");
-    console.warn('[ReplicadModeling] after ear creation, solid is not valid OCCT shape');
+    onLog?.(t("log.replicad.invalid.afterTab"));
+    console.warn('[ReplicadModeling] after tab creation, solid is not valid OCCT shape');
   }
   
   onProgress?.(50);
@@ -393,14 +411,14 @@ const buildSolidFromTrianglesWithAngles = async (
   });
   slopeTools.forEach((tool) => tool.delete());
   if (!isOcctValid(connectionSolid)) {
-    onLog?.("应用坡度刀具后实体不是有效的 OCCT 形状");
+    onLog?.(t("log.replicad.invalid.afterSlope"));
     console.warn('[ReplicadModeling] after applying slope tools, solid is not valid OCCT shape');
   }
 
   onProgress?.(98);
 
   // 第五步，削平底部
-  const margin = earWidth + 1;
+  const margin = tabWidth + 1;
   const tool = makeBox(
     [outerResult.min[0] - margin, outerResult.min[1] - margin, -outerResult.maxEdgeLen - 1] as Point,
     [outerResult.max[0] + margin, outerResult.max[1] + margin, 0] as Point
@@ -410,61 +428,62 @@ const buildSolidFromTrianglesWithAngles = async (
   connectionSolid = connectionSolid.simplify().mirror("XY").rotate(180, [0, 0, 0], [0, 1, 0])
   onProgress?.(100);
   if (!isOcctValid(connectionSolid)) {
-    onLog?.("最终实体不是有效的 OCCT 形状");
+    onLog?.(t("log.replicad.invalid.final"));
     console.warn('[ReplicadModeling] final solid is not valid OCCT shape');
   }
   // console.log(`[ReplicadModeling] buildSolidFromTrianglesWithAngles completed with ${booleanOperations} boolean operations`);
-  return { solid: connectionSolid, earClipNumTotal };
+  return { solid: connectionSolid, tabClipNumTotal };
 };
 
-export const buildEarClip = async () => {
+export const buildTabClip = async () => {
   await ensureReplicadOC();
-  const { earThickness, earWidth } = getSettings();
-  const { earClipKeelThickness, earClipWingThickness, earClipWingLength, earClipGap } = earClipGemometry();
-  const keelChamferSize = Math.min(earClipKeelThickness / 2, 0.5);
-  const wingChamferSize = Math.max(earClipWingThickness - 0.5, 1e-2);
-  const earClipSketchKeel = sketchFromContourPoints([
+  const { tabThickness, tabWidth } = getSettings();
+  const { tabClipKeelThickness, tabClipWingThickness, tabClipWingLength, tabClipGap } = tabClipGemometry();
+  const keelChamferSize = Math.min(tabClipKeelThickness / 2, 0.5);
+  const wingChamferSize = Math.max(tabClipWingThickness - 0.5, 1e-2);
+  const tabClipSketchKeel = sketchFromContourPoints([
     [0, 0],
-    [earClipKeelThickness / 2, 0],
-    [earClipKeelThickness / 2, earWidth - keelChamferSize],
-    [earClipKeelThickness / 2 - keelChamferSize, earWidth],
-    [0, earWidth],
+    [tabClipKeelThickness / 2, 0],
+    [tabClipKeelThickness / 2, tabWidth - keelChamferSize],
+    [tabClipKeelThickness / 2 - keelChamferSize, tabWidth],
+    [0, tabWidth],
   ], "XZ");
-  const earClipSketchWing = sketchFromContourPoints([
-    [0, earThickness + earClipWingThickness],
-    [earClipWingLength / 2 - wingChamferSize, earThickness + earClipWingThickness],
-    [earClipWingLength / 2, earThickness + earClipWingThickness - wingChamferSize],
-    [earClipWingLength / 2, earThickness + earClipGap / 2],
-    [earClipKeelThickness / 2, earThickness + earClipGap],
-    [0, earThickness + earClipGap],
+  const tabClipSketchWing = sketchFromContourPoints([
+    [0, tabThickness + tabClipWingThickness],
+    [tabClipWingLength / 2 - wingChamferSize, tabThickness + tabClipWingThickness],
+    [tabClipWingLength / 2, tabThickness + tabClipWingThickness - wingChamferSize],
+    [tabClipWingLength / 2, tabThickness + tabClipGap / 2],
+    [tabClipKeelThickness / 2, tabThickness + tabClipGap],
+    [0, tabThickness + tabClipGap],
   ], "XY");
-  const earClipSketchWingChamferYZ = sketchFromContourPoints([
-    [earThickness + earClipWingThickness + earClipGap + 1e-4, earWidth + 1e-4],
-    [earThickness + earClipWingThickness + earClipGap + 1e-4, earWidth - wingChamferSize],
-    [earThickness + earClipWingThickness + earClipGap - wingChamferSize, earWidth + 1e-4],
+  const tabClipSketchWingChamferYZ = sketchFromContourPoints([
+    [tabThickness + tabClipWingThickness + tabClipGap + 1e-4, tabWidth + 1e-4],
+    [tabThickness + tabClipWingThickness + tabClipGap + 1e-4, tabWidth - wingChamferSize],
+    [tabThickness + tabClipWingThickness + tabClipGap - wingChamferSize, tabWidth + 1e-4],
   ], "YZ", 0);
-  if (!earClipSketchKeel || !earClipSketchWing || !earClipSketchWingChamferYZ) {
-    throw new Error("耳朵卡子草图创建失败");
+  if (!tabClipSketchKeel || !tabClipSketchWing || !tabClipSketchWingChamferYZ) {
+    throw new Error("舌片卡子草图创建失败");
   }
-  const earClipSolidOneQuater = earClipSketchKeel.extrude(-(earClipWingThickness + earThickness))
-    .fuse(earClipSketchWing.extrude(earWidth))
-    .cut(earClipSketchWingChamferYZ.extrude(earClipWingLength / 2 + 1)).simplify();
-  const earClipSolidHalf = earClipSolidOneQuater.fuse(earClipSolidOneQuater.clone().mirror("YZ")).simplify();
-  return earClipSolidHalf.fuse(earClipSolidHalf.clone().mirror("XZ")).simplify();
+  const tabClipSolidOneQuater = tabClipSketchKeel.extrude(-(tabClipWingThickness + tabThickness))
+    .fuse(tabClipSketchWing.extrude(tabWidth))
+    .cut(tabClipSketchWingChamferYZ.extrude(tabClipWingLength / 2 + 1)).simplify();
+  const tabClipSolidHalf = tabClipSolidOneQuater.fuse(tabClipSolidOneQuater.clone().mirror("YZ")).simplify();
+  return tabClipSolidHalf.fuse(tabClipSolidHalf.clone().mirror("XZ")).simplify();
 };
 
 export async function buildGroupStepFromTriangles(
   trisWithAngles: TriangleWithEdgeInfo[],
   onProgress?: (msg: number) => void,
   onLog?: (msg: string) => void,
-): Promise<{ blob: Blob; earClipNumTotal: number }> {
+  lang?: string,
+): Promise<{ blob: Blob; tabClipNumTotal: number }> {
   if (!trisWithAngles.length) {
-    onLog?.("没有可用于建模的展开三角形");
+    onLog?.(t("log.replicad.noTriangles"));
     throw new Error("没有可用于建模的展开三角形");
   }
-  const { solid, earClipNumTotal } = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog);
+  const { solid, tabClipNumTotal } = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog, lang);
   const blob = solid.blobSTEP();
-  return { blob, earClipNumTotal };
+  return { blob, tabClipNumTotal };
 }
 
 const buildMeshTolerance = 0.1;
@@ -473,26 +492,28 @@ export async function buildGroupStlFromTriangles(
   trisWithAngles: TriangleWithEdgeInfo[],
   onProgress?: (msg: number) => void,
   onLog?: (msg: string) => void,
-): Promise<{ blob: Blob; earClipNumTotal: number }> {
+  lang?: string,
+): Promise<{ blob: Blob; tabClipNumTotal: number }> {
   if (!trisWithAngles.length) {
-    onLog?.("没有可用于建模的展开三角形");
+    onLog?.(t("log.replicad.noTriangles"));
     throw new Error("没有可用于建模的展开三角形");
   }
-  const { solid, earClipNumTotal } = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog);
+  const { solid, tabClipNumTotal } = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog, lang);
   const blob = solid.blobSTL({ binary: true, tolerance: buildMeshTolerance, angularTolerance: buildMeshAngularTolerance });
-  return { blob, earClipNumTotal };
+  return { blob, tabClipNumTotal };
 }
 
 export async function buildGroupMeshFromTriangles(
   trisWithAngles: TriangleWithEdgeInfo[],
   onProgress?: (msg: number) => void,
   onLog?: (msg: string) => void,
-): Promise<{ mesh: Mesh; earClipNumTotal: number }> {
+  lang?: string,
+): Promise<{ mesh: Mesh; tabClipNumTotal: number }> {
   if (!trisWithAngles.length) {
-    onLog?.("没有可用于建模的展开三角形");
+    onLog?.(t("log.replicad.noTriangles"));
     throw new Error("没有可用于建模的展开三角形");
   }
-  const { solid, earClipNumTotal } = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog);
+  const { solid, tabClipNumTotal } = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog, lang);
   const mesh = solid.mesh({ tolerance: buildMeshTolerance, angularTolerance: buildMeshAngularTolerance });
   const geometry = new BufferGeometry();
   const position = new Float32BufferAttribute(mesh.vertices, 3);
@@ -508,5 +529,5 @@ export async function buildGroupMeshFromTriangles(
   geometry.computeBoundingSphere();
   const expotMesh = new Mesh(geometry);
   expotMesh.name = "group_preview_mesh";
-  return { mesh: expotMesh, earClipNumTotal };
+  return { mesh: expotMesh, tabClipNumTotal };
 }

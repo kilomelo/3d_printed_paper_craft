@@ -1,5 +1,6 @@
 // 设置面板 UI：负责设置窗口的打开/关闭、输入校验、草稿值管理以及日志输出。
 import { getSettings, applySettings, getDefaultSettings, SETTINGS_LIMITS } from "./settings";
+import { t } from "./i18n";
 
 type SettingsUIRefs = {
   overlay: HTMLDivElement;
@@ -9,12 +10,12 @@ type SettingsUIRefs = {
   confirmBtn: HTMLButtonElement;
   scaleInput: HTMLInputElement;
   scaleResetBtn: HTMLButtonElement;
-  earWidthInput: HTMLInputElement;
-  earWidthResetBtn: HTMLButtonElement;
-  earThicknessInput: HTMLInputElement;
-  earThicknessResetBtn: HTMLButtonElement;
-  earClipGapInput: HTMLInputElement;
-  earClipGapResetBtn: HTMLButtonElement;
+  tabWidthInput: HTMLInputElement;
+  tabWidthResetBtn: HTMLButtonElement;
+  tabThicknessInput: HTMLInputElement;
+  tabThicknessResetBtn: HTMLButtonElement;
+  tabClipGapInput: HTMLInputElement;
+  tabClipGapResetBtn: HTMLButtonElement;
   hollowOnBtn: HTMLButtonElement;
   hollowOffBtn: HTMLButtonElement;
   hollowResetBtn: HTMLButtonElement;
@@ -110,8 +111,8 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
 
   const validators = {
     scale: (val: number) => !Number.isNaN(val) && val > SETTINGS_LIMITS.scale.min,
-    earThickness: (val: number) =>
-      !Number.isNaN(val) && val >= SETTINGS_LIMITS.earThickness.min && val <= SETTINGS_LIMITS.earThickness.max,
+    tabThickness: (val: number) =>
+      !Number.isNaN(val) && val >= SETTINGS_LIMITS.tabThickness.min && val <= SETTINGS_LIMITS.tabThickness.max,
     layerHeight: (val: number) =>
       !Number.isNaN(val) && val > SETTINGS_LIMITS.layerHeight.min && val <= SETTINGS_LIMITS.layerHeight.max,
     connectionLayers: (val: number) =>
@@ -120,10 +121,10 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
       val <= SETTINGS_LIMITS.connectionLayers.max,
     bodyLayers: (val: number) =>
       Number.isInteger(val) && val >= SETTINGS_LIMITS.bodyLayers.min && val <= SETTINGS_LIMITS.bodyLayers.max,
-    earWidth: (val: number) =>
-      !Number.isNaN(val) && val >= SETTINGS_LIMITS.earWidth.min && val < SETTINGS_LIMITS.earWidth.max,
-    earClipGap: (val: number) =>
-      !Number.isNaN(val) && val >= SETTINGS_LIMITS.earClipGap.min && val <= SETTINGS_LIMITS.earClipGap.max,
+    tabWidth: (val: number) =>
+      !Number.isNaN(val) && val >= SETTINGS_LIMITS.tabWidth.min && val < SETTINGS_LIMITS.tabWidth.max,
+    tabClipGap: (val: number) =>
+      !Number.isNaN(val) && val >= SETTINGS_LIMITS.tabClipGap.min && val <= SETTINGS_LIMITS.tabClipGap.max,
     wireframeThickness: (val: number) =>
       !Number.isNaN(val) &&
       val >= SETTINGS_LIMITS.wireframeThickness.min &&
@@ -145,17 +146,17 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     settingsSnapshot = getSettings();
     settingsDraft = { ...settingsSnapshot };
     refs.scaleInput.value = String(settingsDraft.scale);
-    refs.earThicknessInput.value = String(settingsDraft.earThickness);
+    refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
     refs.layerHeightInput.value = String(settingsDraft.layerHeight);
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
     refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
-    refs.earWidthInput.value = String(settingsDraft.earWidth);
-    refs.earThicknessInput.value = String(settingsDraft.earThickness);
-    refs.earClipGapInput.value = String(settingsDraft.earClipGap);
+    refs.tabWidthInput.value = String(settingsDraft.tabWidth);
+    refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
+    refs.tabClipGapInput.value = String(settingsDraft.tabClipGap);
     refs.wireframeThicknessInput.value = String(settingsDraft.wireframeThickness);
     updateHollowButtons();
     updateWireframeEnabled();
-    [refs.scaleInput, refs.layerHeightInput, refs.earWidthInput, refs.earThicknessInput, refs.earClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
+    [refs.scaleInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
       updateInputColor(el, true),
     );
     updateWireframeEnabled();
@@ -247,31 +248,31 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     () => getDefaultSettings().layerHeight,
   );
   bindNumericInput(
-    refs.earWidthInput,
-    refs.earWidthResetBtn,
+    refs.tabWidthInput,
+    refs.tabWidthResetBtn,
     (raw) => parseFloat(raw),
-    () => settingsDraft.earWidth,
-    (v) => (settingsDraft.earWidth = v),
-    validators.earWidth,
-    () => getDefaultSettings().earWidth,
+    () => settingsDraft.tabWidth,
+    (v) => (settingsDraft.tabWidth = v),
+    validators.tabWidth,
+    () => getDefaultSettings().tabWidth,
   );
   bindNumericInput(
-    refs.earThicknessInput,
-    refs.earThicknessResetBtn,
+    refs.tabThicknessInput,
+    refs.tabThicknessResetBtn,
     (raw) => parseFloat(raw),
-    () => settingsDraft.earThickness,
-    (v) => (settingsDraft.earThickness = v),
-    validators.earThickness,
-    () => getDefaultSettings().earThickness,
+    () => settingsDraft.tabThickness,
+    (v) => (settingsDraft.tabThickness = v),
+    validators.tabThickness,
+    () => getDefaultSettings().tabThickness,
   );
   bindNumericInput(
-    refs.earClipGapInput,
-    refs.earClipGapResetBtn,
+    refs.tabClipGapInput,
+    refs.tabClipGapResetBtn,
     (raw) => parseFloat(raw),
-    () => settingsDraft.earClipGap,
-    (v) => (settingsDraft.earClipGap = v),
-    validators.earClipGap,
-    () => getDefaultSettings().earClipGap,
+    () => settingsDraft.tabClipGap,
+    (v) => (settingsDraft.tabClipGap = v),
+    validators.tabClipGap,
+    () => getDefaultSettings().tabClipGap,
   );
   bindNumericInput(
     refs.wireframeThicknessInput,
@@ -311,12 +312,12 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.layerHeightInput.value = String(settingsDraft.layerHeight);
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
     refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
-    refs.earWidthInput.value = String(settingsDraft.earWidth);
-    refs.earThicknessInput.value = String(settingsDraft.earThickness);
-    refs.earClipGapInput.value = String(settingsDraft.earClipGap);
+    refs.tabWidthInput.value = String(settingsDraft.tabWidth);
+    refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
+    refs.tabClipGapInput.value = String(settingsDraft.tabClipGap);
     refs.wireframeThicknessInput.value = String(settingsDraft.wireframeThickness);
     updateHollowButtons();
-    [refs.scaleInput, refs.layerHeightInput, refs.earWidthInput, refs.earThicknessInput, refs.earClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
+    [refs.scaleInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
       updateInputColor(el, true),
     );
   });
@@ -328,31 +329,32 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     }
     const changes: string[] = [];
     if (settingsDraft.scale !== settingsSnapshot.scale) {
-      changes.push(`设置值 [缩放比例] 已修改为 ${settingsDraft.scale}`);
+      changes.push(t("log.settings.changed", { label: t("settings.scale.label"), value: settingsDraft.scale }));
     }
-    if (settingsDraft.earWidth !== settingsSnapshot.earWidth) {
-      changes.push(`设置值 [拼接边耳朵宽度] 已修改为 ${settingsDraft.earWidth}`);
+    if (settingsDraft.tabWidth !== settingsSnapshot.tabWidth) {
+      changes.push(t("log.settings.changed", { label: t("settings.tabWidth.label"), value: settingsDraft.tabWidth }));
     }
     if (settingsDraft.layerHeight !== settingsSnapshot.layerHeight) {
-      changes.push(`设置值 [打印层高] 已修改为 ${settingsDraft.layerHeight}`);
+      changes.push(t("log.settings.changed", { label: t("settings.layerHeight.label"), value: settingsDraft.layerHeight }));
     }
     if (settingsDraft.connectionLayers !== settingsSnapshot.connectionLayers) {
-      changes.push(`设置值 [连接层数] 已修改为 ${settingsDraft.connectionLayers}`);
+      changes.push(t("log.settings.changed", { label: t("settings.connectionLayers.label"), value: settingsDraft.connectionLayers }));
     }
     if (settingsDraft.bodyLayers !== settingsSnapshot.bodyLayers) {
-      changes.push(`设置值 [主体层数] 已修改为 ${settingsDraft.bodyLayers}`);
+      changes.push(t("log.settings.changed", { label: t("settings.bodyLayers.label"), value: settingsDraft.bodyLayers }));
     }
-    if (settingsDraft.earThickness !== settingsSnapshot.earThickness) {
-      changes.push(`设置值 [拼接边耳朵厚度] 已修改为 ${settingsDraft.earThickness}`);
+    if (settingsDraft.tabThickness !== settingsSnapshot.tabThickness) {
+      changes.push(t("log.settings.changed", { label: t("settings.tabThickness.label"), value: settingsDraft.tabThickness }));
     }
-    if (settingsDraft.earClipGap !== settingsSnapshot.earClipGap) {
-      changes.push(`设置值 [夹子配合间隙] 已修改为 ${settingsDraft.earClipGap}`);
+    if (settingsDraft.tabClipGap !== settingsSnapshot.tabClipGap) {
+      changes.push(t("log.settings.changed", { label: t("settings.tabClipGap.label"), value: settingsDraft.tabClipGap }));
     }
     if (settingsDraft.hollowStyle !== settingsSnapshot.hollowStyle) {
-      changes.push(`设置值 [镂空风格] 已修改为 ${settingsDraft.hollowStyle ? "开启" : "关闭"}`);
+      const hollowValue = settingsDraft.hollowStyle ? t("settings.hollow.on") : t("settings.hollow.off");
+      changes.push(t("log.settings.changed", { label: t("settings.hollow.label"), value: hollowValue }));
     }
     if (settingsDraft.wireframeThickness !== settingsSnapshot.wireframeThickness) {
-      changes.push(`设置值 [线框粗细] 已修改为 ${settingsDraft.wireframeThickness}`);
+      changes.push(t("log.settings.changed", { label: t("settings.wireframeThickness.label"), value: settingsDraft.wireframeThickness }));
     }
     applySettings(settingsDraft);
     closeSettings();
