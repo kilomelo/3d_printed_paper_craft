@@ -1,0 +1,123 @@
+/* =========================================================
+   Hold-to-confirm button (DOM + tokens)
+   - All appearance is controlled by CSS variables (tokens)
+   ========================================================= */
+
+/* 可选：你项目的全局 token（若你已经有自己的 token，可以删掉这段 root） */
+:root{
+  --ui-font: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+}
+
+/* 组件自身 token（带 fallback，方便直接覆写） */
+.hold-btn{
+  /* progress [0..1] set by JS */
+  --p: 0;
+  --pcts: calc(var(--p) * 100%);
+
+  /* tokens (caller can override on .hold-btn or parent) */
+  --htc-font: var(--ui-font, -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif);
+
+  --htc-minw: auto;
+  --htc-pad-y: 10px;
+  --htc-pad-x: 14px;
+
+  --htc-radius: 14px;
+  --htc-border-color: rgba(255,255,255,.12);
+
+  --htc-bg: #1f2937;          /* idle background */
+  --htc-fill-bg: #3ecb3e;     /* progress background */
+  --htc-text: #e5e7eb;        /* idle text */
+  --htc-fill-text: #0b1020;   /* progress text */
+  --htc-ring: rgba(147,197,253,.45);
+  --htc-font-weight: 400;
+  --htc-font-size: 14px;
+  /* --htc-letter-spacing: .2px; */
+
+  position:relative;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  padding: var(--htc-pad-y) var(--htc-pad-x);
+  min-width: var(--htc-minw);
+
+  border:1px solid var(--htc-border-color);
+  border-radius: var(--htc-radius);
+  background: var(--htc-bg);
+
+  cursor:pointer;
+  user-select:none;
+  -webkit-user-select:none;
+  touch-action:manipulation;
+  outline:none;
+  overflow:hidden;
+
+  font: var(--htc-font-weight) var(--htc-font-size)/1 var(--htc-font);
+  letter-spacing: var(--htc-letter-spacing);
+}
+
+.hold-btn:focus-visible{
+  box-shadow: 0 0 0 4px var(--htc-ring);
+}
+
+.hold-btn:disabled{
+  opacity:.6;
+  cursor:not-allowed;
+}
+
+/* Background fill (button coordinate system) */
+.hold-btn::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  width: var(--pcts);
+  background: var(--htc-fill-bg);
+  pointer-events:none;
+}
+
+/* content layout: label centered regardless of percent */
+.hold-btn__content{
+  position:relative;
+  z-index:2;
+  width:100%;
+  display:grid;
+  place-items:center;
+}
+
+.hold-btn__label{
+  white-space:nowrap;
+  color: var(--htc-text);
+}
+
+.hold-btn__pct{
+  position:absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space:nowrap;
+  font-size: calc(var(--htc-font-size) - 2px);
+  font-weight: var(--htc-font-weight);
+  opacity: .75;
+  color: var(--htc-text);
+}
+
+/* Fill layer covers the whole button and is clipped by button width */
+.hold-btn__layer{
+  position:absolute;
+  inset:0;
+  z-index:3;
+  pointer-events:none;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  /* key: clip by button width so background + text progress align */
+  clip-path: inset(0 calc(100% - var(--pcts)) 0 0);
+}
+
+.hold-btn__layer .hold-btn__label{
+  color: var(--htc-fill-text);
+}
+.hold-btn__layer .hold-btn__pct{
+  color: var(--htc-fill-text);
+}

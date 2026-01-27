@@ -1,5 +1,6 @@
 // 展开组数据层：使用统一的 GroupData 结构管理组的面、颜色与树结构，并维护 face->group 的映射。
 import { Color } from "three";
+import { t } from "./i18n";
 
 export type GroupData = {
   id: number;
@@ -10,7 +11,7 @@ export type GroupData = {
   placeAngle: number;
 };
 
-const GROUP_COLOR_PALETTE = [0x759fff, 0xff5757, 0xffff00, 0x00ee00, 0x00ffff, 0xff70ff];
+const GROUP_COLOR_PALETTE = [0x86a6ee, 0xea6c6c, 0xdfdf20, 0x3ecb3e, 0x20dfdf, 0xed82ed];
 
 const groups: GroupData[] = [];
 const faceGroupMap: Map<number, number | null> = new Map();
@@ -33,10 +34,13 @@ function nextGroupId(): number {
 }
 
 export function nextGroupName(): string {
+  const currentPrefix = t("group.default.prefix") || "Group";
+  const escaped = currentPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`^${escaped}\\s+(\\d+)$`, "i");
+
   let maxNumber = 0;
-  const re = /^展开组\s+(\d+)$/;
   groups.forEach((g) => {
-    const m = re.exec(g.name);
+    const m = pattern.exec(g.name);
     if (m) {
       const num = parseInt(m[1], 10);
       if (!Number.isNaN(num)) {
@@ -44,7 +48,8 @@ export function nextGroupName(): string {
       }
     }
   });
-  return `展开组 ${maxNumber + 1}`;
+
+  return `${currentPrefix} ${maxNumber + 1}`;
 }
 
 export function resetGroups() {

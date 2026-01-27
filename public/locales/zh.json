@@ -2,12 +2,12 @@
   "app.title": "3D打印纸艺",
   "language.toggle": "Language: ZH",
   "mainpage.guide": "选择模型文件",
-  "mainpage.format.supported": "支持 OBJ / FBX / STL / 3dppc",
-  "mainpage.try": "随便试试",
-  "mainpage.try.sub": "试玩示例项目",
+  "mainpage.format.supported": "支持格式 OBJ / FBX / STL / 3DPPC",
+  "mainpage.try.desc": "还没有文件？",
+  "mainpage.try": "试玩示例项目",
   "menu.about": "帮助 & 关于",
   "menu.preview.exit": "退出预览",
-  "menu.model.open": "打开模型",
+  "menu.model.open": "打开文件",
   "menu.save3dppc": "保存 .3dppc",
   "menu.export.step": "导出展开组 STEP",
   "menu.export.stl": "导出展开组 STL",
@@ -75,6 +75,8 @@
   "op.group.face.remove": "右键移出展开组三角面",
   "op.group.rotate": "左键旋转展开组",
 
+  "group.default.prefix": "展开组",
+
   "history.load.description": "载入了模型",
   "history.group.add.description": "新建展开组 {name}",
   "history.group.remove.description": "删除展开组 {name}",
@@ -84,6 +86,7 @@
   "history.group.rotate.description": "旋转展开组 {angle}°",
   "history.settings.change.description": "修改了 {count} 个设置项",
 
+  "log.demo.loadFail": "加载示例项目失败，请稍后重试。",
   "log.progress.bar": "工作进度: |{bar}| {pct}%",
   "log.workspace.edit.exit": "已退出展开组编辑模式",
   "log.workspace.edit.enter": "已进入展开组编辑模式",

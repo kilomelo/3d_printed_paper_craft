@@ -29,7 +29,7 @@ export function createGroupUI(
     groupFacesCountLabel: HTMLSpanElement;
     groupColorBtn: HTMLButtonElement;
     groupColorInput: HTMLInputElement;
-    groupDeleteBtn: HTMLButtonElement;
+    groupDeleteBtn?: HTMLButtonElement | null;
     groupVisibilityBtn?: HTMLButtonElement;
   },
   callbacks: GroupUICallbacks,
@@ -125,13 +125,17 @@ export function createGroupUI(
   }
 
   const updatePreview = (state: GroupUIState) => {
-    if (!ui.groupPreview || !ui.groupColorBtn || !ui.groupColorInput || !ui.groupDeleteBtn || !ui.groupFacesCountLabel) return;
+    if (!ui.groupPreview || !ui.groupColorBtn || !ui.groupColorInput || !ui.groupFacesCountLabel) return;
     const color = state.getGroupColor(state.previewGroupId);
     const hex = `#${color?.getHexString()}`;
     ui.groupColorBtn.style.background = hex;
     ui.groupColorInput.value = hex;
     ui.groupFacesCountLabel.textContent = t("preview.right.faceCount.label", { count: state.getGroupFacesCount(state.previewGroupId) });
-    ui.groupDeleteBtn.style.display = state.deletable ? "inline-flex" : "none";
+    if (ui.groupDeleteBtn) {
+      ui.groupDeleteBtn.style.display = state.deletable ? "inline-flex" : "none";
+      ui.groupDeleteBtn.toggleAttribute("disabled", !state.deletable);
+      ui.groupDeleteBtn.style.opacity = state.deletable ? "1" : "0.6";
+    }
     if (ui.groupVisibilityBtn) {
       const visible = state.getGroupVisibility(state.previewGroupId);
       const visibleIcon = ui.groupVisibilityBtn.querySelector<SVGElement>(".icon-visible");
@@ -148,9 +152,9 @@ export function createGroupUI(
     if (!value) return;
     callbacks.onColorChange(new Color(value));
   });
-  ui.groupDeleteBtn.addEventListener("click", () => {
-    callbacks.onDelete();
-  });
+  if (ui.groupDeleteBtn && !ui.groupDeleteBtn.classList.contains("hold-btn")) {
+    ui.groupDeleteBtn.addEventListener("click", () => callbacks.onDelete());
+  }
   if (ui.groupVisibilityBtn && callbacks.onVisibilityToggle) {
     ui.groupVisibilityBtn.addEventListener("click", () => {
       if (!lastState) return;
@@ -169,7 +173,9 @@ export function createGroupUI(
     dispose: () => {
       ui.groupColorBtn.onclick = null;
       ui.groupColorInput.oninput = null;
-      ui.groupDeleteBtn.onclick = null;
+      if (ui.groupDeleteBtn && !ui.groupDeleteBtn.classList.contains("hold-btn")) {
+        ui.groupDeleteBtn.onclick = null;
+      }
       ui.groupTabsEl.innerHTML = "";
       resizeObserver?.disconnect();
     },
