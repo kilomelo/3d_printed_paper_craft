@@ -33,6 +33,10 @@ import type { Snapshot, ProjectState } from "./types/historyTypes.js";
 import { exportGroupsData, getGroupColorCursor } from "./modules/groups";
 import { importSettings, getSettings, resetSettings } from "./modules/settings";
 import { createOperationHints } from "./modules/operationHints";
+import { createHoldButton } from "./components/createHoldButton";
+import "./components/holdButton.css";
+import "./styles/home.css";
+import { renderHomeSection } from "./templates/homeMarkup";
 import { initI18n, t, getCurrentLang, setLanguage, onLanguageChanged } from "./modules/i18n";
 
 const VERSION = packageJson.version ?? "0.0.0.0";
@@ -143,6 +147,7 @@ const applyI18nTexts = () => {
   groupUI.render(buildGroupUIState());
   // 语言切换时刷新历史面板条目文本
   historyPanelUI?.render();
+  deleteHold?.setLabel(t("preview.right.groupDelete.btn"));
 };
 
 // 文件已保存状态
@@ -154,6 +159,7 @@ const setFileSaved = (value: boolean) => {
 
 let historyPanelUI: ReturnType<typeof createHistoryPanel> | null = null;
 let operationHints: ReturnType<typeof createOperationHints> | null = null;
+let deleteHold: ReturnType<typeof createHoldButton> | null = null;
 const captureProjectState = (): ProjectState => ({
   groups: exportGroupsData(),
   colorCursor: getGroupColorCursor(),
@@ -187,13 +193,7 @@ app.innerHTML = `
     <button class="btn sm ghost version-lang-toggle" id="lang-toggle-global" data-i18n="language.toggle">Language: ZH</button>
     <input id="file-input" type="file" accept=".obj,.fbx,.stl,.3dppc,application/json" style="display:none" autocomplete="off" />
 
-    <section id="layout-empty" class="page home active">
-      <div class="home-card">
-        <div class="home-title" data-i18n="app.title">3D打印纸艺</div>
-        <div class="home-meta" data-i18n="mainpage.format.supported">支持 OBJ / FBX / STL / 3dppc</div>
-        <button id="home-start" class="btn primary" data-i18n="mainpage.guide">选择模型文件</button>
-      </div>
-    </section>
+    ${renderHomeSection()}
 
     <section id="layout-workspace" class="page">
       <header class="editor-header">
@@ -208,7 +208,7 @@ app.innerHTML = `
       </header>
     <nav class="editor-menu">
         <button class="btn ghost hidden" id="exit-preview-btn" data-i18n="menu.preview.exit">退出预览</button>
-        <button class="btn ghost" id="menu-open" data-i18n="menu.model.open">打开模型</button>
+        <button class="btn ghost" id="menu-open" data-i18n="menu.model.open">打开文件</button>
         <button class="btn ghost" id="export-3dppc-btn" data-i18n="menu.save3dppc">保存 .3dppc</button>
         <button class="btn ghost" id="export-group-step-btn" data-i18n="menu.export.step">导出展开组 STEP</button>
         <button class="btn ghost" id="export-group-stl-btn" data-i18n="menu.export.stl">导出展开组 STL</button>
@@ -262,7 +262,7 @@ app.innerHTML = `
               </button>
               <span class="overlay-label group-faces-count" id="group-faces-count">面数量：0</span>
             </div>
-            <button class="overlay-btn tab-delete" id="group-delete" data-i18n="preview.right.groupDelete.btn">删除展开组</button>
+            <div class="tab-delete-slot" id="group-delete-slot"></div>
             <div id="group-preview-empty" class="preview-2d-empty hidden" data-i18n="preview.right.placeholder">
               点击【编辑展开组】按钮进行编辑
             </div>
@@ -432,6 +432,7 @@ const logListEl = document.querySelector<HTMLDivElement>("#log-list");
 const logPanelEl = document.querySelector<HTMLDivElement>("#log-panel");
 const fileInput = document.querySelector<HTMLInputElement>("#file-input");
 const homeStartBtn = document.querySelector<HTMLButtonElement>("#home-start");
+const homeDemoBtn = document.querySelector<HTMLButtonElement>("#home-demo");
 const exitPreviewBtn = document.querySelector<HTMLButtonElement>("#exit-preview-btn");
 const menuOpenBtn = document.querySelector<HTMLButtonElement>("#menu-open");
 const menuBlocker = document.querySelector<HTMLDivElement>("#menu-blocker");
@@ -467,6 +468,10 @@ const aboutBackBtn = document.querySelector<HTMLButtonElement>("#about-back-btn"
 const aboutBtn = document.querySelector<HTMLButtonElement>("#about-btn");
 langToggleBtn = document.querySelector<HTMLButtonElement>("#lang-toggle");
 langToggleGlobalBtn = document.querySelector<HTMLButtonElement>("#lang-toggle-global");
+const demoFiles: Record<string, string> = {
+  zh: "demo_cn.3dppc",
+  en: "demo_en.3dppc",
+};
 
 const showLoadingOverlay = () => loadingOverlay?.classList.remove("hidden");
 const hideLoadingOverlay = () => loadingOverlay?.classList.add("hidden");
@@ -504,17 +509,18 @@ const groupPreviewPanel = groupPreview?.closest(".preview-panel") as HTMLDivElem
 const groupFacesCountLabel = document.querySelector<HTMLSpanElement>("#group-faces-count");
 const groupColorBtn = document.querySelector<HTMLButtonElement>("#group-color-btn");
 const groupColorInput = document.querySelector<HTMLInputElement>("#group-color-input");
-const groupDeleteBtn = document.querySelector<HTMLButtonElement>("#group-delete");
 const groupEditToggle = document.querySelector<HTMLButtonElement>("#group-edit-toggle");
 const layoutEmpty = document.querySelector<HTMLElement>("#layout-empty");
 const layoutWorkspace = document.querySelector<HTMLElement>("#layout-workspace");
 const versionBadgeGlobal = document.querySelector<HTMLDivElement>(".version-badge-global");
+const groupDeleteSlot = document.querySelector<HTMLDivElement>("#group-delete-slot");
 
 if (
   !viewer ||
   !logListEl ||
   !fileInput ||
   !homeStartBtn ||
+  !homeDemoBtn ||
   !exitPreviewBtn ||
   !editorPreviewEl ||
   !menuOpenBtn ||
@@ -536,7 +542,7 @@ if (
   !groupFacesCountLabel ||
   !groupColorBtn ||
   !groupColorInput ||
-  !groupDeleteBtn ||
+  !groupDeleteSlot ||
   !groupEditToggle ||
   !layoutEmpty ||
   !layoutWorkspace ||
@@ -692,6 +698,23 @@ const settingsUI = createSettingsUI(
 
 const geometryContext = createGeometryContext();
 const groupController = createGroupController(log, () => geometryContext.geometryIndex.getFaceAdjacency());
+if (groupDeleteSlot) {
+  deleteHold = createHoldButton({
+    label: t("preview.right.groupDelete.btn"),
+    holdMs: 1000,
+    showPercent: false,
+    lockOnConfirm: false,
+    onConfirm: () => {
+      const gid = groupController.getPreviewGroupId();
+      groupController.deleteGroup(gid);
+      deleteHold?.reset();
+    },
+    onCancel: () => {
+      deleteHold?.reset();
+    },
+  });
+  groupDeleteSlot.appendChild(deleteHold.el);
+}
 
 const getCachedPreviewMesh = (groupId: number): { mesh: Mesh, tabClipNumTotal: number, angle: number } | null => {
   const currentHistoryUid = historyManager.getCurrentSnapshotUid()?? -1;
@@ -918,12 +941,7 @@ const getProjectNameFromFile = (name: string) => {
   return lastDot > 0 ? trimmed.slice(0, lastDot) : trimmed;
 };
 setProjectNameLabel(getCurrentProject().name ?? "未命名工程");
-const handleFileSelected = async () => {
-  const file = fileInput.files?.[0];
-  if (!file) {
-    hideLoadingOverlay();
-    return;
-  }
+const handleFileSelectedFromFile = async (file: File) => {
   const ext = getExtension(file.name);
   if (!allowedExtensions.includes(ext)) {
     log(t("log.file.unsupported"), "error");
@@ -962,6 +980,15 @@ const handleFileSelected = async () => {
   hideLoadingOverlay();
 };
 
+const handleFileSelected = async () => {
+  const file = fileInput.files?.[0];
+  if (!file) {
+    hideLoadingOverlay();
+    return;
+  }
+  await handleFileSelectedFromFile(file);
+};
+
 fileInput.addEventListener("change", handleFileSelected);
 
 const focusCancelHandler = () => {
@@ -983,6 +1010,22 @@ homeStartBtn.addEventListener("click", () => {
   fileInput.value = "";
   showLoadingOverlay();
   fileInput.click();
+});
+homeDemoBtn?.addEventListener("click", async () => {
+  try {
+    showLoadingOverlay();
+    const lang = getCurrentLang();
+    const demoFile = demoFiles[lang] ?? demoFiles.zh;
+    const resp = await fetch(`/${demoFile}`, { cache: "no-cache" });
+    if (!resp.ok) throw new Error("demo file fetch failed");
+    const blob = await resp.blob();
+    const file = new File([blob], demoFile, { type: "application/json" });
+    await handleFileSelectedFromFile(file);
+  } catch (err) {
+    console.error("加载 demo 失败", err);
+    log(t("log.demo.loadFail"), "error");
+    hideLoadingOverlay();
+  }
 });
 menuOpenBtn.addEventListener("click", () => {
   fileInput.value = "";
@@ -1094,7 +1137,7 @@ const groupUI = createGroupUI(
     groupFacesCountLabel,
     groupColorBtn,
     groupColorInput,
-    groupDeleteBtn,
+    groupDeleteBtn: (deleteHold?.el as HTMLButtonElement) ?? document.createElement("button"),
     groupVisibilityBtn: groupVisibilityToggle ?? undefined,
   },
   {
