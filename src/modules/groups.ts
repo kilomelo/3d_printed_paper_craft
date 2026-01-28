@@ -4,7 +4,7 @@ import { t } from "./i18n";
 
 export type GroupData = {
   id: number;
-  faces: Set<number>;
+  faces: number[]; // 有序数组，按加入顺序存储
   color: Color;
   treeParent: Map<number, number | null>;
   name: string;
@@ -66,7 +66,7 @@ export function addGroup(newGroupId?: number): number | undefined {
   else{
     exists = {
       id: newGroupId,
-      faces: new Set<number>(),
+      faces: [],
       color: nextPaletteColor(),
       treeParent: new Map<number, number | null>(),
       name: nextGroupName(),
@@ -108,7 +108,8 @@ export function getFaceGroupMap() {
 }
 
 export function getGroupFaces(id: number): Set<number> | undefined {
-  return findGroup(id)?.faces;
+  const faces = findGroup(id)?.faces;
+  return faces ? new Set(faces) : undefined;
 }
 
 export function getGroupColor(id: number): Color | undefined {
@@ -173,7 +174,7 @@ export function exportGroupsData() {
     color: g.color.getHex(),
     treeParent: Array.from(g.treeParent.entries()),
     name: g.name,
-    placeAngle: g.placeAngle,
+    placeAngle: Math.round(g.placeAngle * 100) / 100,
   }));
 }
 export function setFaceGroup(faceId: number, groupId: number | null): boolean {
@@ -182,13 +183,18 @@ export function setFaceGroup(faceId: number, groupId: number | null): boolean {
 
   if (prev !== null) {
     const pg = findGroup(prev);
-    pg?.faces.delete(faceId);
+    if (pg) {
+      const idx = pg.faces.indexOf(faceId);
+      if (idx >= 0) pg.faces.splice(idx, 1);
+    }
   }
 
   if (groupId !== null) {
     const g = findGroup(groupId);
     if (!g) return false;
-    g.faces.add(faceId);
+    if (!g.faces.includes(faceId)) {
+      g.faces.push(faceId);
+    }
   }
   faceGroupMap.set(faceId, groupId);
   return true;
@@ -201,10 +207,10 @@ export function shareEdgeWithGroup(
 ): boolean {
   const neighbors = faceAdjacency.get(faceId);
   if (!neighbors) return false;
-  const groupSet = findGroup(groupId)?.faces;
-  if (!groupSet || groupSet.size === 0) return false;
+  const groupFaces = findGroup(groupId)?.faces;
+  if (!groupFaces || groupFaces.length === 0) return false;
   for (const n of neighbors) {
-    if (groupSet.has(n)) return true;
+    if (groupFaces.includes(n)) return true;
   }
   return false;
 }
@@ -226,11 +232,10 @@ export function canRemoveFace(
   faceAdjacency: Map<number, Set<number>>,
 ): boolean {
   const faces = findGroup(groupId)?.faces;
-  if (!faces || faces.size <= 1) return true;
-  if (!faces.has(faceId)) return true;
+  if (!faces || faces.length <= 1) return true;
+  if (!faces.includes(faceId)) return true;
 
-  const remaining = new Set(faces);
-  remaining.delete(faceId);
+  const remaining = new Set(faces.filter((f) => f !== faceId));
   if (remaining.size === 0) return true;
 
   const start = remaining.values().next().value as number;
@@ -262,27 +267,23 @@ export function rebuildGroupTree(groupId: number, faceAdjacency: Map<number, Set
   const g = findGroup(groupId);
   if (!g) return;
   g.treeParent.clear();
-  if (g.faces.size === 0) return;
-  const order = Array.from(g.faces);
-  const assigned = new Set<number>();
-  const assignedOrder: number[] = [];
+  if (g.faces.length === 0) return;
+  const assigned: number[] = [];
 
   const assign = (face: number, parent: number | null) => {
     g.treeParent.set(face, parent);
-    assigned.add(face);
-    assignedOrder.push(face);
+    assigned.push(face);
   };
 
-  assign(order[0], null);
+  assign(g.faces[0], null);
 
-  while (assigned.size < order.length) {
-    let progressed = false;
-    for (let i = 1; i < order.length; i++) {
-      const face = order[i];
-      if (assigned.has(face)) continue;
+  while (assigned.length < g.faces.length) {
+    for (let i = 1; i < g.faces.length; i++) {
+      const face = g.faces[i];
+      if (assigned.includes(face)) continue;
       let parent: number | null = null;
-      for (let j = assignedOrder.length - 1; j >= 0; j--) {
-        const candidate = assignedOrder[j];
+      for (let j = assigned.length - 1; j >= 0; j--) {
+        const candidate = assigned[j];
         if (areFacesAdjacent(face, candidate, faceAdjacency)) {
           parent = candidate;
           break;
@@ -290,14 +291,10 @@ export function rebuildGroupTree(groupId: number, faceAdjacency: Map<number, Set
       }
       if (parent !== null) {
         assign(face, parent);
-        progressed = true;
       }
     }
-    if (!progressed) {
-      const remaining = order.find((f) => !assigned.has(f))!;
-      assign(remaining, assignedOrder[0]);
-    }
   }
+  g.faces = assigned;
 }
 
 export function getGroupTree(groupId: number) {
@@ -324,7 +321,7 @@ export function applyImportedGroups(
     .forEach((g) => {
       const data: GroupData = {
         id: g.id,
-        faces: new Set<number>(),
+        faces: [],
         color: new Color(g.color),
         treeParent: new Map<number, number | null>(),
         name: g.name ?? `展开组 ${g.id}`,

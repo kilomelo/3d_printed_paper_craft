@@ -89,7 +89,7 @@
   --color: rgba(56, 189, 248, 1);
   --size: 440px;
   --blur: 22px;
-  --opacity: 0.35;
+  --opacity: 0.3;
 
   --cx: 82%;
   --cy: 34%;
@@ -111,7 +111,7 @@
   --color: rgba(168, 85, 247, 1);
   --size: 520px;
   --blur: 22px;
-  --opacity: 0.25;
+  --opacity: 0.2;
 
   --cx: 18%;
   --cy: 20%;
@@ -132,7 +132,7 @@
   --color: rgba(34, 197, 94, 1);
   --size: 400px;
   --blur: 22px;
-  --opacity: 0.30;
+  --opacity: 0.25;
 
   --cx: 30%;
   --cy: 75%;
@@ -205,7 +205,7 @@
 
 .home-card {
   position:relative;
-  background: #29314255;
+  background: #29314244;
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
   text-align: center;

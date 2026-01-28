@@ -32,6 +32,7 @@ export type PPCFile = {
 };
 
 const FORMAT_VERSION = "1.0";
+const MAGIC = "3DPPCBIN";
 
 async function computeChecksum(payload: unknown): Promise<string> {
   const encoder = new TextEncoder();
@@ -52,7 +53,8 @@ async function computeChecksum(payload: unknown): Promise<string> {
 export async function build3dppcData(object: Group): Promise<PPCFile> {
   const collected = collectGeometry(object);
   const filtered = filterLargestComponent(collected);
-  const exportVertices = filtered.vertices;
+  const round5 = (n: number) => Math.round(n * 1e5) / 1e5;
+  const exportVertices = filtered.vertices.map(([x, y, z]) => [round5(x), round5(y), round5(z)]);
   const exportTriangles = filtered.triangles;
   const mapping = filtered.mapping;
 
@@ -101,9 +103,115 @@ export async function build3dppcData(object: Group): Promise<PPCFile> {
   };
 }
 
+function encodeBinaryPPC(data: PPCFile): ArrayBuffer {
+  const enc = new TextEncoder();
+  const meta = {
+    version: data.version,
+    meta: data.meta,
+    groups: data.groups,
+    groupColorCursor: data.groupColorCursor,
+    annotations: data.annotations,
+  };
+  const metaBytes = enc.encode(JSON.stringify(meta));
+
+  const vertexCount = data.vertices.length;
+  const triCount = data.triangles.length;
+  const headerSize = 24; // magic(8) + ver(2) + pad(2) + counts(3x4)
+  const vSize = vertexCount * 3 * 4;
+  const tSize = triCount * 3 * 4;
+  const total = headerSize + vSize + tSize + metaBytes.length;
+  const buffer = new ArrayBuffer(total);
+  const view = new DataView(buffer);
+  let offset = 0;
+
+  // magic
+  for (let i = 0; i < MAGIC.length; i++) view.setUint8(offset++, MAGIC.charCodeAt(i));
+  // version
+  const [major, minor] = data.version.split(".").map((s) => parseInt(s, 10) || 0);
+  view.setUint8(offset++, major);
+  view.setUint8(offset++, minor);
+  view.setUint16(offset, 0, true); offset += 2; // reserved
+  view.setUint32(offset, vertexCount, true); offset += 4;
+  view.setUint32(offset, triCount, true); offset += 4;
+  view.setUint32(offset, metaBytes.length, true); offset += 4;
+
+  // vertices
+  const vArr = new Float32Array(buffer, offset, vertexCount * 3);
+  data.vertices.forEach(([x, y, z], idx) => {
+    const base = idx * 3;
+    vArr[base] = x;
+    vArr[base + 1] = y;
+    vArr[base + 2] = z;
+  });
+  offset += vSize;
+
+  // triangles
+  const tArr = new Uint32Array(buffer, offset, triCount * 3);
+  data.triangles.forEach(([a, b, c], idx) => {
+    const base = idx * 3;
+    tArr[base] = a;
+    tArr[base + 1] = b;
+    tArr[base + 2] = c;
+  });
+  offset += tSize;
+
+  // meta
+  new Uint8Array(buffer, offset, metaBytes.length).set(metaBytes);
+
+  return buffer;
+}
+
+function decodeBinaryPPC(buffer: ArrayBuffer): PPCFile {
+  const view = new DataView(buffer);
+  let offset = 0;
+  let magic = "";
+  for (let i = 0; i < MAGIC.length; i++) {
+    magic += String.fromCharCode(view.getUint8(offset++));
+  }
+  if (magic !== MAGIC) {
+    throw new Error("Invalid 3dppc magic");
+  }
+  const major = view.getUint8(offset++);
+  const minor = view.getUint8(offset++);
+  offset += 2; // reserved
+  const vertexCount = view.getUint32(offset, true); offset += 4;
+  const triCount = view.getUint32(offset, true); offset += 4;
+  const metaLen = view.getUint32(offset, true); offset += 4;
+
+  const vArr = new Float32Array(buffer, offset, vertexCount * 3);
+  offset += vertexCount * 3 * 4;
+  const tArr = new Uint32Array(buffer, offset, triCount * 3);
+  offset += triCount * 3 * 4;
+
+  const metaBytes = new Uint8Array(buffer, offset, metaLen);
+  const dec = new TextDecoder();
+  const meta = JSON.parse(dec.decode(metaBytes));
+
+  const vertices: number[][] = [];
+  for (let i = 0; i < vertexCount; i++) {
+    const base = i * 3;
+    vertices.push([vArr[base], vArr[base + 1], vArr[base + 2]]);
+  }
+  const triangles: number[][] = [];
+  for (let i = 0; i < triCount; i++) {
+    const base = i * 3;
+    triangles.push([tArr[base], tArr[base + 1], tArr[base + 2]]);
+  }
+
+  return {
+    version: meta.version ?? `${major}.${minor}`,
+    meta: meta.meta,
+    vertices,
+    triangles,
+    groups: meta.groups,
+    groupColorCursor: meta.groupColorCursor,
+    annotations: meta.annotations,
+  };
+}
+
 export function download3dppc(data: PPCFile): string {
-  const json = JSON.stringify(data, null, 2);
-  const blob = new Blob([json], { type: "application/json" });
+  const bin = encodeBinaryPPC(data);
+  const blob = new Blob([bin], { type: "application/octet-stream" });
   const url = URL.createObjectURL(blob);
   const base = getCurrentProject().name || "未命名工程";
   const now = new Date();
@@ -122,14 +230,24 @@ export function download3dppc(data: PPCFile): string {
 
 export async function load3dppc(url: string) {
   const res = await fetch(url);
-  const json = (await res.json()) as PPCFile;
-  if (!Array.isArray(json.vertices) || !Array.isArray(json.triangles)) {
+  const buffer = await res.arrayBuffer();
+
+  const isBinary =
+    buffer.byteLength >= MAGIC.length &&
+    MAGIC === new TextDecoder().decode(new Uint8Array(buffer, 0, MAGIC.length));
+
+  const data: PPCFile = isBinary ? decodeBinaryPPC(buffer) : ((await (async () => {
+    const text = new TextDecoder().decode(buffer);
+    return JSON.parse(text) as PPCFile;
+  })()) as PPCFile);
+
+  if (!Array.isArray(data.vertices) || !Array.isArray(data.triangles)) {
     throw new Error("3dppc 格式缺少 vertices/triangles");
   }
   const group = new Group();
 
-  const vertices = json.vertices;
-  const triangles = json.triangles;
+  const vertices = data.vertices;
+  const triangles = data.triangles;
 
   const positions: number[] = [];
   const indices: number[] = [];
@@ -150,9 +268,9 @@ export async function load3dppc(url: string) {
   group.add(mesh);
 
   const colorCursor =
-    typeof json.groupColorCursor === "number"
-      ? json.groupColorCursor
+    typeof data.groupColorCursor === "number"
+      ? data.groupColorCursor
       : undefined;
 
-  return { object: group, groups: json.groups, colorCursor, annotations: json.annotations };
+  return { object: group, groups: data.groups, colorCursor, annotations: data.annotations };
 }
