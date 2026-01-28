@@ -27,7 +27,7 @@
   --htc-bg: #1f2937;          /* idle background */
   --htc-fill-bg: #3ecb3e;     /* progress background */
   --htc-text: #e5e7eb;        /* idle text */
-  --htc-fill-text: #0b1020;   /* progress text */
+  --htc-fill-text: #222;   /* progress text */
   --htc-ring: rgba(147,197,253,.45);
   --htc-font-weight: 400;
   --htc-font-size: 14px;

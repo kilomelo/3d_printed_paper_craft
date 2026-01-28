@@ -2,7 +2,6 @@
   color-scheme: light;
   --bg: #0f172a;
   --panel: #0b1020;
-  --home-panel: #0b102088;
   --panel-muted: #0d1328;
   --border: rgba(255, 255, 255, 0.08);
   --text: #e5e7eb;
@@ -20,11 +19,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 10% 10%, rgba(70, 60, 230, 0.25), transparent 70%),
-    radial-gradient(circle at 80% 10%, rgba(14, 165, 233, 0.15), transparent 95%),
-    radial-gradient(circle at 30% 70%, rgba(56, 189, 248, 0.15), transparent 80%),
-    var(--bg);
+  background: var(--bg);
   font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--text);
   user-select: none;
@@ -319,7 +314,7 @@ textarea {
 .about-modal {
   width: 560px;
   max-height: 80vh;
-  background: #0b1020;
+  background: var(--panel);
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
   display: flex;
@@ -661,7 +656,7 @@ textarea {
 .settings-modal {
   width: 650px;
   max-height: 80vh;
-  background: #0b1020;
+  background: var(--panel);
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
   display: flex;
@@ -672,7 +667,7 @@ textarea {
 .rename-modal {
   width: 500px;
   height: 170px;
-  background: #0b1020;
+  background: var(--panel);
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
   display: flex;

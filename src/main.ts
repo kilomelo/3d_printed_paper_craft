@@ -83,6 +83,14 @@ const applyI18nTexts = () => {
     if (!key) return;
     el.textContent = t(key);
   });
+  document.querySelectorAll<HTMLElement>("[data-i18n-href]").forEach((el) => {
+    const key = el.dataset.i18nHref;
+    if (!key) return;
+    const href = t(key);
+    if (href && el instanceof HTMLAnchorElement) {
+      el.href = href;
+    }
+  });
   document.querySelectorAll<HTMLElement>("[data-i18n-title]").forEach((el) => {
     const key = el.dataset.i18nTitle;
     if (!key) return;
@@ -172,7 +180,7 @@ const applyProjectState = (snap: Snapshot) => {
   const state = snap.data;
   const importedGroups = state.groups.map((g) => ({
     id: g.id,
-    faces: g.faces,
+    faces: Array.from(g.faces),
     color: typeof g.color === "number" ? `#${g.color.toString(16).padStart(6, "0")}` : g.color,
     name: g.name,
     placeAngle: g.placeAngle,
@@ -198,7 +206,7 @@ app.innerHTML = `
     <section id="layout-workspace" class="page">
       <header class="editor-header">
         <div class="editor-title">
-          <span class="editor-title-main" data-i18n="app.title">3D打印纸艺</span>
+          <span class="editor-title-main" data-i18n="app.title">3D 打印纸艺</span>
           <span class="editor-title-project" id="project-name-label"></span>
         </div>
         <div class="editor-header-right">
@@ -468,9 +476,10 @@ const aboutBackBtn = document.querySelector<HTMLButtonElement>("#about-back-btn"
 const aboutBtn = document.querySelector<HTMLButtonElement>("#about-btn");
 langToggleBtn = document.querySelector<HTMLButtonElement>("#lang-toggle");
 langToggleGlobalBtn = document.querySelector<HTMLButtonElement>("#lang-toggle-global");
-const demoFiles: Record<string, string> = {
-  zh: "demo_cn.3dppc",
-  en: "demo_en.3dppc",
+
+const getDemoFileName = () => {
+  const name = t("mainpage.demoFile");
+  return name && name !== "mainpage.demoFile" ? name : "熊猫头_demo.3dppc";
 };
 
 const showLoadingOverlay = () => loadingOverlay?.classList.remove("hidden");
@@ -1014,8 +1023,7 @@ homeStartBtn.addEventListener("click", () => {
 homeDemoBtn?.addEventListener("click", async () => {
   try {
     showLoadingOverlay();
-    const lang = getCurrentLang();
-    const demoFile = demoFiles[lang] ?? demoFiles.zh;
+    const demoFile = getDemoFileName();
     const resp = await fetch(`/${demoFile}`, { cache: "no-cache" });
     if (!resp.ok) throw new Error("demo file fetch failed");
     const blob = await resp.blob();
