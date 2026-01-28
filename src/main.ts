@@ -83,6 +83,14 @@ const applyI18nTexts = () => {
     if (!key) return;
     el.textContent = t(key);
   });
+  document.querySelectorAll<HTMLElement>("[data-i18n-href]").forEach((el) => {
+    const key = el.dataset.i18nHref;
+    if (!key) return;
+    const href = t(key);
+    if (href && el instanceof HTMLAnchorElement) {
+      el.href = href;
+    }
+  });
   document.querySelectorAll<HTMLElement>("[data-i18n-title]").forEach((el) => {
     const key = el.dataset.i18nTitle;
     if (!key) return;
@@ -198,7 +206,7 @@ app.innerHTML = `
     <section id="layout-workspace" class="page">
       <header class="editor-header">
         <div class="editor-title">
-          <span class="editor-title-main" data-i18n="app.title">3D打印纸艺</span>
+          <span class="editor-title-main" data-i18n="app.title">3D 打印纸艺</span>
           <span class="editor-title-project" id="project-name-label"></span>
         </div>
         <div class="editor-header-right">
