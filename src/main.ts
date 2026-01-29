@@ -387,6 +387,19 @@ app.innerHTML = `
           <div class="settings-panel" id="settings-panel-experiment">
             <div class="setting-row">
               <div class="setting-label-row">
+                <span class="setting-label" data-i18n="settings.clipThickness.label">夹子厚度</span>
+                <span class="setting-desc" data-i18n="settings.clipThickness.desc">夹子厚度描述</span>
+              </div>
+              <div class="setting-field">
+                <div class="settings-toggle-group">
+                  <button id="setting-clip-thickness-normal" class="btn settings-inline-btn" data-i18n="settings.clipThickness.normal">标准</button>
+                  <button id="setting-clip-thickness-narrow" class="btn settings-inline-btn" data-i18n="settings.clipThickness.narrow">薄夹</button>
+                </div>
+                <button id="setting-clip-thickness-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.hollow.label">镂空风格</span>
                 <span class="setting-desc" data-i18n="settings.hollow.desc">去除三角面的中间部分，默认关闭</span>
               </div>
@@ -504,6 +517,9 @@ const settingTabThicknessInput = document.querySelector<HTMLInputElement>("#sett
 const settingTabThicknessResetBtn = document.querySelector<HTMLButtonElement>("#setting-tab-thickness-reset");
 const settingTabClipGapInput = document.querySelector<HTMLInputElement>("#setting-tab-clip-gap");
 const settingTabClipGapResetBtn = document.querySelector<HTMLButtonElement>("#setting-tab-clip-gap-reset");
+const settingClipThicknessNormalBtn = document.querySelector<HTMLButtonElement>("#setting-clip-thickness-normal");
+const settingClipThicknessNarrowBtn = document.querySelector<HTMLButtonElement>("#setting-clip-thickness-narrow");
+const settingClipThicknessResetBtn = document.querySelector<HTMLButtonElement>("#setting-clip-thickness-reset");
 const settingHollowOffBtn = document.querySelector<HTMLButtonElement>("#setting-hollow-off");
 const settingHollowOnBtn = document.querySelector<HTMLButtonElement>("#setting-hollow-on");
 const settingHollowResetBtn = document.querySelector<HTMLButtonElement>("#setting-hollow-reset");
@@ -581,6 +597,9 @@ if (
   !settingTabThicknessResetBtn ||
   !settingTabClipGapInput ||
   !settingTabClipGapResetBtn ||
+  !settingClipThicknessNormalBtn ||
+  !settingClipThicknessNarrowBtn ||
+  !settingClipThicknessResetBtn ||
   !settingHollowOffBtn ||
   !settingHollowOnBtn ||
   !settingHollowResetBtn ||
@@ -681,6 +700,9 @@ const settingsUI = createSettingsUI(
     tabThicknessResetBtn: settingTabThicknessResetBtn,
     tabClipGapInput: settingTabClipGapInput,
     tabClipGapResetBtn: settingTabClipGapResetBtn,
+    clipThicknessNormalBtn: settingClipThicknessNormalBtn,
+    clipThicknessNarrowBtn: settingClipThicknessNarrowBtn,
+    clipThicknessResetBtn: settingClipThicknessResetBtn,
     hollowOnBtn: settingHollowOnBtn,
     hollowOffBtn: settingHollowOffBtn,
     hollowResetBtn: settingHollowResetBtn,
@@ -961,14 +983,14 @@ const handleFileSelectedFromFile = async (file: File) => {
     await new Promise((resolve) => setTimeout(resolve, 200));
     const { object, importedGroups, importedColorCursor, importedSeting } = await loadRawObject(file, ext);
     const projectInfo = startNewProject(getProjectNameFromFile(file.name));
-    await renderer3d.applyObject(object, file.name);
-    if (importedGroups && importedGroups.length) {
-      groupController.applyImportedGroups(importedGroups, importedColorCursor);
-    }
     if (importedSeting) {
       importSettings(importedSeting);
     } else {
       resetSettings();
+    }
+    await renderer3d.applyObject(object, file.name);
+    if (importedGroups && importedGroups.length) {
+      groupController.applyImportedGroups(importedGroups, importedColorCursor);
     }
     appEventBus.emit("projectChanged", projectInfo);
     projectLoaded();
@@ -1112,8 +1134,12 @@ renderer2d.setEdgeQueryProviders({
 const menuButtons = [menuOpenBtn, exportBtn, exportGroupStepBtn, exportGroupStlBtn, exportTabClipBtn, previewGroupModelBtn, settingsOpenBtn, aboutBtn];
 const updateMenuState = () => {
   const isPreview = getWorkspaceState() === "previewGroupModel";
-  menuButtons.forEach((btn) => btn?.classList.toggle("hidden", isPreview));
+  menuButtons.forEach((btn) => {
+    const shouldHide = isPreview && btn !== exportGroupStlBtn;
+    btn?.classList.toggle("hidden", shouldHide);
+  });
   exitPreviewBtn.classList.toggle("hidden", !isPreview);
+  exportGroupStlBtn?.classList.toggle("hidden", false); // 在预览与普通模式都可见
   groupPreviewPanel.classList.toggle("hidden", isPreview);
   settingsOpenBtn.classList.toggle("hidden", isPreview);
   editorPreviewEl.classList.toggle("single-col", isPreview);
@@ -1149,7 +1175,7 @@ const groupUI = createGroupUI(
     groupVisibilityBtn: groupVisibilityToggle ?? undefined,
   },
   {
-    onPreviewSelect: (id) => {
+    onGroupSelect: (id) => {
       if (id === groupController.getPreviewGroupId()) return;
       groupController.setPreviewGroupId(id);
       const name = groupController.getGroupName(id) ?? `展开组 ${groupController.getGroupIds().indexOf(id) + 1}`;
@@ -1169,6 +1195,8 @@ const groupUI = createGroupUI(
       setFileSaved(false);
       groupUI.render(buildGroupUIState());
     },
+    onTabHover: (id) => appEventBus.emit("groupBreathStart", id),
+    onTabHoverOut: (id) => appEventBus.emit("groupBreathEnd", id),
   },
 );
 

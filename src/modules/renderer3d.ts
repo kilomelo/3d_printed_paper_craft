@@ -56,7 +56,6 @@ export function createRenderer3D(
   getViewport: () => { width: number; height: number },
   mountRenderer: (canvas: HTMLElement) => void,
 ) {
-  const BREATH_DURATION = 800;
   let edgesVisible = true;
   let seamsVisible = true;
   let facesVisible = true;
@@ -69,9 +68,6 @@ export function createRenderer3D(
   let edges: EdgeRecord[] = geometryIndex.getEdgesArray();
   let edgeKeyToId = geometryIndex.getEdgeKeyToId();
   let vertexKeyToPos = geometryIndex.getVertexKeyToPos();
-  let breathGroupId: number | null = null;
-  let breathStart = 0;
-  let breathRaf: number | null = null;
   let gizmosVisible = true;
   let gizmosVisibleBeforePreview = false;
   
@@ -104,16 +100,8 @@ export function createRenderer3D(
     canEdit: () => getWorkspaceState() === "editingGroup",
     isPointerLocked: () => pointerLocked,
     mapFaceId: (mesh, faceIndex) => geometryIndex.getFaceId(mesh, faceIndex ?? -1),
-    onAddFace: (faceId: number) => {
-      stopGroupBreath();
-      return groupApi.handleAddFace(faceId);
-    },
-
-    onRemoveFace: (faceId: number) => {
-      stopGroupBreath();
-      return groupApi.handleRemoveFace(faceId);
-    },
-    // hoverState,
+    onAddFace: (faceId: number) => groupApi.handleAddFace(faceId),
+    onRemoveFace: (faceId: number) => groupApi.handleRemoveFace(faceId),
     emitFaceHover: (faceId) => {
       if (faceId === null) {
         appEventBus.emit("faceHover3DClear", undefined);
@@ -223,12 +211,6 @@ export function createRenderer3D(
   );
 
   const specialEdgeManager = createSpecialEdgeManager(modelGroup, getViewport);
-
-  function syncGroupStateFromData(groupId: number) {
-    interactionController?.endBrush();
-    stopGroupBreath();
-    if (groupApi.getGroupFaces(groupId)?.size) startGroupBreath(groupId);
-  }
 
   const faceColorService = createFaceColorService({
     getFaceIndexMap: () => faceIndexMap,
@@ -438,7 +420,6 @@ export function createRenderer3D(
   document.addEventListener("pointerlockchange", onPointerLockChange);
 
   function clearModel() {
-    stopGroupBreath();
     interactionController?.endBrush();
     disposeGroupDeep(modelGroup);
     disposeGroupDeep(previewModelGroup);
@@ -627,7 +608,6 @@ export function createRenderer3D(
       applyEdgeVisibility();
     }
   });
-  appEventBus.on("groupCurrentChanged", (groupId: number) => syncGroupStateFromData(groupId));
   appEventBus.on("settingsChanged", updateBBox);
   appEventBus.on("historyApplied", updateBBox);
   appEventBus.on("edgeHover2D", ({ p1, p2 }) => {
@@ -639,61 +619,23 @@ export function createRenderer3D(
   appEventBus.on("edgeHover2DClear", () => {
     hoverEdgeLine.visible = false;
   });
-  appEventBus.on("groupVisibilityChanged", ({ groupId, visible }) => {
-    if (!stopGroupBreath()) specialEdgeManager.updateVisibility(
+
+  appEventBus.on("groupBreathStart", (groupId) => {
+    specialEdgeManager.updateVisibility(
+      () => edges,
+      groupApi.getFaceGroupMap,
+      groupApi.getGroupVisibility,
+      groupId,
+    );
+  });
+
+  appEventBus.on("groupBreathEnd", (groupId) => {
+    specialEdgeManager.updateVisibility(
       () => edges,
       groupApi.getFaceGroupMap,
       groupApi.getGroupVisibility,
     );
   });
-
-  function stopGroupBreath(): boolean {
-    if (!breathGroupId) return false;
-    appEventBus.emit("groupBreathEnd", breathGroupId??-1);
-    specialEdgeManager.updateVisibility(
-      () => edges,
-      groupApi.getFaceGroupMap,
-      groupApi.getGroupVisibility,
-    );
-    if (breathRaf !== null) {
-      cancelAnimationFrame(breathRaf);
-      breathRaf = null;
-    }
-    const gid = breathGroupId;
-    breathGroupId = null;
-    return true;
-  }
-
-  function startGroupBreath(groupId: number) {
-    stopGroupBreath();
-    appEventBus.emit("groupBreathStart", groupId);
-    specialEdgeManager.updateVisibility(
-      () => edges,
-      groupApi.getFaceGroupMap,
-      groupApi.getGroupVisibility,
-      groupId
-    );
-    breathGroupId = groupId;
-    breathStart = performance.now();
-    const faces = groupApi.getGroupFaces(groupId);
-    if (!faces || faces.size === 0) {
-      breathGroupId = null;
-      return;
-    }
-
-    const loop = () => {
-      if (breathGroupId !== groupId) return;
-      const now = performance.now();
-      const elapsed = now - breathStart;
-      const progress = Math.min(1, elapsed / BREATH_DURATION);
-      if (progress >= 1) {
-        stopGroupBreath();
-        return;
-      }
-      breathRaf = requestAnimationFrame(loop);
-    };
-    breathRaf = requestAnimationFrame(loop);
-  }
 
   async function applyObject(object: Object3D, name: string) {
     clearModel();
@@ -734,7 +676,7 @@ export function createRenderer3D(
     }
     bboxHelper.computeLineDistances();
     gizmosGroup.add(bboxHelper);
-    const { scale } = getSettings();
+    const scale = getSettings().scale;
     const size = boxSize.multiplyScalar(scale);
     bboxLabels = [
       createLabelSprite(size.x.toFixed(1)),

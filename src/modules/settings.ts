@@ -9,6 +9,7 @@ export type Settings = {
   tabWidth: number;
   tabThickness: number;
   tabClipGap: number;
+  clipThickness: "normal" | "narrow";
   hollowStyle: boolean;
   wireframeThickness: number;
 };
@@ -21,6 +22,7 @@ export const SETTINGS_LIMITS = {
   tabWidth: { min: 0, max: 20 },
   tabThickness: { min: 1, max: 2 },
   tabClipGap: { min: 0.1, max: 0.25 },
+  clipThickness: { allowed: ["normal", "narrow"] as const },
   wireframeThickness: { min: 4, max: 10 },
 } as const;
 
@@ -32,6 +34,7 @@ const defaultSettings: Settings = {
   tabWidth: 4,
   tabThickness: 1,
   tabClipGap: 0.15,
+  clipThickness: "normal",
   hollowStyle: false,
   wireframeThickness: 5,
 };
@@ -90,6 +93,11 @@ export function setTabThickness(val: number) {
 export function setTabClipGap(val: number) {
   if (Number.isNaN(val) || val < SETTINGS_LIMITS.tabClipGap.min || val > SETTINGS_LIMITS.tabClipGap.max) return;
   current = { ...current, tabClipGap: val };
+}
+
+export function setClipThickness(val: Settings["clipThickness"]) {
+  if (!SETTINGS_LIMITS.clipThickness.allowed.includes(val)) return;
+  current = { ...current, clipThickness: val };
 }
 
 export function setHollowStyle(val: boolean) {

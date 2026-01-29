@@ -304,7 +304,7 @@ const buildSolidFromTrianglesWithAngles = async (
         const tabChamferSketch = sketchFromContourPoints([
           [tabActualWidth + 1e-4, tabThickness + layerHeight - chamferSize],
           [tabActualWidth + 1e-4, tabThickness + layerHeight + 1e-4],
-          [tabActualWidth - chamferSize * Math.tan(Math.PI / 3), tabThickness + layerHeight + 1e-4],
+          [tabActualWidth - chamferSize * Math.tan(Math.PI / 4), tabThickness + layerHeight + 1e-4],
         ], edgePerpendicularPlane, -1);
         // 舌片两端也做倒角防止从一个顶点触发的拼接边舌片之间的干涉
         const tabEndChamferSketch = sketchFromContourPoints([
@@ -316,11 +316,11 @@ const buildSolidFromTrianglesWithAngles = async (
           onLog?.(t("log.replicad.tabChamfer.fail"));
           console.warn('[ReplicadModeling] failed to create tab chamfer sketch for edge, skip chamfer', edge);
         } else {
-          // const tabChamferTool = tabChamferSketch.extrude(distAB);
-          // tabSolid = tabSolid.cut(tabChamferTool).simplify();
-          // const tabEndChamferSolid = tabEndChamferSketch.extrude(distAB + 2 * tabExtendMargin);
-          // tabSolid = tabSolid.cut(tabEndChamferSolid.clone().rotate(-tabAngleA, [pointA[0], pointA[1], 0], [0,0,1])).simplify();
-          // tabSolid = tabSolid.cut(tabEndChamferSolid.rotate(tabAngleB, [pointB[0], pointB[1], 0], [0,0,1])).simplify();
+          const tabChamferTool = tabChamferSketch.extrude(distAB);
+          tabSolid = tabSolid.cut(tabChamferTool).simplify();
+          const tabEndChamferSolid = tabEndChamferSketch.extrude(distAB + 2 * tabExtendMargin);
+          tabSolid = tabSolid.cut(tabEndChamferSolid.clone().rotate(-tabAngleA, [pointA[0], pointA[1], 0], [0,0,1])).simplify();
+          tabSolid = tabSolid.cut(tabEndChamferSolid.rotate(tabAngleB, [pointB[0], pointB[1], 0], [0,0,1])).simplify();
           booleanOperations += 3;
         }
 
@@ -437,10 +437,11 @@ const buildSolidFromTrianglesWithAngles = async (
 
 export const buildTabClip = async () => {
   await ensureReplicadOC();
-  const { tabThickness, tabWidth } = getSettings();
+  const { tabThickness, tabWidth, clipThickness } = getSettings();
   const { tabClipKeelThickness, tabClipWingThickness, tabClipWingLength, tabClipGap } = tabClipGemometry();
+  const actualWingThickness  = clipThickness === "narrow" ? tabClipWingThickness * 0.6 : tabClipWingThickness;
   const keelChamferSize = Math.min(tabClipKeelThickness / 2, 0.5);
-  const wingChamferSize = Math.max(tabClipWingThickness - 0.5, 1e-2);
+  const wingChamferSize = Math.max(actualWingThickness - 0.5, 1e-2);
   const tabClipSketchKeel = sketchFromContourPoints([
     [0, 0],
     [tabClipKeelThickness / 2, 0],
@@ -449,22 +450,22 @@ export const buildTabClip = async () => {
     [0, tabWidth],
   ], "XZ");
   const tabClipSketchWing = sketchFromContourPoints([
-    [0, tabThickness + tabClipWingThickness],
-    [tabClipWingLength / 2 - wingChamferSize, tabThickness + tabClipWingThickness],
-    [tabClipWingLength / 2, tabThickness + tabClipWingThickness - wingChamferSize],
+    [0, tabThickness + actualWingThickness],
+    [tabClipWingLength / 2 - wingChamferSize, tabThickness + actualWingThickness],
+    [tabClipWingLength / 2, tabThickness + actualWingThickness - wingChamferSize],
     [tabClipWingLength / 2, tabThickness + tabClipGap / 2],
     [tabClipKeelThickness / 2, tabThickness + tabClipGap],
     [0, tabThickness + tabClipGap],
   ], "XY");
   const tabClipSketchWingChamferYZ = sketchFromContourPoints([
-    [tabThickness + tabClipWingThickness + tabClipGap + 1e-4, tabWidth + 1e-4],
-    [tabThickness + tabClipWingThickness + tabClipGap + 1e-4, tabWidth - wingChamferSize],
-    [tabThickness + tabClipWingThickness + tabClipGap - wingChamferSize, tabWidth + 1e-4],
+    [tabThickness + actualWingThickness + tabClipGap + 1e-4, tabWidth + 1e-4],
+    [tabThickness + actualWingThickness + tabClipGap + 1e-4, tabWidth - wingChamferSize],
+    [tabThickness + actualWingThickness + tabClipGap - wingChamferSize, tabWidth + 1e-4],
   ], "YZ", 0);
   if (!tabClipSketchKeel || !tabClipSketchWing || !tabClipSketchWingChamferYZ) {
     throw new Error("舌片卡子草图创建失败");
   }
-  const tabClipSolidOneQuater = tabClipSketchKeel.extrude(-(tabClipWingThickness + tabThickness))
+  const tabClipSolidOneQuater = tabClipSketchKeel.extrude(-(actualWingThickness + tabThickness))
     .fuse(tabClipSketchWing.extrude(tabWidth))
     .cut(tabClipSketchWingChamferYZ.extrude(tabClipWingLength / 2 + 1)).simplify();
   const tabClipSolidHalf = tabClipSolidOneQuater.fuse(tabClipSolidOneQuater.clone().mirror("YZ")).simplify();
