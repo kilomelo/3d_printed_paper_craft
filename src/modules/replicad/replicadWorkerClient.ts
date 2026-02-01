@@ -5,9 +5,9 @@ import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { getCurrentLang } from "../i18n";
 
 type WorkerResponse =
-  | { id: number; ok: true; type: "step"; buffer: ArrayBuffer; mime: string; tabClipNumTotal: number }
-  | { id: number; ok: true; type: "stl"; buffer: ArrayBuffer; mime: string; tabClipNumTotal: number }
-  | { id: number; ok: true; type: "mesh"; buffer: ArrayBuffer; mime: string; tabClipNumTotal: number }
+  | { id: number; ok: true; type: "step"; buffer: ArrayBuffer; mime: string }
+  | { id: number; ok: true; type: "stl"; buffer: ArrayBuffer; mime: string }
+  | { id: number; ok: true; type: "mesh"; buffer: ArrayBuffer; mime: string }
   | { id: number; ok: true; type: "progress"; message: number }
   | { id: number; ok: true; type: "log"; message: string; tone?: "info" | "error" | "success" | "progress" }
   | { id: number; ok: false; error: string };
@@ -87,7 +87,7 @@ export async function buildStepInWorker(
     WorkerResponse,
     { type: "step"; ok: true }
   >;
-  return { blob: new Blob([res.buffer], { type: res.mime }), tabClipNumTotal: res.tabClipNumTotal };
+  return { blob: new Blob([res.buffer], { type: res.mime }) };
 }
 
 export async function buildStlInWorker(
@@ -99,7 +99,7 @@ export async function buildStlInWorker(
     WorkerResponse,
     { type: "stl"; ok: true }
   >;
-  return { blob: new Blob([res.buffer], { type: res.mime }), tabClipNumTotal: res.tabClipNumTotal };
+  return { blob: new Blob([res.buffer], { type: res.mime }) };
 }
 
 const stlLoader = new STLLoader();
@@ -118,5 +118,5 @@ export async function buildMeshInWorker(
   geometry.computeBoundingSphere();
   const mesh = new Mesh(geometry);
   mesh.name = "Replicad Mesh";
-  return { mesh, tabClipNumTotal: res.tabClipNumTotal };
+  return { mesh };
 }

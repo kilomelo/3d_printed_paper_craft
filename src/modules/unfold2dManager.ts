@@ -512,7 +512,7 @@ export function createUnfold2dManager(
         lineGeom.setPositions(new Float32Array([p1.x, p1.y, 0, p2.x, p2.y, 1]));
         const angleRad = angleIndex.getAngle(eid);
         const mat =
-        angleRad > Math.PI
+        angleRad > Math.PI + 1e-4
         ? createUnfoldEdgeLineFoldinMaterial({ width: sizeVec.x || 1, height: sizeVec.y || 1 })
         : createUnfoldEdgeLineFoldoutMaterial({ width: sizeVec.x || 1, height: sizeVec.y || 1 });
         const line = new LineSegments2(lineGeom, mat);

@@ -16,6 +16,9 @@ type SettingsUIRefs = {
   tabThicknessResetBtn: HTMLButtonElement;
   tabClipGapInput: HTMLInputElement;
   tabClipGapResetBtn: HTMLButtonElement;
+  clipGapAdjustNormalBtn: HTMLButtonElement;
+  clipGapAdjustNarrowBtn: HTMLButtonElement;
+  clipGapAdjustResetBtn: HTMLButtonElement;
   hollowOnBtn: HTMLButtonElement;
   hollowOffBtn: HTMLButtonElement;
   hollowResetBtn: HTMLButtonElement;
@@ -62,6 +65,11 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
   const updateHollowButtons = () => {
     refs.hollowOnBtn.classList.toggle("active", settingsDraft.hollowStyle);
     refs.hollowOffBtn.classList.toggle("active", !settingsDraft.hollowStyle);
+  };
+
+  const updateClipGapAdjustButtons = () => {
+    refs.clipGapAdjustNormalBtn.classList.toggle("active", settingsDraft.clipGapAdjust === "off");
+    refs.clipGapAdjustNarrowBtn.classList.toggle("active", settingsDraft.clipGapAdjust === "on");
   };
 
   const updateWireframeEnabled = () => {
@@ -154,6 +162,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
     refs.tabClipGapInput.value = String(settingsDraft.tabClipGap);
     refs.wireframeThicknessInput.value = String(settingsDraft.wireframeThickness);
+    updateClipGapAdjustButtons();
     updateHollowButtons();
     updateWireframeEnabled();
     [refs.scaleInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
@@ -180,6 +189,18 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     settingsDraft.hollowStyle = def;
     updateHollowButtons();
     updateWireframeEnabled();
+  });
+  refs.clipGapAdjustNormalBtn.addEventListener("click", () => {
+    settingsDraft.clipGapAdjust = "off";
+    updateClipGapAdjustButtons();
+  });
+  refs.clipGapAdjustNarrowBtn.addEventListener("click", () => {
+    settingsDraft.clipGapAdjust = "on";
+    updateClipGapAdjustButtons();
+  });
+  refs.clipGapAdjustResetBtn.addEventListener("click", () => {
+    settingsDraft.clipGapAdjust = getDefaultSettings().clipGapAdjust;
+    updateClipGapAdjustButtons();
   });
   refs.navBasic.addEventListener("click", () => {
     activateTab("basic");
@@ -316,6 +337,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
     refs.tabClipGapInput.value = String(settingsDraft.tabClipGap);
     refs.wireframeThicknessInput.value = String(settingsDraft.wireframeThickness);
+    updateClipGapAdjustButtons();
     updateHollowButtons();
     [refs.scaleInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
       updateInputColor(el, true),
@@ -348,6 +370,10 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     }
     if (settingsDraft.tabClipGap !== settingsSnapshot.tabClipGap) {
       changes.push(t("log.settings.changed", { label: t("settings.tabClipGap.label"), value: settingsDraft.tabClipGap }));
+    }
+    if (settingsDraft.clipGapAdjust !== settingsSnapshot.clipGapAdjust) {
+      const label = settingsDraft.clipGapAdjust === "off" ? t("settings.clipGapAdjusts.off") : t("settings.clipGapAdjusts.on");
+      changes.push(t("log.settings.changed", { label: t("settings.clipGapAdjusts.label"), value: label }));
     }
     if (settingsDraft.hollowStyle !== settingsSnapshot.hollowStyle) {
       const hollowValue = settingsDraft.hollowStyle ? t("settings.hollow.on") : t("settings.hollow.off");

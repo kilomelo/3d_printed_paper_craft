@@ -53,18 +53,134 @@
       height: auto;
       border: 0;
     }
+
+    /* Divider */
+    .section-divider{
+      margin: 12px 0 12px;
+      border: 0;
+      border-top: 1px solid rgba(255,255,255,0.10);
+    }
+
+    /* Sponsor (minimal) */
+    details.sponsor{
+      margin-top: 0;
+    }
+    details.sponsor > summary{
+      list-style: none;
+      cursor: pointer;
+
+      /* clickable hit area */
+      padding: 8px 10px;
+      margin: 0;
+
+      font-size: 14px;
+      font-weight: 600;
+      color: #e5e7eb;
+      background: rgba(255,255,255,0.04);
+
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+
+      border-radius: 10px;
+      user-select: none;
+      -webkit-user-select: none;
+
+      /* mobile tap highlight */
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    details.sponsor > summary::-webkit-details-marker { display: none; }
+
+    details.sponsor > summary:hover{
+      background: rgba(255,255,255,0.10);
+    }
+    details.sponsor > summary:active{
+      background: rgba(255,255,255,0.15);
+    }
+
+    details.sponsor > summary:focus-visible{
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(147,197,253,.25);
+      background: rgba(255,255,255,0.04);
+    }
+
+    .sponsor-body{
+      margin-top: 8px;
+    }
+
+    /* subtle open animation */
+    details.sponsor[open] .sponsor-body{
+      animation: sponsor-fade .12s ease-out;
+    }
+    @keyframes sponsor-fade{
+      from { opacity: 0; transform: translateY(-2px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .qr-grid{
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      max-width: 520px;
+    }
+
+    .qr-img{
+      display: block;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.04);
+      object-fit: cover;
+    }
+
+    @media (max-width: 520px){
+      .qr-grid{ grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
   <div class="wrap">
     <h1>关于 3D 打印纸艺</h1>
     <p>这是一个开源项目，用于将低多边形模型转为可直接3D打印的纸艺模型。</p>
-    <p>项目地址：<a href="https://github.com/kilomelo/3d_printed_paper_craft" target="_blank">https://github.com/kilomelo/3d_printed_paper_craft</a></p>
+    <p>项目地址：<a href="https://github.com/kilomelo/3d_printed_paper_craft" target="_blank" rel="noreferrer">https://github.com/kilomelo/3d_printed_paper_craft</a></p>
+
     <p>使用指南：</p>
     <div class="video">
-      <iframe src="//player.bilibili.com/player.html?isOutside=true&aid=114523474297015&bvid=BV1CTJNzQEk4&cid=30010246003&p=1&t=0&autoplay=0" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
+      <iframe
+        src="//player.bilibili.com/player.html?isOutside=true&aid=114523474297015&bvid=BV1CTJNzQEk4&cid=30010246003&p=1&t=0&autoplay=0"
+        scrolling="no"
+        border="0"
+        frameborder="no"
+        framespacing="0"
+        allowfullscreen="true">
+      </iframe>
     </div>
-    <p>视频地址：<a href="https://www.bilibili.com/video/BV1CTJNzQEk4" target="_blank">https://www.bilibili.com/video/BV1CTJNzQEk4</a></p>
+    <p>视频地址：<a href="https://www.bilibili.com/video/BV1CTJNzQEk4" target="_blank" rel="noreferrer">https://www.bilibili.com/video/BV1CTJNzQEk4</a></p>
+
+    <hr class="section-divider" />
+
+    <details class="sponsor" id="sponsor">
+      <summary aria-label="展开赞助二维码">喜欢这个项目？</summary>
+      <div class="sponsor-body">
+        <p>欢迎赞助任意金额，支持网站运营与持续开发，谢谢！</p>
+
+        <div class="qr-grid">
+          <img
+            class="qr-img"
+            src="/donate/wechat256.png"
+            alt="微信二维码图"
+          />
+          <img
+            class="qr-img"
+            src="/donate/alipay256.png"
+            alt="支付宝二维码"
+          />
+        </div>
+      </div>
+    </details>
   </div>
 </body>
 </html>

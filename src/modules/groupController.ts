@@ -35,7 +35,6 @@ export function createGroupController(
 ) {
   let previewGroupId = 1;
   const groupVisibility = new Map<number, boolean>();
-  let groupBreathing = false;
 
   resetGroups();
 
@@ -43,12 +42,6 @@ export function createGroupController(
     previewGroupId = 1;
     resetGroups();
     groupVisibility.clear();
-  });
-  appEventBus.on("groupBreathStart", () => {
-    groupBreathing = true;
-  });
-  appEventBus.on("groupBreathEnd", () => {
-    groupBreathing = false;
   });
   
   function setGroupColor(groupId: number, color: Color) {

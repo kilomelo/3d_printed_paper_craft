@@ -60,14 +60,16 @@ const isOcctValid = (shape: { wrapped: any }) => {
 };
 
 const tabClipGemometry = () => {
-  const { tabThickness, tabWidth, tabClipGap } = getSettings();
+  const { tabThickness, tabWidth, tabClipGap, clipGapAdjust } = getSettings();
   // 舌片卡子相关定义
   const tabClipKeelThickness = 2 * tabThickness;
-  const tabClipWingThickness = tabClipKeelThickness;
+  const tabClipWingThickness = tabClipKeelThickness * 0.7;
   const tabClipWingLength = Math.sqrt(tabClipWingThickness) * 5;
   const tabClipMinSpacing = tabClipWingLength + 1;
   const tabClipMaxSpacing = tabClipWingLength * 4 + tabWidth;
-  return { tabClipKeelThickness, tabClipWingThickness, tabClipWingLength, tabClipMinSpacing, tabClipMaxSpacing, tabClipGap };
+  // 如果开启了自动调整配合间隙，则当间隙设置设置小于1时，增加配合间隙，防止间隙太小安装不上
+  const clipGap = clipGapAdjust === "off" ? tabClipGap : (tabThickness > 1 ? (tabClipGap - (tabThickness - 1) * 0.04) : (tabClipGap - (tabThickness - 1) * 0.9));
+  return { tabClipKeelThickness, tabClipWingThickness, tabClipWingLength, tabClipMinSpacing, tabClipMaxSpacing, clipGap };
 };
 
 // 实际实行参数化建模的方法
@@ -76,7 +78,7 @@ const buildSolidFromTrianglesWithAngles = async (
   onProgress?: (progress: number) => void,
   onLog?: (msg: string) => void,
   lang?: string,
-): Promise<{ solid: Shape3D; tabClipNumTotal: number }> => {
+): Promise<{ solid: Shape3D }> => {
   await ensureI18nReady(lang);
   onProgress?.(0);
   const { layerHeight, connectionLayers, bodyLayers, tabWidth, tabThickness, hollowStyle, wireframeThickness } = getSettings();
@@ -110,7 +112,6 @@ const buildSolidFromTrianglesWithAngles = async (
   const minDistance = 0.2 * connectionLayers;
   // 舌片外沿倒角
   const chamferSize = tabThickness - layerHeight;
-  let tabClipNumTotal: number = 0;
   let booleanOperations: number = 0;
   trianglesWithAngles.forEach((triData, i) => {
     const isDefined = <T,>(v: T | undefined | null): v is T => v != null;
@@ -237,7 +238,6 @@ const buildSolidFromTrianglesWithAngles = async (
           : tabLength < 14 * tabClipMinSpacing ? 4
           : Math.max(5, Math.floor(tabLength / tabClipMaxSpacing));
         // console.log(`[ReplicadModeling] tab clip num for edge`, { tabLength, tabClipNum });
-        tabClipNumTotal += tabClipNum;
         const tabClipSpacing = tabClipNum === 1 ? 0 : (tabLength - tabClipWingLength * 3) / (tabClipNum - 1);
         const tabMiddlePoint = isTriangleTab ? tabPoint : [
           (tabTrapezoid[2][0] + tabTrapezoid[3][0]) / 2,
@@ -304,7 +304,7 @@ const buildSolidFromTrianglesWithAngles = async (
         const tabChamferSketch = sketchFromContourPoints([
           [tabActualWidth + 1e-4, tabThickness + layerHeight - chamferSize],
           [tabActualWidth + 1e-4, tabThickness + layerHeight + 1e-4],
-          [tabActualWidth - chamferSize * Math.tan(Math.PI / 3), tabThickness + layerHeight + 1e-4],
+          [tabActualWidth - chamferSize * Math.tan(Math.PI / 4), tabThickness + layerHeight + 1e-4],
         ], edgePerpendicularPlane, -1);
         // 舌片两端也做倒角防止从一个顶点触发的拼接边舌片之间的干涉
         const tabEndChamferSketch = sketchFromContourPoints([
@@ -316,11 +316,11 @@ const buildSolidFromTrianglesWithAngles = async (
           onLog?.(t("log.replicad.tabChamfer.fail"));
           console.warn('[ReplicadModeling] failed to create tab chamfer sketch for edge, skip chamfer', edge);
         } else {
-          // const tabChamferTool = tabChamferSketch.extrude(distAB);
-          // tabSolid = tabSolid.cut(tabChamferTool).simplify();
-          // const tabEndChamferSolid = tabEndChamferSketch.extrude(distAB + 2 * tabExtendMargin);
-          // tabSolid = tabSolid.cut(tabEndChamferSolid.clone().rotate(-tabAngleA, [pointA[0], pointA[1], 0], [0,0,1])).simplify();
-          // tabSolid = tabSolid.cut(tabEndChamferSolid.rotate(tabAngleB, [pointB[0], pointB[1], 0], [0,0,1])).simplify();
+          const tabChamferTool = tabChamferSketch.extrude(distAB);
+          tabSolid = tabSolid.cut(tabChamferTool).simplify();
+          const tabEndChamferSolid = tabEndChamferSketch.extrude(distAB + 2 * tabExtendMargin);
+          tabSolid = tabSolid.cut(tabEndChamferSolid.clone().rotate(-tabAngleA, [pointA[0], pointA[1], 0], [0,0,1])).simplify();
+          tabSolid = tabSolid.cut(tabEndChamferSolid.rotate(tabAngleB, [pointB[0], pointB[1], 0], [0,0,1])).simplify();
           booleanOperations += 3;
         }
 
@@ -432,13 +432,13 @@ const buildSolidFromTrianglesWithAngles = async (
     console.warn('[ReplicadModeling] final solid is not valid OCCT shape');
   }
   // console.log(`[ReplicadModeling] buildSolidFromTrianglesWithAngles completed with ${booleanOperations} boolean operations`);
-  return { solid: connectionSolid, tabClipNumTotal };
+  return { solid: connectionSolid };
 };
 
 export const buildTabClip = async () => {
   await ensureReplicadOC();
   const { tabThickness, tabWidth } = getSettings();
-  const { tabClipKeelThickness, tabClipWingThickness, tabClipWingLength, tabClipGap } = tabClipGemometry();
+  const { tabClipKeelThickness, tabClipWingThickness, tabClipWingLength, clipGap } = tabClipGemometry();
   const keelChamferSize = Math.min(tabClipKeelThickness / 2, 0.5);
   const wingChamferSize = Math.max(tabClipWingThickness - 0.5, 1e-2);
   const tabClipSketchKeel = sketchFromContourPoints([
@@ -452,14 +452,14 @@ export const buildTabClip = async () => {
     [0, tabThickness + tabClipWingThickness],
     [tabClipWingLength / 2 - wingChamferSize, tabThickness + tabClipWingThickness],
     [tabClipWingLength / 2, tabThickness + tabClipWingThickness - wingChamferSize],
-    [tabClipWingLength / 2, tabThickness + tabClipGap / 2],
-    [tabClipKeelThickness / 2, tabThickness + tabClipGap],
-    [0, tabThickness + tabClipGap],
+    [tabClipWingLength / 2, tabThickness + clipGap / 2],
+    [tabClipKeelThickness / 2, tabThickness + clipGap],
+    [0, tabThickness + clipGap],
   ], "XY");
   const tabClipSketchWingChamferYZ = sketchFromContourPoints([
-    [tabThickness + tabClipWingThickness + tabClipGap + 1e-4, tabWidth + 1e-4],
-    [tabThickness + tabClipWingThickness + tabClipGap + 1e-4, tabWidth - wingChamferSize],
-    [tabThickness + tabClipWingThickness + tabClipGap - wingChamferSize, tabWidth + 1e-4],
+    [tabThickness + tabClipWingThickness + clipGap + 1e-4, tabWidth + 1e-4],
+    [tabThickness + tabClipWingThickness + clipGap + 1e-4, tabWidth - wingChamferSize],
+    [tabThickness + tabClipWingThickness + clipGap - wingChamferSize, tabWidth + 1e-4],
   ], "YZ", 0);
   if (!tabClipSketchKeel || !tabClipSketchWing || !tabClipSketchWingChamferYZ) {
     throw new Error("舌片卡子草图创建失败");
@@ -476,14 +476,13 @@ export async function buildGroupStepFromTriangles(
   onProgress?: (msg: number) => void,
   onLog?: (msg: string) => void,
   lang?: string,
-): Promise<{ blob: Blob; tabClipNumTotal: number }> {
+): Promise<Blob> {
   if (!trisWithAngles.length) {
     onLog?.(t("log.replicad.noTriangles"));
     throw new Error("没有可用于建模的展开三角形");
   }
-  const { solid, tabClipNumTotal } = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog, lang);
-  const blob = solid.blobSTEP();
-  return { blob, tabClipNumTotal };
+  const { solid } = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog, lang);
+  return solid.blobSTEP();
 }
 
 const buildMeshTolerance = 0.1;
@@ -493,14 +492,13 @@ export async function buildGroupStlFromTriangles(
   onProgress?: (msg: number) => void,
   onLog?: (msg: string) => void,
   lang?: string,
-): Promise<{ blob: Blob; tabClipNumTotal: number }> {
+): Promise<Blob> {
   if (!trisWithAngles.length) {
     onLog?.(t("log.replicad.noTriangles"));
     throw new Error("没有可用于建模的展开三角形");
   }
-  const { solid, tabClipNumTotal } = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog, lang);
-  const blob = solid.blobSTL({ binary: true, tolerance: buildMeshTolerance, angularTolerance: buildMeshAngularTolerance });
-  return { blob, tabClipNumTotal };
+  const { solid } = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog, lang);
+  return solid.blobSTL({ binary: true, tolerance: buildMeshTolerance, angularTolerance: buildMeshAngularTolerance });
 }
 
 export async function buildGroupMeshFromTriangles(
@@ -508,12 +506,12 @@ export async function buildGroupMeshFromTriangles(
   onProgress?: (msg: number) => void,
   onLog?: (msg: string) => void,
   lang?: string,
-): Promise<{ mesh: Mesh; tabClipNumTotal: number }> {
+): Promise<{ mesh: Mesh }> {
   if (!trisWithAngles.length) {
     onLog?.(t("log.replicad.noTriangles"));
     throw new Error("没有可用于建模的展开三角形");
   }
-  const { solid, tabClipNumTotal } = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog, lang);
+  const { solid } = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog, lang);
   const mesh = solid.mesh({ tolerance: buildMeshTolerance, angularTolerance: buildMeshAngularTolerance });
   const geometry = new BufferGeometry();
   const position = new Float32BufferAttribute(mesh.vertices, 3);
@@ -529,5 +527,5 @@ export async function buildGroupMeshFromTriangles(
   geometry.computeBoundingSphere();
   const expotMesh = new Mesh(geometry);
   expotMesh.name = "group_preview_mesh";
-  return { mesh: expotMesh, tabClipNumTotal };
+  return { mesh: expotMesh };
 }

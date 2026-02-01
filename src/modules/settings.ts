@@ -9,6 +9,7 @@ export type Settings = {
   tabWidth: number;
   tabThickness: number;
   tabClipGap: number;
+  clipGapAdjust: "off" | "on";
   hollowStyle: boolean;
   wireframeThickness: number;
 };
@@ -19,8 +20,9 @@ export const SETTINGS_LIMITS = {
   connectionLayers: { min: 1, max: 4 },
   bodyLayers: { min: 1, max: 8 },
   tabWidth: { min: 0, max: 20 },
-  tabThickness: { min: 1, max: 2 },
-  tabClipGap: { min: 0.1, max: 0.25 },
+  tabThickness: { min: 0.8, max: 2 },
+  tabClipGap: { min: 0.1, max: 0.3 },
+  clipGapAdjust: { allowed: ["off", "on"] as const },
   wireframeThickness: { min: 4, max: 10 },
 } as const;
 
@@ -31,7 +33,8 @@ const defaultSettings: Settings = {
   bodyLayers: 3,
   tabWidth: 4,
   tabThickness: 1,
-  tabClipGap: 0.15,
+  tabClipGap: 0.12,
+  clipGapAdjust: "off",
   hollowStyle: false,
   wireframeThickness: 5,
 };
@@ -90,6 +93,11 @@ export function setTabThickness(val: number) {
 export function setTabClipGap(val: number) {
   if (Number.isNaN(val) || val < SETTINGS_LIMITS.tabClipGap.min || val > SETTINGS_LIMITS.tabClipGap.max) return;
   current = { ...current, tabClipGap: val };
+}
+
+export function setClipGapAdjust(val: Settings["clipGapAdjust"]) {
+  if (!SETTINGS_LIMITS.clipGapAdjust.allowed.includes(val)) return;
+  current = { ...current, clipGapAdjust: val };
 }
 
 export function setHollowStyle(val: boolean) {

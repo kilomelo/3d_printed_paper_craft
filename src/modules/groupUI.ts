@@ -15,7 +15,9 @@ export type GroupUIState = {
 };
 
 export type GroupUICallbacks = {
-  onPreviewSelect: (id: number) => void;
+  onGroupSelect: (id: number) => void;
+  onTabHover?: (id: number) => void;
+  onTabHoverOut?: (id: number) => void;
   onColorChange: (color: Color) => void;
   onDelete: () => void;
   onRenameRequest?: () => void;
@@ -37,9 +39,19 @@ export function createGroupUI(
   type TabMode = "full" | "compact" | "super";
   let tabMode: TabMode = "full";
   let lastState: GroupUIState | null = null;
+  let hoveredId: number | null = null;
+
+  const clearHover = () => {
+    if (hoveredId !== null) {
+      callbacks.onTabHoverOut?.(hoveredId);
+      hoveredId = null;
+    }
+  };
+
   const renderTabs = (state: GroupUIState, mode: TabMode = tabMode) => {
     tabMode = mode;
     if (!ui.groupTabsEl) return;
+    clearHover(); // 重新渲染前确保成对触发 hoverOut
     ui.groupTabsEl.innerHTML = "";
     const applyEllipsis = (el: HTMLButtonElement, txt: string) => {
       el.textContent = txt;
@@ -50,29 +62,32 @@ export function createGroupUI(
         el.textContent = `${content}...`;
       }
     };
+    const defaultPrefix = t("group.default.prefix") || "展开组";
     state.groupIds.forEach((id, i) => {
-      const name = state.getGroupName(id) ?? `展开组 ${i + 1}`;
+      const name = state.getGroupName(id) ?? `${defaultPrefix} ${i + 1}`;
       const btn = document.createElement("button");
       const isActive = id === state.previewGroupId;
       const btnMode: TabMode = isActive ? "full" : mode;
-      btn.className = `tab-btn ${isActive ? "active" : ""}`;
-      btn.textContent = btnMode === "full" ? name : btnMode === "compact" ? name : "";
-      btn.classList.remove("tab-super", "tab-compact");
+      btn.className = "tab-btn";
+      const inner = document.createElement("span");
+      inner.className = `tab-btn-inner ${isActive ? "active" : ""}`;
+      inner.textContent = btnMode === "full" ? name : btnMode === "compact" ? name : "";
+      inner.classList.remove("tab-super", "tab-compact");
       const color = state.getGroupColor?.(id);
       if (btnMode === "super") {
-        btn.classList.add("tab-super");
+        inner.classList.add("tab-super");
         btn.title = `展开组 ${i}`;
         if (color) {
-          btn.style.background = `#${color.getHexString()}`;
+          inner.style.background = `#${color.getHexString()}`;
         }
       } else if (btnMode === "compact" && !isActive) {
-        btn.classList.add("tab-compact");
+        inner.classList.add("tab-compact");
         btn.title = name;
-        btn.textContent = name;
-        btn.style.background = "";
+        inner.textContent = name;
+        inner.style.background = "";
       } else {
         btn.title = "";
-        btn.style.background = "";
+        inner.style.background = "";
       }
       let longPressTimer: number | null = null;
       const clearTimer = () => {
@@ -93,11 +108,25 @@ export function createGroupUI(
         btn.addEventListener(evt, clearTimer),
       );
       btn.addEventListener("click", () => {
-        callbacks.onPreviewSelect(id);
+        callbacks.onGroupSelect(id);
       });
+      btn.addEventListener("pointerenter", () => {
+        if (hoveredId === id) return;
+        if (hoveredId !== null) {
+          callbacks.onTabHoverOut?.(hoveredId);
+        }
+        hoveredId = id;
+        callbacks.onTabHover?.(id);
+      });
+      btn.addEventListener("pointerleave", () => {
+        if (hoveredId !== id) return;
+        callbacks.onTabHoverOut?.(id);
+        hoveredId = null;
+      });
+      btn.appendChild(inner);
       ui.groupTabsEl.appendChild(btn);
       if (btnMode === "compact" && !isActive) {
-        applyEllipsis(btn, name);
+        applyEllipsis(inner, name);
       }
     });
   };

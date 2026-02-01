@@ -313,7 +313,7 @@ textarea {
 
 .about-modal {
   width: 560px;
-  max-height: 80vh;
+  max-height: 90vh;
   background: var(--panel);
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
@@ -322,12 +322,19 @@ textarea {
   overflow: hidden;
 }
 
+/* 关键：默认不滚动，只有内容超出时才滚动 */
 .about-body {
-  padding: 16px;
-  flex: 1;
-  overflow: auto;
+  padding: 12px 16px 0px 16px;
+  flex: 0 1 auto;     /* 不强行占满剩余高度 */
+  overflow: visible;  /* 默认不出现内部滚动条 */
   color: var(--text);
   line-height: 1.6;
+}
+
+/* 当弹窗达到 max-height 需要滚动时，改为滚动 */
+.about-modal.is-scroll .about-body {
+  overflow: auto;
+  flex: 1 1 auto;     /* 允许占满并滚动 */
 }
 
 .about-footer {
@@ -374,7 +381,7 @@ textarea {
 
 .group-tabs {
   display: flex;
-  gap: 4px;
+  gap: 0;
   align-items: center;
   flex: 1 1 auto;
   min-width: 0;
@@ -383,6 +390,20 @@ textarea {
 }
 
 .tab-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.tab-btn:not(:first-child) {
+  margin-left: 0; /* 相邻按钮的交互区域在边界交接，不再重叠 */
+}
+
+.tab-btn-inner {
   height: 30px;
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.04);
@@ -390,27 +411,27 @@ textarea {
   border-radius: 8px;
   padding: 6px 10px;
   justify-content: center;
-  margin-right: 1px;
   font-size: 13px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
   flex-shrink: 0;
+  margin: 0 3px; /* 视觉留白来自内层，外层按钮仍紧贴交接 */
 }
 
-.tab-btn.active {
+.tab-btn-inner.active {
   border-color: rgba(56, 189, 248, 0.8);
   background: rgba(56, 189, 248, 0.16);
 }
 
-.tab-btn:hover {
+.tab-btn:hover .tab-btn-inner {
   transition: background 0.2s border-color 0.2s ease;
   background: rgba(255, 255, 255, 0.12);
   border-color: var(--hoverHighLigt);
 }
 
-.tab-btn.tab-super {
+.tab-btn-inner.tab-super {
   width: 8px;
   min-width: 8px;
   height: 28px;
@@ -419,7 +440,7 @@ textarea {
   padding: 6px 0;
 }
 
-.tab-btn.tab-compact {
+.tab-btn-inner.tab-compact {
   max-width: 40px;
   border-radius: 8px;
   padding: 6px 6px;
