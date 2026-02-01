@@ -41,7 +41,7 @@ import { initI18n, t, getCurrentLang, setLanguage, onLanguageChanged } from "./m
 
 const VERSION = packageJson.version ?? "0.0.0.0";
 
-type PreviewMeshCacheItem = { mesh: Mesh, tabClipNumTotal: number, groupId: number, historyUidCreated: number, historyUidAbandoned: number };
+type PreviewMeshCacheItem = { mesh: Mesh, groupId: number, historyUidCreated: number, historyUidAbandoned: number };
 // 预览模型缓存，带有效期 
 const previewMeshCache: PreviewMeshCacheItem[] = [];
 const MAX_PREVIEW_MESH_CACHE_SIZE = 30;
@@ -387,13 +387,13 @@ app.innerHTML = `
           <div class="settings-panel" id="settings-panel-experiment">
             <div class="setting-row">
               <div class="setting-label-row">
-                <span class="setting-label" data-i18n="settings.clipThickness.label">夹子厚度</span>
-                <span class="setting-desc" data-i18n="settings.clipThickness.desc">夹子厚度描述</span>
+                <span class="setting-label" data-i18n="settings.clipGapAdjusts.label">夹子厚度</span>
+                <span class="setting-desc" data-i18n="settings.clipGapAdjusts.desc">夹子厚度描述</span>
               </div>
               <div class="setting-field">
                 <div class="settings-toggle-group">
-                  <button id="setting-clip-thickness-normal" class="btn settings-inline-btn" data-i18n="settings.clipThickness.normal">标准</button>
-                  <button id="setting-clip-thickness-narrow" class="btn settings-inline-btn" data-i18n="settings.clipThickness.narrow">薄夹</button>
+                  <button id="setting-clip-thickness-normal" class="btn settings-inline-btn" data-i18n="settings.clipGapAdjusts.off">标准</button>
+                  <button id="setting-clip-thickness-narrow" class="btn settings-inline-btn" data-i18n="settings.clipGapAdjusts.on">薄夹</button>
                 </div>
                 <button id="setting-clip-thickness-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
@@ -517,9 +517,9 @@ const settingTabThicknessInput = document.querySelector<HTMLInputElement>("#sett
 const settingTabThicknessResetBtn = document.querySelector<HTMLButtonElement>("#setting-tab-thickness-reset");
 const settingTabClipGapInput = document.querySelector<HTMLInputElement>("#setting-tab-clip-gap");
 const settingTabClipGapResetBtn = document.querySelector<HTMLButtonElement>("#setting-tab-clip-gap-reset");
-const settingClipThicknessNormalBtn = document.querySelector<HTMLButtonElement>("#setting-clip-thickness-normal");
-const settingClipThicknessNarrowBtn = document.querySelector<HTMLButtonElement>("#setting-clip-thickness-narrow");
-const settingClipThicknessResetBtn = document.querySelector<HTMLButtonElement>("#setting-clip-thickness-reset");
+const settingClipGapAdjustNormalBtn = document.querySelector<HTMLButtonElement>("#setting-clip-thickness-normal");
+const settingClipGapAdjustNarrowBtn = document.querySelector<HTMLButtonElement>("#setting-clip-thickness-narrow");
+const settingClipGapAdjustResetBtn = document.querySelector<HTMLButtonElement>("#setting-clip-thickness-reset");
 const settingHollowOffBtn = document.querySelector<HTMLButtonElement>("#setting-hollow-off");
 const settingHollowOnBtn = document.querySelector<HTMLButtonElement>("#setting-hollow-on");
 const settingHollowResetBtn = document.querySelector<HTMLButtonElement>("#setting-hollow-reset");
@@ -597,9 +597,9 @@ if (
   !settingTabThicknessResetBtn ||
   !settingTabClipGapInput ||
   !settingTabClipGapResetBtn ||
-  !settingClipThicknessNormalBtn ||
-  !settingClipThicknessNarrowBtn ||
-  !settingClipThicknessResetBtn ||
+  !settingClipGapAdjustNormalBtn ||
+  !settingClipGapAdjustNarrowBtn ||
+  !settingClipGapAdjustResetBtn ||
   !settingHollowOffBtn ||
   !settingHollowOnBtn ||
   !settingHollowResetBtn ||
@@ -700,9 +700,9 @@ const settingsUI = createSettingsUI(
     tabThicknessResetBtn: settingTabThicknessResetBtn,
     tabClipGapInput: settingTabClipGapInput,
     tabClipGapResetBtn: settingTabClipGapResetBtn,
-    clipThicknessNormalBtn: settingClipThicknessNormalBtn,
-    clipThicknessNarrowBtn: settingClipThicknessNarrowBtn,
-    clipThicknessResetBtn: settingClipThicknessResetBtn,
+    clipGapAdjustNormalBtn: settingClipGapAdjustNormalBtn,
+    clipGapAdjustNarrowBtn: settingClipGapAdjustNarrowBtn,
+    clipGapAdjustResetBtn: settingClipGapAdjustResetBtn,
     hollowOnBtn: settingHollowOnBtn,
     hollowOffBtn: settingHollowOffBtn,
     hollowResetBtn: settingHollowResetBtn,
@@ -747,7 +747,7 @@ if (groupDeleteSlot) {
   groupDeleteSlot.appendChild(deleteHold.el);
 }
 
-const getCachedPreviewMesh = (groupId: number): { mesh: Mesh, tabClipNumTotal: number, angle: number } | null => {
+const getCachedPreviewMesh = (groupId: number): { mesh: Mesh, angle: number } | null => {
   const currentHistoryUid = historyManager.getCurrentSnapshotUid()?? -1;
   const cached = previewMeshCache.find((c) => c.groupId === groupId && c.historyUidCreated <= currentHistoryUid && c.historyUidAbandoned > currentHistoryUid);
   if (!cached) return null;
@@ -759,14 +759,13 @@ const getCachedPreviewMesh = (groupId: number): { mesh: Mesh, tabClipNumTotal: n
   mesh.updateMatrixWorld(true);
   mesh.geometry?.computeBoundingBox?.();
   mesh.geometry?.computeBoundingSphere?.();
-  return { mesh, tabClipNumTotal: cached.tabClipNumTotal, angle };
+  return { mesh, angle };
 };
 
-const addCachedPreviewMesh = (groupId: number, mesh: Mesh, tabClipNumTotal: number) => {
+const addCachedPreviewMesh = (groupId: number, mesh: Mesh) => {
   const currentHistoryUid = historyManager.getCurrentSnapshotUid()?? -1;
   previewMeshCache.push({
     mesh,
-    tabClipNumTotal,
     groupId,
     historyUidCreated: currentHistoryUid,
     historyUidAbandoned: Infinity,
@@ -1398,7 +1397,7 @@ exportGroupStepBtn.addEventListener("click", async () => {
       return;
     }
     log(t("log.export.step.start"), "info");
-    const { blob, tabClipNumTotal } = await buildStepInWorker(
+    const { blob } = await buildStepInWorker(
       trisWithAngles,
       (progress) => log(progress, "progress"),
       (msg, tone) => log(msg, (tone as any) ?? "error"),
@@ -1406,13 +1405,13 @@ exportGroupStepBtn.addEventListener("click", async () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${projectName}-${groupName}-${tabClipNumTotal}Clips.step`;
+    a.download = `${projectName}-${groupName}.step`;
     a.style.display = "none";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    log(t("log.export.step.success", { fileName: `${projectName}-${groupName}-${tabClipNumTotal}Clips.step` }), "success");
+    log(t("log.export.step.success", { fileName: `${projectName}-${groupName}.step` }), "success");
   } catch (error) {
     console.error("展开组 STEP 导出失败", error);
     log(t("log.export.step.fail"), "error");
@@ -1422,27 +1421,27 @@ exportGroupStepBtn.addEventListener("click", async () => {
 });
 exportGroupStlBtn.addEventListener("click", async () => {
   exportGroupStlBtn.disabled = true;
-  const downloadMesh = (groupName: string, mesh: Mesh, tabClipNumTotal: number) => {
-      const projectName = getCurrentProject().name || "未命名工程";
-      const exporter = new STLExporter();
-      const stlResult = exporter.parse(mesh, { binary: true });
-      const stlArray =
-        stlResult instanceof ArrayBuffer
-          ? new Uint8Array(stlResult)
-          : stlResult instanceof DataView
-            ? new Uint8Array(stlResult.buffer)
-            : new Uint8Array();
-      const stlCopy = new Uint8Array(stlArray); // force into ArrayBuffer-backed copy
-      const url = URL.createObjectURL(new Blob([stlCopy.buffer], { type: "model/stl" }));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${projectName}-${groupName}-${tabClipNumTotal}Clips.stl`;
-      a.style.display = "none";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      log(t("log.export.stl.success", { fileName: `${projectName}-${groupName}-${tabClipNumTotal}Clips.stl` }), "success");
+  const downloadMesh = (groupName: string, mesh: Mesh) => {
+    const projectName = getCurrentProject().name || "未命名工程";
+    const exporter = new STLExporter();
+    const stlResult = exporter.parse(mesh, { binary: true });
+    const stlArray =
+      stlResult instanceof ArrayBuffer
+        ? new Uint8Array(stlResult)
+        : stlResult instanceof DataView
+          ? new Uint8Array(stlResult.buffer)
+          : new Uint8Array();
+    const stlCopy = new Uint8Array(stlArray); // force into ArrayBuffer-backed copy
+    const url = URL.createObjectURL(new Blob([stlCopy.buffer], { type: "model/stl" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${projectName}-${groupName}.stl`;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    log(t("log.export.stl.success", { fileName: `${projectName}-${groupName}.stl` }), "success");
     };
   try {
     const targetGroupId = groupController.getPreviewGroupId();
@@ -1459,7 +1458,7 @@ exportGroupStlBtn.addEventListener("click", async () => {
         return;
       }
       log(t("log.export.stl.start"), "info");
-      const { blob, tabClipNumTotal } = await buildStlInWorker(
+      const { blob } = await buildStlInWorker(
         trisWithAngles,
         (progress) => log(progress, "progress"),
         (msg, tone) => log(msg, (tone as any) ?? "error"),
@@ -1469,12 +1468,12 @@ exportGroupStlBtn.addEventListener("click", async () => {
       snapGeometryPositions(geometry);
       const mesh = new Mesh(geometry);
       mesh.name = "Replicad Mesh";
-      addCachedPreviewMesh(targetGroupId, mesh, tabClipNumTotal);
+      addCachedPreviewMesh(targetGroupId, mesh);
       const cached = getCachedPreviewMesh(targetGroupId);
-      if (cached) downloadMesh(groupName, cached.mesh, cached.tabClipNumTotal);
+      if (cached) downloadMesh(groupName, cached.mesh);
     } else {
       log(t("log.export.stl.cached"), "info");
-      downloadMesh(groupName, cached.mesh, cached.tabClipNumTotal);
+      downloadMesh(groupName, cached.mesh);
     }
   } catch (error) {
     console.error("展开组 STL 导出失败", error);
@@ -1502,13 +1501,13 @@ previewGroupModelBtn.addEventListener("click", async () => {
         return;
       }
       // log("正在用 Replicad 生成 mesh...", "info");
-      const { mesh, tabClipNumTotal } = await buildMeshInWorker(
+      const { mesh } = await buildMeshInWorker(
         trisWithAngles,
         (progress) => log(progress, "progress"),
         (msg, tone) => log(msg, (tone as any) ?? "error"),
       );
       snapGeometryPositions(mesh.geometry);
-      addCachedPreviewMesh(targetGroupId, mesh, tabClipNumTotal);
+      addCachedPreviewMesh(targetGroupId, mesh);
       const cached = getCachedPreviewMesh(targetGroupId);
       if (cached) renderer3d.loadPreviewModel(cached.mesh, cached.angle);
     }

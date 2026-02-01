@@ -53,18 +53,142 @@
       height: auto;
       border: 0;
     }
+
+    /* Divider */
+    .section-divider{
+      margin: 12px 0 12px;
+      border: 0;
+      border-top: 1px solid rgba(255,255,255,0.10);
+    }
+
+    /* Sponsor (minimal) */
+    details.sponsor{
+      margin-top: 0;
+    }
+    details.sponsor > summary{
+      list-style: none;
+      cursor: pointer;
+
+      /* clickable hit area */
+      padding: 8px 10px;
+      margin: 0;
+
+      font-size: 14px;
+      font-weight: 600;
+      color: #e5e7eb;
+      background: rgba(255,255,255,0.04);
+
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+
+      border-radius: 10px;
+      user-select: none;
+      -webkit-user-select: none;
+
+      /* mobile tap highlight */
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    details.sponsor > summary::-webkit-details-marker { display: none; }
+
+    details.sponsor > summary:hover{
+      background: rgba(255,255,255,0.10);
+    }
+    details.sponsor > summary:active{
+      background: rgba(255,255,255,0.15);
+    }
+
+    details.sponsor > summary:focus-visible{
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(147,197,253,.25);
+      background: rgba(255,255,255,0.04);
+    }
+
+    .sponsor-body{
+      margin-top: 8px;
+    }
+
+    /* subtle open animation */
+    details.sponsor[open] .sponsor-body{
+      animation: sponsor-fade .12s ease-out;
+    }
+    @keyframes sponsor-fade{
+      from { opacity: 0; transform: translateY(-2px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .qr-grid{
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      max-width: 520px;
+    }
+
+    .qr-img{
+      display: block;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.04);
+      object-fit: cover;
+    }
+
+    @media (max-width: 520px){
+      .qr-grid{ grid-template-columns: 1fr; }
+    }
+
+    .link-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(255,255,255,0.04);
+      color: #93c5fd;
+      text-decoration: none;
+      font-size: 14px;
+      line-height: 1;
+    }
+    .link-btn:visited {
+      color: #93c5fd;
+    }
+    .link-btn:hover {
+      background: rgba(255,255,255,0.08);
+      text-decoration: none;
+    }
   </style>
 </head>
 <body>
   <div class="wrap">
     <h1>About 3D Printed Paper Craft</h1>
     <p>This is an open-source project that converts low-poly models into papercraft models that can be 3D-printed directly.</p>
-    <p>Project repository: <a href="https://github.com/kilomelo/3d_printed_paper_craft" target="_blank">https://github.com/kilomelo/3d_printed_paper_craft</a></p>
+    <p>Project repository: <a href="https://github.com/kilomelo/3d_printed_paper_craft" target="_blank" rel="noreferrer">https://github.com/kilomelo/3d_printed_paper_craft</a></p>
+
     <p>User guide:</p>
     <div class="video">
-      <iframe src="https://www.youtube.com/embed/u5yg60-LQUk?si=DampqJ81G8z8b9_v&autoplay=0" title="YouTube video player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+      <iframe
+        src="https://www.youtube.com/embed/u5yg60-LQUk?si=DampqJ81G8z8b9_v&autoplay=0"
+        title="YouTube video player"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        referrerpolicy="strict-origin-when-cross-origin"
+        allowfullscreen
+      ></iframe>
     </div>
-    <p>Video link: <a href="https://www.youtube.com/watch?v=u5yg60-LQUk" target="_blank">https://www.youtube.com/watch?v=u5yg60-LQUk</a></p>
+    <p>Video link: <a href="https://www.youtube.com/watch?v=u5yg60-LQUk" target="_blank" rel="noreferrer">https://www.youtube.com/watch?v=u5yg60-LQUk</a></p>
+
+    <hr class="section-divider" />
+
+    <details class="sponsor" id="sponsor">
+      <summary aria-label="Expand the sponsored link">Enjoying the project?</summary>
+      <div class="sponsor-body">
+        <p>Support it with any amount to help cover hosting and ongoing development.</p>
+        <a class="link-btn" href="https://paypal.me/chenwaytrue" target="_blank" rel="noreferrer">PayPal.me</a>
+      </div>
+    </details>
   </div>
 </body>
 </html>

@@ -313,7 +313,7 @@ textarea {
 
 .about-modal {
   width: 560px;
-  max-height: 80vh;
+  max-height: 90vh;
   background: var(--panel);
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
@@ -322,12 +322,19 @@ textarea {
   overflow: hidden;
 }
 
+/* 关键：默认不滚动，只有内容超出时才滚动 */
 .about-body {
-  padding: 16px;
-  flex: 1;
-  overflow: auto;
+  padding: 12px 16px 0px 16px;
+  flex: 0 1 auto;     /* 不强行占满剩余高度 */
+  overflow: visible;  /* 默认不出现内部滚动条 */
   color: var(--text);
   line-height: 1.6;
+}
+
+/* 当弹窗达到 max-height 需要滚动时，改为滚动 */
+.about-modal.is-scroll .about-body {
+  overflow: auto;
+  flex: 1 1 auto;     /* 允许占满并滚动 */
 }
 
 .about-footer {
