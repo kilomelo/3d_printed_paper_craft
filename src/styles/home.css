@@ -4,203 +4,111 @@
   justify-content: center;
 }
 
-/* 叠加层 */
-.home-fx-layer{
-  position:absolute;
-  inset:0;
-  z-index:0;
-  pointer-events:none;
-  overflow:hidden;
+.home-fx-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
 }
 
-/* Orbit：旋转角度（圆周运动） */
-.glow-orbit{
-  position:absolute;
-  left: var(--cx);
-  top: var(--cy);
-  width:0;
-  height:0;
-
-  animation: glow-orbit-rotate var(--period) linear infinite;
-  will-change: transform;
-  animation-delay: var(--phase, 0s);
+.home-fx-layer::before {
+  content: "";
+  position: absolute;
+  inset: -30vmax;
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(closest-side, rgba(56, 189, 248, 0.15), rgba(56, 189, 248, 0)),
+    radial-gradient(closest-side, rgba(99, 102, 241, 0.2), rgba(99, 102, 241, 0)),
+    radial-gradient(closest-side, rgba(168, 85, 247, 0.2), rgba(168, 85, 247, 0)),
+    radial-gradient(closest-side, rgba(34, 211, 238, 0.2), rgba(34, 211, 238, 0)),
+    radial-gradient(closest-side, rgba(147, 197, 253, 0.2), rgba(147, 197, 253, 0)),
+    radial-gradient(closest-side, rgba(125, 211, 252, 0.16), rgba(125, 211, 252, 0)),
+    radial-gradient(closest-side, rgba(129, 140, 248, 0.15), rgba(129, 140, 248, 0)),
+    radial-gradient(closest-side, rgba(192, 132, 252, 0.2), rgba(192, 132, 252, 0)),
+    radial-gradient(closest-side, rgba(103, 232, 249, 0.12), rgba(103, 232, 249, 0));
+  background-repeat: no-repeat;
+  background-size:
+    110vmax 110vmax,
+    90vmax 90vmax,
+    100vmax 100vmax,
+    80vmax 80vmax,
+    90vmax 90vmax,
+    62vmax 62vmax,
+    58vmax 58vmax,
+    66vmax 66vmax,
+    54vmax 54vmax;
+  background-position:
+    -70vmax -60vmax,
+    55vmax -35vmax,
+    10vmax 10vmax,
+    -40vmax 30vmax,
+    50vmax 55vmax,
+    -12vmax -6vmax,
+    22vmax -48vmax,
+    64vmax 12vmax,
+    -52vmax 54vmax;
+  filter: blur(18px) saturate(125%) contrast(110%);
+  opacity: 0.95;
+  animation: home-cool-move 12s linear infinite;
+  will-change: background-position, background-size, transform;
+  transform: translateZ(0);
 }
 
-/* Radius wobble layers：半径波动（两个层叠加制造不确定性） */
-.glow-orbit .glow-radius1,
-.glow-orbit .glow-radius2{
-  position:absolute;
-  left:0;
-  top:0;
-  transform-origin: 0 0;
-  will-change: transform;
+.home-fx-layer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(80% 70% at 50% 45%, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.4) 72%, rgba(0, 0, 0, 0.65) 100%);
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.85;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
-/* 第1层：慢波动（可带一点椭圆） */
-.glow-orbit .glow-radius1{
-  animation: glow-radius-wobble-1 var(--rw1Period) ease-in-out infinite;
+@keyframes home-cool-move {
+  0%,
+  100% {
+    background-size: 110vmax 110vmax, 90vmax 90vmax, 100vmax 100vmax, 80vmax 80vmax, 90vmax 90vmax, 62vmax 62vmax, 58vmax 58vmax, 66vmax 66vmax, 54vmax 54vmax;
+    background-position: -70vmax -60vmax, 55vmax -35vmax, 10vmax 10vmax, -40vmax 30vmax, 50vmax 55vmax, -12vmax -6vmax, 22vmax -48vmax, 64vmax 12vmax, -52vmax 54vmax;
+    transform: rotate(0deg) scale(1);
+  }
+
+  20% {
+    background-size: 95vmax 95vmax, 105vmax 105vmax, 85vmax 85vmax, 95vmax 95vmax, 70vmax 70vmax, 56vmax 56vmax, 64vmax 64vmax, 52vmax 52vmax, 60vmax 60vmax;
+    background-position: -55vmax -75vmax, 40vmax -25vmax, 5vmax -25vmax, -55vmax 15vmax, 35vmax 65vmax, -2vmax -18vmax, 32vmax -42vmax, 74vmax 6vmax, -40vmax 68vmax;
+    transform: rotate(0.8deg) scale(1.02);
+  }
+
+  40% {
+    background-size: 120vmax 120vmax, 80vmax 80vmax, 110vmax 110vmax, 75vmax 75vmax, 95vmax 95vmax, 68vmax 68vmax, 54vmax 54vmax, 60vmax 60vmax, 50vmax 50vmax;
+    background-position: -85vmax -45vmax, 60vmax -45vmax, 20vmax 0vmax, -35vmax 40vmax, 55vmax 40vmax, -18vmax 6vmax, 14vmax -58vmax, 58vmax 20vmax, -60vmax 42vmax;
+    transform: rotate(-0.6deg) scale(1.03);
+  }
+
+  60% {
+    background-size: 85vmax 85vmax, 115vmax 115vmax, 95vmax 95vmax, 90vmax 90vmax, 75vmax 75vmax, 52vmax 52vmax, 66vmax 66vmax, 56vmax 56vmax, 62vmax 62vmax;
+    background-position: -60vmax -50vmax, 35vmax -30vmax, 30vmax 20vmax, -20vmax 55vmax, 60vmax 60vmax, -6vmax -2vmax, 28vmax -30vmax, 70vmax 26vmax, -46vmax 72vmax;
+    transform: rotate(1deg) scale(1.02);
+  }
+
+  80% {
+    background-size: 105vmax 105vmax, 90vmax 90vmax, 120vmax 120vmax, 70vmax 70vmax, 90vmax 90vmax, 64vmax 64vmax, 50vmax 50vmax, 68vmax 68vmax, 55vmax 55vmax;
+    background-position: -80vmax -70vmax, 55vmax -20vmax, 0vmax 15vmax, -45vmax 35vmax, 45vmax 70vmax, -22vmax 2vmax, 18vmax -52vmax, 62vmax 8vmax, -58vmax 58vmax;
+    transform: rotate(-0.8deg) scale(1.01);
+  }
 }
 
-/* 第2层：不同周期/不同相位的小波动（叠加后不会“对齐重复”） */
-.glow-orbit .glow-radius2{
-  animation: glow-radius-wobble-2 var(--rw2Period) ease-in-out infinite;
-}
+@media (prefers-reduced-motion: reduce) {
+  .home-fx-layer::before {
+    animation: none;
+  }
 
-/* Breath（你原来的“呼吸”） */
-.glow-orbit .glow-arm{
-  position:absolute;
-  left:0;
-  top:0;
-
-  animation: glow-breath var(--breathPeriod) ease-in-out infinite;
-  will-change: transform;
-  transform-origin: 0 0;
-}
-
-/* Spot：光斑本体（不变形，只放到基础半径上） */
-.glow-orbit .glow-spot{
-  position:absolute;
-  left:0;
-  top:0;
-
-  width: var(--size);
-  height: var(--size);
-
-  /* 基础半径：translateX(orbit-r) */
-  transform: translateX(var(--orbit-r)) translate(-50%, -50%);
-
-  background:
-    radial-gradient(circle at 35% 35%,
-      color-mix(in srgb, var(--color) 85%, transparent) 0%,
-      color-mix(in srgb, var(--color) 45%, transparent) 35%,
-      transparent 68%
-    );
-
-  opacity: var(--opacity);
-  filter: blur(var(--blur));
-  mix-blend-mode: screen; /* 不喜欢/太吃性能可注释 */
-}
-
-/* -------------------------
-   Per-blob parameters
-   ------------------------- */
-
-.glow-a{
-  --color: rgba(56, 189, 248, 1);
-  --size: 440px;
-  --blur: 22px;
-  --opacity: 0.3;
-
-  --cx: 82%;
-  --cy: 34%;
-  --orbit-r: 70px;
-  --period: 26s;
-  --phase: -3.2s;
-
-  --breath: 0.08;
-  --breathPeriod: 4.8s;
-
-  /* radius wobble params */
-  --rw1: 0.18;          /* ±18% */
-  --rw2: 0.10;          /* ±10% */
-  --rw1Period: 11.5s;
-  --rw2Period: 7.3s;
-}
-
-.glow-b{
-  --color: rgba(168, 85, 247, 1);
-  --size: 520px;
-  --blur: 22px;
-  --opacity: 0.2;
-
-  --cx: 18%;
-  --cy: 20%;
-  --orbit-r: 110px;
-  --period: 34s;
-  --phase: -11.4s;
-
-  --breath: 0.12;
-  --breathPeriod: 6.5s;
-
-  --rw1: 0.14;
-  --rw2: 0.12;
-  --rw1Period: 15.7s;
-  --rw2Period: 9.1s;
-}
-
-.glow-c{
-  --color: rgba(34, 197, 94, 1);
-  --size: 400px;
-  --blur: 22px;
-  --opacity: 0.25;
-
-  --cx: 30%;
-  --cy: 75%;
-  --orbit-r: 85px;
-  --period: 22s;
-  --phase: -6.7s;
-
-  --breath: 0.06;
-  --breathPeriod: 5.2s;
-
-  --rw1: 0.20;
-  --rw2: 0.08;
-  --rw1Period: 13.2s;
-  --rw2Period: 8.4s;
-}
-
-/* 相位错开（建议保留） */
-.glow-a .glow-radius1{ animation-delay: -2.1s; }
-.glow-a .glow-radius2{ animation-delay: -4.7s; }
-.glow-a .glow-arm    { animation-delay: -1.2s; }
-
-.glow-b .glow-radius1{ animation-delay: -5.3s; }
-.glow-b .glow-radius2{ animation-delay: -1.9s; }
-.glow-b .glow-arm    { animation-delay: -2.7s; }
-
-.glow-c .glow-radius1{ animation-delay: -3.8s; }
-.glow-c .glow-radius2{ animation-delay: -6.2s; }
-.glow-c .glow-arm    { animation-delay: -0.8s; }
-
-/* -------------------------
-   Animations
-   ------------------------- */
-
-@keyframes glow-orbit-rotate{
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-
-/* 半径波动 1：稍慢、带一点“非正弦”的停顿 */
-@keyframes glow-radius-wobble-1{
-  0%   { transform: scaleX(calc(1 - var(--rw1))) scaleY(calc(1 + var(--rw1) * 0.35)); }
-  22%  { transform: scaleX(calc(1 + var(--rw1) * 0.55)) scaleY(calc(1 - var(--rw1) * 0.15)); }
-  50%  { transform: scaleX(calc(1 + var(--rw1))) scaleY(calc(1 - var(--rw1) * 0.35)); }
-  78%  { transform: scaleX(calc(1 - var(--rw1) * 0.35)) scaleY(calc(1 + var(--rw1) * 0.20)); }
-  100% { transform: scaleX(calc(1 - var(--rw1))) scaleY(calc(1 + var(--rw1) * 0.35)); }
-}
-
-/* 半径波动 2：更小、更快一点，叠加制造“不确定” */
-@keyframes glow-radius-wobble-2{
-  0%   { transform: scaleX(calc(1 + var(--rw2) * 0.10)) scaleY(calc(1 - var(--rw2) * 0.20)); }
-  35%  { transform: scaleX(calc(1 - var(--rw2)))        scaleY(calc(1 + var(--rw2) * 0.15)); }
-  60%  { transform: scaleX(calc(1 + var(--rw2)))        scaleY(calc(1 - var(--rw2) * 0.10)); }
-  100% { transform: scaleX(calc(1 + var(--rw2) * 0.10)) scaleY(calc(1 - var(--rw2) * 0.20)); }
-}
-
-/* 呼吸（你原先的轻微变化） */
-@keyframes glow-breath{
-  0%   { transform: scaleX(calc(1 - var(--breath))); }
-  50%  { transform: scaleX(calc(1 + var(--breath))); }
-  100% { transform: scaleX(calc(1 - var(--breath))); }
-}
-
-/* Reduced motion */
-@media (prefers-reduced-motion: reduce){
-  .glow-orbit{ animation: none; }
-  .glow-orbit .glow-radius1,
-  .glow-orbit .glow-radius2,
-  .glow-orbit .glow-arm{ animation: none; }
+  .home-fx-layer::after {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 .home-card {

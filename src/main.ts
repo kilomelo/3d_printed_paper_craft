@@ -78,6 +78,8 @@ const refreshToggleTexts = (
 };
 
 const applyI18nTexts = () => {
+  document.title = t("app.title");
+
   document.querySelectorAll<HTMLElement>("[data-i18n]").forEach((el) => {
     const key = el.dataset.i18n;
     if (!key) return;
@@ -732,7 +734,7 @@ const groupController = createGroupController(log, () => geometryContext.geometr
 if (groupDeleteSlot) {
   deleteHold = createHoldButton({
     label: t("preview.right.groupDelete.btn"),
-    holdMs: 1000,
+    holdMs: 500,
     showPercent: false,
     lockOnConfirm: false,
     onConfirm: () => {

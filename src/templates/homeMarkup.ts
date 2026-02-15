@@ -1,34 +1,6 @@
 export const renderHomeSection = () => `
   <section class="page home active" id="layout-empty">
-    <div class="home-fx-layer" aria-hidden="true">
-      <div class="glow-orbit glow-a">
-        <div class="glow-radius1">
-          <div class="glow-radius2">
-            <div class="glow-arm">
-              <div class="glow-spot"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="glow-orbit glow-b">
-        <div class="glow-radius1">
-          <div class="glow-radius2">
-            <div class="glow-arm">
-              <div class="glow-spot"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="glow-orbit glow-c">
-        <div class="glow-radius1">
-          <div class="glow-radius2">
-            <div class="glow-arm">
-              <div class="glow-spot"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <div class="home-fx-layer" aria-hidden="true"></div>
 
     <div class="home-card">
       <header class="home-head">
@@ -49,7 +21,6 @@ export const renderHomeSection = () => `
           <span class="home-btn-main" data-i18n="mainpage.guide">选择模型文件</span>
           <span class="home-btn-sub" data-i18n="mainpage.format.supported">OBJ / FBX / STL / 3DPPC</span>
         </button>
-
 
         <div class="home-alt">
           <div class="home-meta" data-i18n="mainpage.try.desc">还没有文件？</div>
@@ -79,7 +50,6 @@ export const renderHomeSection = () => `
           GPL-3.0
         </a>
       </footer>
-
     </div>
   </section>
 `;
