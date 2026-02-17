@@ -44,6 +44,7 @@
   "preview.right.faceCount.label": "Faces: {count}",
   "preview.right.groupDelete.btn": "Delete Group",
   "preview.right.placeholder": "Click [Edit Group] to start editing",
+  "preview.right.placeholder.edit": "Left-click in the 3D view to add faces.",
 
   "about.loading": "Loading...",
   "about.close.btn": "Back",

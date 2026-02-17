@@ -162,8 +162,6 @@ export function createGroupUI(
     ui.groupFacesCountLabel.textContent = t("preview.right.faceCount.label", { count: state.getGroupFacesCount(state.previewGroupId) });
     if (ui.groupDeleteBtn) {
       ui.groupDeleteBtn.style.display = state.deletable ? "inline-flex" : "none";
-      ui.groupDeleteBtn.toggleAttribute("disabled", !state.deletable);
-      ui.groupDeleteBtn.style.opacity = state.deletable ? "1" : "0.6";
     }
     if (ui.groupVisibilityBtn) {
       const visible = state.getGroupVisibility(state.previewGroupId);
