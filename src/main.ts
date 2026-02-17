@@ -1,6 +1,7 @@
 // 应用入口与编排层：负责初始化页面结构、事件总线订阅、组/拼缝控制器与渲染器的装配，并绑定 UI 交互。
 import "./style.css";
 import packageJson from "../package.json";
+import { inject } from "@vercel/analytics";
 import { Color, Mesh, Matrix4 } from "three";
 import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
@@ -628,6 +629,9 @@ const { log } = createLog(logListEl);
   await initI18n();
 })();
 onLanguageChanged(applyI18nTexts);
+
+// Initialize Vercel Web Analytics
+inject();
 const changeWorkspaceState = (state: WorkspaceState) => {
   const previousState = getWorkspaceState();
   if (previousState === state) return;
