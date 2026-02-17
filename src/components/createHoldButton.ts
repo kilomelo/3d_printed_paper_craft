@@ -89,12 +89,19 @@ export function createHoldButton(opts: HoldButtonOptions) {
 
   const onWindowBlur = () => {
     if (!holding || done) return;
-    cancel(true);
+    // Some environments may dispatch blur-like focus transitions while the window
+    // is still active. Only cancel when the document is actually not focused.
+    const shouldCancel = document.visibilityState !== "visible" || !document.hasFocus();
+    if (shouldCancel) {
+      cancel(true);
+    }
   };
 
   const onVisibilityChange = () => {
     if (!holding || done) return;
-    if (document.visibilityState !== "visible") cancel(true);
+    if (document.visibilityState !== "visible") {
+      cancel(true);
+    }
   };
 
   const addGlobalListeners = () => {
