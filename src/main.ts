@@ -1151,6 +1151,14 @@ const buildGroupUIState = () => {
   const groupCount = groupController.getGroupsCount();
   const previewGroupId = groupController.getPreviewGroupId();
   const faces = groupController.getGroupFaces(previewGroupId)?.size ?? 0;
+  const placeholderKey =
+    getWorkspaceState() === "normal"
+      ? "preview.right.placeholder"
+      : "preview.right.placeholder.edit";
+  if (groupPreviewEmpty.dataset.i18n !== placeholderKey) {
+    groupPreviewEmpty.dataset.i18n = placeholderKey;
+  }
+  groupPreviewEmpty.textContent = t(placeholderKey);
   groupPreviewEmpty.classList.toggle("hidden", faces > 0);
   return {
     groupCount: groupCount,

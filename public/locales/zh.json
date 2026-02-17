@@ -44,6 +44,7 @@
   "preview.right.faceCount.label": "面数量：{count}",
   "preview.right.groupDelete.btn": "删除展开组",
   "preview.right.placeholder": "点击【编辑展开组】按钮进行编辑",
+  "preview.right.placeholder.edit": "在左侧3D视图中使用鼠标左键加入面",
 
   "about.loading": "加载中...",
   "about.close.btn": "返回",
