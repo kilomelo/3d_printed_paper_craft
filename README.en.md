@@ -5,7 +5,7 @@
 Convert low-poly 3D models into **papercraft-style structural models that can be 3D-printed directly**, with a **Group / Unfold Editing** workflow to help you split, export, and assemble your model.
 
 - Live site: https://3dppc.kilomelo.com  
-- Demo video (Youtube): https://www.youtube.com/watch?v=u5yg60-LQUk  
+- Demo video (Youtube): https://www.youtube.com/watch?v=kpObT-4yojI
 
 ---
 
@@ -37,7 +37,7 @@ Convert low-poly 3D models into **papercraft-style structural models that can be
 5. Preview the group model to confirm the split and connection layout
 6. Export what you need (STEP / STL / clip STL), then proceed with 3D printing
 
-> For detailed operations, please refer to the demo video: https://www.youtube.com/watch?v=u5yg60-LQUk
+> For detailed operations, please refer to the demo video: https://www.youtube.com/watch?v=kpObT-4yojI
 
 ---
 

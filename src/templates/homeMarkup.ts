@@ -39,7 +39,7 @@ export const renderHomeSection = () => `
           class="home-link"
           data-i18n="mainpage.guideVideo.label"
           data-i18n-href="mainpage.guideVideo.href"
-          href="https://www.bilibili.com/video/BV1CTJNzQEk4"
+          href="https://www.bilibili.com/video/BV1cAZkBeEZ6"
           target="_blank"
           rel="noreferrer"
         >

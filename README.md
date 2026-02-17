@@ -5,7 +5,7 @@
 将低多边形（Low-poly）3D 模型转换为**可直接 3D 打印**的纸艺结构模型，并提供“组（Group）/ 展开编辑”工作流，帮助你把模型拆分、导出，完成打印与组装。
 
 - 在线体验： https://3dppc.kilomelo.com
-- 演示视频（B 站）：https://www.bilibili.com/video/BV1CTJNzQEk4
+- 演示视频（B 站）：https://www.bilibili.com/video/BV1cAZkBeEZ6
 
 ---
 
@@ -37,7 +37,7 @@
 5. 预览组模型，确认拆分与拼接方式
 6. 导出需要的文件（STEP / STL / 固定夹 STL），进入 3D 打印流程
 
-> 具体操作细节请参考演示视频： https://www.bilibili.com/video/BV1CTJNzQEk4
+> 具体操作细节请参考演示视频： https://www.bilibili.com/video/BV1cAZkBeEZ6
 
 ---
 
