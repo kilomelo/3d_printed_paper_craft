@@ -173,107 +173,112 @@ export function segmentsIntersect2D(p1: Point2D, q1: Point2D, p2: Point2D, q2: P
   return false;
 }
 
-// 三角形相交检测（仅二维），含边/点接触；可选 log 输出中间数据。会忽略仅共享单一点的情况。
-export function triIntersect2D(
+// 判断两个三角形是否“有面积相交”（只有点/线接触不算）
+export function triHasAreaIntersection(
   t1: [Point2D, Point2D, Point2D],
   t2: [Point2D, Point2D, Point2D],
-  eps = 1e-8,
 ): boolean {
-  const bbox = (t: [Point2D, Point2D, Point2D]) => {
-    const xs = [t[0][0], t[1][0], t[2][0]];
-    const ys = [t[0][1], t[1][1], t[2][1]];
-    return {
-      minX: Math.min(...xs),
-      maxX: Math.max(...xs),
-      minY: Math.min(...ys),
-      maxY: Math.max(...ys),
-    };
-  };
-  const b1 = bbox(t1);
-  const b2 = bbox(t2);
-  if (
-    b1.maxX < b2.minX - eps || b1.minX > b2.maxX + eps ||
-    b1.maxY < b2.minY - eps || b1.minY > b2.maxY + eps
-  ) return false;
+  const EPS = 1e-9;
 
-  const axes: Point2D[] = [];
-  const pushAxis = (a: Point2D, b: Point2D) => {
-    const dx = b[0] - a[0];
-    const dy = b[1] - a[1];
-    const len2 = dx * dx + dy * dy;
-    if (len2 < eps * eps) return;
-    axes.push([-dy, dx]);
-  };
-  pushAxis(t1[0], t1[1]); pushAxis(t1[1], t1[2]); pushAxis(t1[2], t1[0]);
-  pushAxis(t2[0], t2[1]); pushAxis(t2[1], t2[2]); pushAxis(t2[2], t2[0]);
+  const sub = (a: Point2D, b: Point2D): Point2D => [a[0] - b[0], a[1] - b[1]];
+  const cross = (a: Point2D, b: Point2D): number => a[0] * b[1] - a[1] * b[0];
 
-  const project = (axis: Point2D, tri: [Point2D, Point2D, Point2D]) => {
-    const len = Math.hypot(axis[0], axis[1]);
-    const ax = axis[0] / len;
-    const ay = axis[1] / len;
-    let min = Infinity;
-    let max = -Infinity;
-    for (const p of tri) {
-      const d = p[0] * ax + p[1] * ay;
-      if (d < min) min = d;
-      if (d > max) max = d;
+  const signedArea = (poly: Point2D[]): number => {
+    let s = 0;
+    for (let i = 0; i < poly.length; i++) {
+      const [x1, y1] = poly[i];
+      const [x2, y2] = poly[(i + 1) % poly.length];
+      s += x1 * y2 - x2 * y1;
     }
-    return { min, max };
+    return s / 2;
   };
 
-  for (const axis of axes) {
-    const p1 = project(axis, t1);
-    const p2 = project(axis, t2);
-    if (p1.max < p2.min - eps || p2.max < p1.min - eps) return false;
-  }
+  const ensureCCW = (poly: Point2D[]): Point2D[] => (signedArea(poly) < 0 ? [...poly].reverse() : poly);
 
-  // SAT 通过，进一步区分仅顶点接触的情况
-  const dist2 = (p: Point2D, q: Point2D) => (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2;
-  const shared = t1.flatMap((p) => t2.filter((q) => dist2(p, q) <= eps * eps));
-  
-  const areaSign = (tri: [Point2D, Point2D, Point2D]) => (polygonArea(tri) >= 0 ? 1 : -1) as 1 | -1;
-  const strictInside = (p: Point2D, tri: [Point2D, Point2D, Point2D]) => {
-    const s = areaSign(tri);
-    const [a, b, c] = tri;
-    const ab = sub(b, a);
-    const bc = sub(c, b);
-    const ca = sub(a, c);
-    const ap = sub(p, a);
-    const bp = sub(p, b);
-    const cp = sub(p, c);
-    const s1 = s * cross2(ab, ap);
-    const s2 = s * cross2(bc, bp);
-    const s3 = s * cross2(ca, cp);
-    return s1 > eps && s2 > eps && s3 > eps;
+  // 点是否在裁剪边 AB 的“内侧”（clip polygon 为CCW => 内侧=左侧）
+  const isInside = (p: Point2D, a: Point2D, b: Point2D): boolean => {
+    return cross(sub(b, a), sub(p, a)) >= -EPS;
   };
-  if (t1.some((p) => strictInside(p, t2))) return true;
-  if (t2.some((p) => strictInside(p, t1))) return true;
 
-  const edges1: Array<[Point2D, Point2D]> = [[t1[0], t1[1]], [t1[1], t1[2]], [t1[2], t1[0]]];
-  const edges2: Array<[Point2D, Point2D]> = [[t2[0], t2[1]], [t2[1], t2[2]], [t2[2], t2[0]]];
-  const cross = (p: Point2D, q: Point2D, r: Point2D) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
-  const onSeg = (p: Point2D, q: Point2D, r: Point2D) =>
-    q[0] >= Math.min(p[0], r[0]) - eps &&
-    q[0] <= Math.max(p[0], r[0]) + eps &&
-    q[1] >= Math.min(p[1], r[1]) - eps &&
-    q[1] <= Math.max(p[1], r[1]) + eps;
-  for (const [a1, b1] of edges1) {
-    for (const [a2, b2] of edges2) {
-      const o1 = cross(a1, b1, a2);
-      const o2 = cross(a1, b1, b2);
-      const o3 = cross(a2, b2, a1);
-      const o4 = cross(a2, b2, b1);
-      const proper = o1 * o2 < -eps && o3 * o4 < -eps;
-      if (proper) return true;
-      const colinearOverlap =
-        Math.abs(o1) < eps && Math.abs(o2) < eps && onSeg(a1, a2, b1) && onSeg(a1, b2, b1);
-      if (colinearOverlap) return true;
-      // 单端点接触：若仅共享一点且无其他交叉，则忽略
+  // 线段 p->q 与 直线 a->b 的交点（假定非平行）
+  const lineIntersectionPoint = (p: Point2D, q: Point2D, a: Point2D, b: Point2D): Point2D => {
+    const r = sub(q, p);
+    const s = sub(b, a);
+    const denom = cross(r, s);
+    if (Math.abs(denom) < EPS) return q; // 平行兜底
+    const t = cross(sub(a, p), s) / denom;
+    return [p[0] + t * r[0], p[1] + t * r[1]];
+  };
+
+  const nearlyEqual = (p: Point2D, q: Point2D): boolean =>
+    Math.abs(p[0] - q[0]) <= 1e-8 && Math.abs(p[1] - q[1]) <= 1e-8;
+
+  const cleanPolygon = (poly: Point2D[]): Point2D[] => {
+    if (poly.length === 0) return poly;
+
+    // 去相邻重复点
+    const out: Point2D[] = [];
+    for (const pt of poly) {
+      if (out.length === 0 || !nearlyEqual(out[out.length - 1], pt)) out.push(pt);
     }
-  }
+    if (out.length > 1 && nearlyEqual(out[0], out[out.length - 1])) out.pop();
+    if (out.length < 3) return out;
 
-  if (shared.length <= 1) return false;
-  return true;
+    // 去共线中间点（减少噪声）
+    const out2: Point2D[] = [];
+    for (let i = 0; i < out.length; i++) {
+      const prev = out[(i - 1 + out.length) % out.length];
+      const cur = out[i];
+      const next = out[(i + 1) % out.length];
+      const v1 = sub(cur, prev);
+      const v2 = sub(next, cur);
+      if (Math.abs(cross(v1, v2)) > 1e-10) out2.push(cur);
+    }
+    return out2;
+  };
+
+  // Sutherland–Hodgman：用 clipPoly 裁剪 subjectPoly（两个凸多边形相交仍为凸）
+  const clipConvexPolygon = (subjectPoly: Point2D[], clipPoly: Point2D[]): Point2D[] => {
+    let output = subjectPoly;
+
+    for (let i = 0; i < clipPoly.length; i++) {
+      const A = clipPoly[i];
+      const B = clipPoly[(i + 1) % clipPoly.length];
+      const input = output;
+      output = [];
+      if (input.length === 0) break;
+
+      for (let j = 0; j < input.length; j++) {
+        const S = input[j];
+        const E = input[(j + 1) % input.length];
+
+        const Sin = isInside(S, A, B);
+        const Ein = isInside(E, A, B);
+
+        if (Ein) {
+          if (!Sin) output.push(lineIntersectionPoint(S, E, A, B));
+          output.push(E);
+        } else if (Sin) {
+          output.push(lineIntersectionPoint(S, E, A, B));
+        }
+      }
+
+      output = cleanPolygon(output);
+    }
+
+    return output;
+  };
+
+  const poly1 = ensureCCW([t1[0], t1[1], t1[2]]);
+  const poly2 = ensureCCW([t2[0], t2[1], t2[2]]);
+
+  const inter = clipConvexPolygon(poly1, poly2);
+
+  // 只有点/线相交：交集多边形顶点数 < 3
+  if (inter.length < 3) return false;
+
+  // 仍可能是“共线退化多边形”，用极小阈值判断是否有面积
+  return Math.abs(signedArea(inter)) > 1e-10;
 }
 
 /** 点 p 是否在三角形 tri 内，sign 表示三角形的方向（1:CCW, -1:CW） */

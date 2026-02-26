@@ -37,7 +37,7 @@ import {
   mul3,
   dot3,
   bisectorPlaneOfDihedral,
-  triIntersect2D,
+  triHasAreaIntersection,
 } from "./mathUtils";
 import { getSettings } from "./settings";
 import { disposeGroupDeep } from "./threeUtils";
@@ -308,7 +308,7 @@ export function createUnfold2dManager(
           [t.tri[1].x, t.tri[1].y],
           [t.tri[2].x, t.tri[2].y],
         ];
-        if (triIntersect2D(tri2d, newTri2d)) {
+        if (triHasAreaIntersection(tri2d, newTri2d)) {
           t.intersected = true;
           newTri.intersected = true;
           hasIntersect = true;
