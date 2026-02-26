@@ -163,14 +163,14 @@ export function createSpecialEdgeMaterial(options: {
 }
 
 // 2D 视图显示拼接边拼接关系的线的材质
-export function createSeamConnectLineMaterial(resolution: { width: number; height: number }) {
+export function createSeamConnectLineMaterial(resolution: { width: number; height: number }, dashScale: number) {
   return new LineMaterial({
         color: SEAM_CONNECT_LINE_COLOR.getHex(),
         linewidth: 2,
         dashed: true,
         dashSize: 0.1,
         gapSize: 0.1,
-        dashScale: 1,
+        dashScale: dashScale,
         dashOffset: 0,
         transparent: true,
         opacity: 0.8,
@@ -178,14 +178,14 @@ export function createSeamConnectLineMaterial(resolution: { width: number; heigh
       });
 }
 
-export function createUnfoldEdgeLineFoldinMaterial(resolution: { width: number; height: number }) {
+export function createUnfoldEdgeLineFoldinMaterial(resolution: { width: number; height: number }, dashScale: number) {
   return new LineMaterial({
         color: SEAMEDGE_DEFAULT_COLOR.getHex(),
         linewidth: 1.5,
         dashed: true,
-        dashSize: 0.3,
-        gapSize: 0.1,
-        dashScale: 1,
+        dashSize: 0.25,
+        gapSize: 0.15,
+        dashScale: dashScale,
         dashOffset: 0,
         resolution: new THREE.Vector2(resolution.width, resolution.height),
       });
@@ -199,7 +199,7 @@ export function createUnfoldEdgeLineFoldoutMaterial(resolution: { width: number;
       });
 }
 
-// 两遍渲染（最接近你想要的正确效果，工程上最常用）
+// 两遍渲染
 // 把同一几何绘制两次：
 // Pass A（不透明 pass）：只画 alpha≈1 的片元；transparent=false，depthWrite=true
 // Pass B（半透明 pass）：只画 0<alpha<1 的片元；transparent=true，depthWrite=false（否则透明仍会挡住后面的片元）

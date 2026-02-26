@@ -27,6 +27,7 @@ export type Renderer2DContext = {
   bboxRuler: BBoxRuler;
   setEdgeQueryProviders: (providers: EdgeQueryProviders) => void;
   setFaceHoverTargets: (targets: [LineSegments2, LineSegments2, LineSegments2]) => void;
+  refreshSeamConnectLines: (dashScale: number) => void;
   dispose: () => void;
 };
 
@@ -415,11 +416,26 @@ export function createRenderer2D(
   initHoverFaceLines();
 
   const initSeamConnectLines = () => {
-    if (seamConnectLines) return;
+    initOrRebuildSeamConnectLines(1, false);
+  };
+
+  const initOrRebuildSeamConnectLines = (dashScale: number, force: boolean = true) => {
+    if (seamConnectLines && !force) return;
+    if (seamConnectLines) {
+      seamConnectLines.forEach((line) => {
+        line.removeFromParent();
+        (line.geometry as LineSegmentsGeometry).dispose();
+        (line.material as any)?.dispose?.();
+      });
+      seamConnectLines = null;
+    }
+    const { width: viewportWidth, height: viewportHeight } = getViewport();
+    const lineWidth = viewportWidth || 1;
+    const lineHeight = viewportHeight || 1;
     const makeLine = () => {
       const geom = new LineSegmentsGeometry();
       geom.setPositions(new Float32Array(6));
-      const mat = createSeamConnectLineMaterial({ width, height });
+      const mat = createSeamConnectLineMaterial({ width: lineWidth, height: lineHeight }, dashScale);
       const line = new LineSegments2(geom, mat);
       line.computeLineDistances();
       line.visible = false;
@@ -441,6 +457,9 @@ export function createRenderer2D(
     },
     setFaceHoverTargets: (targets: [LineSegments2, LineSegments2, LineSegments2]) => {
       hoverFaceLines = targets;
+    },
+    refreshSeamConnectLines: (dashScale: number) => {
+      initOrRebuildSeamConnectLines(dashScale, true);
     },
     dispose,
   };

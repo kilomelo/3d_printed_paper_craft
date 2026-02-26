@@ -21,7 +21,6 @@ import { appEventBus } from "./eventBus";
 import type { Renderer2DContext } from "./renderer2d";
 import {
   createUnfoldFaceMaterial,
-  createScreenCheckerMaterial,
   createWarnningMaterial,
   createUnfoldEdgeLineFoldinMaterial,
   createUnfoldEdgeLineFoldoutMaterial,
@@ -498,8 +497,9 @@ export function createUnfold2dManager(
       const mid = Math.floor(sorted.length / 2);
       return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) * 0.5 : sorted[mid];
     })();
+    const foldinDashScale = medianEdgeLength > 1e-6 ? 4 / medianEdgeLength : 1;
     groupEdgesCache.set(groupId, { edges: edgeCache, medianEdgeLength });
-
+    renderer2d.refreshSeamConnectLines(foldinDashScale);
     // 展开边线段渲染
     const sizeVec = new Vector2();
     renderer2d.renderer.getSize(sizeVec);
@@ -513,7 +513,7 @@ export function createUnfold2dManager(
         const angleRad = angleIndex.getAngle(eid);
         const mat =
         angleRad > Math.PI + 1e-4
-        ? createUnfoldEdgeLineFoldinMaterial({ width: sizeVec.x || 1, height: sizeVec.y || 1 })
+        ? createUnfoldEdgeLineFoldinMaterial({ width: sizeVec.x || 1, height: sizeVec.y || 1 }, foldinDashScale)
         : createUnfoldEdgeLineFoldoutMaterial({ width: sizeVec.x || 1, height: sizeVec.y || 1 });
         const line = new LineSegments2(lineGeom, mat);
         line.computeLineDistances();
