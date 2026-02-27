@@ -8,6 +8,9 @@ type SettingsUIRefs = {
   openBtn: HTMLButtonElement;
   cancelBtn: HTMLButtonElement;
   confirmBtn: HTMLButtonElement;
+  joinTypeInterlockingBtn: HTMLButtonElement;
+  joinTypeClipBtn: HTMLButtonElement;
+  joinTypeResetBtn: HTMLButtonElement;
   scaleInput: HTMLInputElement;
   scaleResetBtn: HTMLButtonElement;
   tabWidthInput: HTMLInputElement;
@@ -36,8 +39,12 @@ type SettingsUIRefs = {
   bodyLayersValue: HTMLSpanElement;
   bodyLayersResetBtn: HTMLButtonElement;
   navBasic: HTMLButtonElement;
+  navInterlocking: HTMLButtonElement;
+  navClip: HTMLButtonElement;
   navExperiment: HTMLButtonElement;
   panelBasic: HTMLDivElement;
+  panelInterlocking: HTMLDivElement;
+  panelClip: HTMLDivElement;
   panelExperiment: HTMLDivElement;
 };
 
@@ -59,12 +66,18 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
 
   const closeSettings = () => {
     refs.overlay.classList.add("hidden");
+    refs.overlay.style.visibility = "";
     settingsSnapshot = null;
   };
 
   const updateHollowButtons = () => {
     refs.hollowOnBtn.classList.toggle("active", settingsDraft.hollowStyle);
     refs.hollowOffBtn.classList.toggle("active", !settingsDraft.hollowStyle);
+  };
+
+  const updateJoinTypeButtons = () => {
+    refs.joinTypeInterlockingBtn.classList.toggle("active", settingsDraft.joinType === "interlocking");
+    refs.joinTypeClipBtn.classList.toggle("active", settingsDraft.joinType === "clip");
   };
 
   const updateClipGapAdjustButtons = () => {
@@ -79,32 +92,51 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.wireframeRow.classList.toggle("disabled", !enabled);
   };
 
-  const activateTab = (tab: "basic" | "experiment") => {
-    const isBasic = tab === "basic";
-    refs.navBasic.classList.toggle("active", isBasic);
-    refs.navExperiment.classList.toggle("active", !isBasic);
-    refs.panelBasic.classList.toggle("active", isBasic);
-    refs.panelExperiment.classList.toggle("active", !isBasic);
+  const activateTab = (tab: "basic" | "interlocking" | "clip" | "experiment") => {
+    const tabs: Array<{
+      key: "basic" | "interlocking" | "clip" | "experiment";
+      nav: HTMLButtonElement;
+      panel: HTMLDivElement;
+    }> = [
+      { key: "basic", nav: refs.navBasic, panel: refs.panelBasic },
+      { key: "interlocking", nav: refs.navInterlocking, panel: refs.panelInterlocking },
+      { key: "clip", nav: refs.navClip, panel: refs.panelClip },
+      { key: "experiment", nav: refs.navExperiment, panel: refs.panelExperiment },
+    ];
+    tabs.forEach(({ key, nav, panel }) => {
+      const active = key === tab;
+      nav.classList.toggle("active", active);
+      panel.classList.toggle("active", active);
+    });
   };
 
   const measurePanelHeight = (panel: HTMLDivElement) => {
     const prevDisplay = panel.style.display;
     const prevVisibility = panel.style.visibility;
     const prevPosition = panel.style.position;
+    const prevWidth = panel.style.width;
     panel.style.visibility = "hidden";
     panel.style.position = "absolute";
-    panel.style.display = "block";
+    panel.style.display = "flex";
+    const contentWidth = refs.content.clientWidth || refs.content.getBoundingClientRect().width;
+    if (contentWidth > 0) {
+      panel.style.width = `${contentWidth}px`;
+    }
     const h = panel.scrollHeight;
     panel.style.display = prevDisplay;
     panel.style.visibility = prevVisibility;
     panel.style.position = prevPosition;
+    panel.style.width = prevWidth;
     return h;
   };
 
   const adjustContentHeight = () => {
-    const basicH = measurePanelHeight(refs.panelBasic);
-    const expH = measurePanelHeight(refs.panelExperiment);
-    const maxContent = Math.max(basicH, expH);
+    const maxContent = Math.max(
+      measurePanelHeight(refs.panelBasic),
+      measurePanelHeight(refs.panelInterlocking),
+      measurePanelHeight(refs.panelClip),
+      measurePanelHeight(refs.panelExperiment),
+    );
     const maxAllowed = Math.floor(window.innerHeight * 0.8);
     const target = Math.min(maxContent, maxAllowed);
     if (target > 0) {
@@ -153,6 +185,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
   refs.openBtn.addEventListener("click", () => {
     settingsSnapshot = getSettings();
     settingsDraft = { ...settingsSnapshot };
+    updateJoinTypeButtons();
     refs.scaleInput.value = String(settingsDraft.scale);
     refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
     refs.layerHeightInput.value = String(settingsDraft.layerHeight);
@@ -169,9 +202,28 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
       updateInputColor(el, true),
     );
     updateWireframeEnabled();
-    activateTab("basic");
-    adjustContentHeight();
+    refs.content.style.minHeight = "";
+    refs.content.style.height = "";
+    refs.overlay.style.visibility = "hidden";
     refs.overlay.classList.remove("hidden");
+    activateTab("basic");
+    requestAnimationFrame(() => {
+      adjustContentHeight();
+      refs.overlay.style.visibility = "";
+    });
+  });
+
+  refs.joinTypeInterlockingBtn.addEventListener("click", () => {
+    settingsDraft.joinType = "interlocking";
+    updateJoinTypeButtons();
+  });
+  refs.joinTypeClipBtn.addEventListener("click", () => {
+    settingsDraft.joinType = "clip";
+    updateJoinTypeButtons();
+  });
+  refs.joinTypeResetBtn.addEventListener("click", () => {
+    settingsDraft.joinType = getDefaultSettings().joinType;
+    updateJoinTypeButtons();
   });
 
   refs.hollowOnBtn.addEventListener("click", () => {
@@ -204,6 +256,12 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
   });
   refs.navBasic.addEventListener("click", () => {
     activateTab("basic");
+  });
+  refs.navInterlocking.addEventListener("click", () => {
+    activateTab("interlocking");
+  });
+  refs.navClip.addEventListener("click", () => {
+    activateTab("clip");
   });
   refs.navExperiment.addEventListener("click", () => {
     activateTab("experiment");
@@ -337,6 +395,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
     refs.tabClipGapInput.value = String(settingsDraft.tabClipGap);
     refs.wireframeThicknessInput.value = String(settingsDraft.wireframeThickness);
+    updateJoinTypeButtons();
     updateClipGapAdjustButtons();
     updateHollowButtons();
     [refs.scaleInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
@@ -350,6 +409,14 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
       return;
     }
     const changes: string[] = [];
+    if (settingsDraft.joinType !== settingsSnapshot.joinType) {
+      changes.push(
+        t("log.settings.changed", {
+          label: t("settings.joinType.label"),
+          value: settingsDraft.joinType === "interlocking" ? t("settings.joinType.interlocking") : t("settings.joinType.clip"),
+        }),
+      );
+    }
     if (settingsDraft.scale !== settingsSnapshot.scale) {
       changes.push(t("log.settings.changed", { label: t("settings.scale.label"), value: settingsDraft.scale }));
     }

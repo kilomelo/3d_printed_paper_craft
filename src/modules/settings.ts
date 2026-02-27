@@ -2,6 +2,7 @@
 import { appEventBus } from "./eventBus.js";
 
 export type Settings = {
+  joinType: "interlocking" | "clip";
   scale: number;
   layerHeight: number;
   connectionLayers: number;
@@ -15,6 +16,7 @@ export type Settings = {
 };
 
 export const SETTINGS_LIMITS = {
+  joinType: { allowed: ["interlocking", "clip"] as const },
   scale: { min: 0 },
   layerHeight: { min: 0, max: 0.5 },
   connectionLayers: { min: 1, max: 4 },
@@ -27,6 +29,7 @@ export const SETTINGS_LIMITS = {
 } as const;
 
 const defaultSettings: Settings = {
+  joinType: "interlocking",
   scale: 1,
   layerHeight: 0.2,
   connectionLayers: 1,
@@ -48,6 +51,11 @@ export function getSettings(): Settings {
 export function setScale(scale: number) {
   if (Number.isNaN(scale) || scale < SETTINGS_LIMITS.scale.min) return;
   current = { ...current, scale };
+}
+
+export function setJoinType(val: Settings["joinType"]) {
+  if (!SETTINGS_LIMITS.joinType.allowed.includes(val)) return;
+  current = { ...current, joinType: val };
 }
 
 export function setLayerHeight(val: number) {

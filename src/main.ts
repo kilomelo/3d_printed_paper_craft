@@ -301,9 +301,11 @@ app.innerHTML = `
       <div class="settings-header">
         <div class="settings-title" data-i18n="settings.title">项目设置</div>
       </div>
-      <div class="settings-body">
-        <div class="settings-nav">
+        <div class="settings-body">
+          <div class="settings-nav">
           <button class="settings-nav-item active" id="settings-nav-basic" data-i18n="settings.nav.basic">基础设置</button>
+          <button class="settings-nav-item" id="settings-nav-interlocking" data-i18n="settings.nav.interlocking">咬合拼接</button>
+          <button class="settings-nav-item" id="settings-nav-clip" data-i18n="settings.nav.clip">卡扣拼接</button>
           <button class="settings-nav-item" id="settings-nav-experiment" data-i18n="settings.nav.experimental">实验设置</button>
         </div>
         <div class="settings-content">
@@ -358,6 +360,22 @@ app.innerHTML = `
             </div>
             <div class="setting-row">
               <div class="setting-label-row">
+                <span class="setting-label" data-i18n="settings.joinType.label">拼接方式</span>
+                <span class="setting-desc" data-i18n="settings.joinType.desc">拼接边的连接方式，默认咬合</span>
+              </div>
+              <div class="setting-field">
+                <div class="settings-toggle-group">
+                  <button id="setting-join-type-interlocking" class="btn settings-inline-btn" data-i18n="settings.joinType.interlocking">咬合</button>
+                  <button id="setting-join-type-clip" class="btn settings-inline-btn" data-i18n="settings.joinType.clip">卡扣</button>
+                </div>
+                <button id="setting-join-type-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+          </div>
+          <div class="settings-panel" id="settings-panel-interlocking"></div>
+          <div class="settings-panel" id="settings-panel-clip">
+            <div class="setting-row">
+              <div class="setting-label-row">
                 <label for="setting-tab-width" class="setting-label" data-i18n="settings.tabWidth.label">拼接边舌片宽度</label>
                 <span class="setting-desc" data-i18n="settings.tabWidth.desc">用于拼接边粘接的舌片宽度，${limits.tabWidth.min}-${limits.tabWidth.max}，默认${defaultSettings.tabWidth}，单位mm</span>
               </div>
@@ -386,8 +404,6 @@ app.innerHTML = `
                 <button id="setting-tab-clip-gap-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
-          </div>
-          <div class="settings-panel" id="settings-panel-experiment">
             <div class="setting-row">
               <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.clipGapAdjusts.label">夹子厚度</span>
@@ -401,6 +417,8 @@ app.innerHTML = `
                 <button id="setting-clip-thickness-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
+          </div>
+          <div class="settings-panel" id="settings-panel-experiment">
             <div class="setting-row">
               <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.hollow.label">镂空风格</span>
@@ -502,6 +520,9 @@ const showLoadingOverlay = () => loadingOverlay?.classList.remove("hidden");
 const hideLoadingOverlay = () => loadingOverlay?.classList.add("hidden");
 const settingsCancelBtn = document.querySelector<HTMLButtonElement>("#settings-cancel-btn");
 const settingsConfirmBtn = document.querySelector<HTMLButtonElement>("#settings-confirm-btn");
+const settingJoinTypeInterlockingBtn = document.querySelector<HTMLButtonElement>("#setting-join-type-interlocking");
+const settingJoinTypeClipBtn = document.querySelector<HTMLButtonElement>("#setting-join-type-clip");
+const settingJoinTypeResetBtn = document.querySelector<HTMLButtonElement>("#setting-join-type-reset");
 const settingScaleInput = document.querySelector<HTMLInputElement>("#setting-scale");
 const settingScaleResetBtn = document.querySelector<HTMLButtonElement>("#setting-scale-reset");
 const settingLayerHeightInput = document.querySelector<HTMLInputElement>("#setting-layer-height");
@@ -530,8 +551,12 @@ const settingWireframeThicknessInput = document.querySelector<HTMLInputElement>(
 const settingWireframeThicknessResetBtn = document.querySelector<HTMLButtonElement>("#setting-wireframe-thickness-reset");
 const settingWireframeRow = settingWireframeThicknessInput?.closest(".setting-row") as HTMLDivElement | null;
 const settingNavBasic = document.querySelector<HTMLButtonElement>("#settings-nav-basic");
+const settingNavInterlocking = document.querySelector<HTMLButtonElement>("#settings-nav-interlocking");
+const settingNavClip = document.querySelector<HTMLButtonElement>("#settings-nav-clip");
 const settingNavExperiment = document.querySelector<HTMLButtonElement>("#settings-nav-experiment");
 const settingPanelBasic = document.querySelector<HTMLDivElement>("#settings-panel-basic");
+const settingPanelInterlocking = document.querySelector<HTMLDivElement>("#settings-panel-interlocking");
+const settingPanelClip = document.querySelector<HTMLDivElement>("#settings-panel-clip");
 const settingPanelExperiment = document.querySelector<HTMLDivElement>("#settings-panel-experiment");
 const groupPreviewPanel = groupPreview?.closest(".preview-panel") as HTMLDivElement | null;
 const groupFacesCountLabel = document.querySelector<HTMLSpanElement>("#group-faces-count");
@@ -582,6 +607,9 @@ if (
   !renameConfirmBtn ||
   !settingsCancelBtn ||
   !settingsConfirmBtn ||
+  !settingJoinTypeInterlockingBtn ||
+  !settingJoinTypeClipBtn ||
+  !settingJoinTypeResetBtn ||
   !settingScaleInput ||
   !settingScaleResetBtn ||
   !settingTabWidthInput ||
@@ -610,8 +638,12 @@ if (
   !settingWireframeThicknessResetBtn ||
   !settingWireframeRow ||
   !settingNavBasic ||
+  !settingNavInterlocking ||
+  !settingNavClip ||
   !settingNavExperiment ||
   !settingPanelBasic ||
+  !settingPanelInterlocking ||
+  !settingPanelClip ||
   !settingPanelExperiment ||
   !settingsOpenBtn ||
   !settingsContent
@@ -698,6 +730,9 @@ const settingsUI = createSettingsUI(
     openBtn: settingsOpenBtn,
     cancelBtn: settingsCancelBtn,
     confirmBtn: settingsConfirmBtn,
+    joinTypeInterlockingBtn: settingJoinTypeInterlockingBtn,
+    joinTypeClipBtn: settingJoinTypeClipBtn,
+    joinTypeResetBtn: settingJoinTypeResetBtn,
     scaleInput: settingScaleInput,
     scaleResetBtn: settingScaleResetBtn,
     tabWidthInput: settingTabWidthInput,
@@ -716,8 +751,12 @@ const settingsUI = createSettingsUI(
     wireframeThicknessResetBtn: settingWireframeThicknessResetBtn,
     wireframeRow: settingWireframeRow,
     navBasic: settingNavBasic,
+    navInterlocking: settingNavInterlocking,
+    navClip: settingNavClip,
     navExperiment: settingNavExperiment,
     panelBasic: settingPanelBasic,
+    panelInterlocking: settingPanelInterlocking,
+    panelClip: settingPanelClip,
     panelExperiment: settingPanelExperiment,
     layerHeightInput: settingLayerHeightInput,
     layerHeightResetBtn: settingLayerHeightResetBtn,
