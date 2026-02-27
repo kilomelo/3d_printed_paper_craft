@@ -4,6 +4,10 @@
   justify-content: center;
 }
 
+.home-main {
+  overflow: hidden;
+}
+
 .home-fx-layer {
   position: absolute;
   inset: 0;
@@ -180,6 +184,17 @@
   white-space: normal;
 }
 
+.home-links-inline {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  opacity: 0.92;
+  flex-wrap: wrap;
+}
+
 /* Body */
 .home-body{
   display:grid;
@@ -321,12 +336,22 @@
   display:flex;
   justify-content:center;
   align-items:center;
-  gap: 10px;
+  gap: 12px;
   font-size: 12px;
   color: var(--muted);
   opacity: .9;
   flex-wrap: wrap;
 }
+
+.home-foot--changelog {
+  display: grid;
+  justify-content: stretch;
+  align-items: stretch;
+  text-align: left;
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  padding-top: 14px; /* 分割线与标题/内容的间距 */
+}
+
 .home-link{
   color: #93c5fd;
   text-decoration:none;
@@ -339,6 +364,159 @@
 }
 .home-version{
   color: var(--textSecondary);
+}
+
+.home-changelog-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.home-changelog-list {
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.24) rgb(from var(--panel) r g b / 70%);
+}
+
+.home-changelog-list--compact{
+  /* 4 行 * 1.6em */
+  --lines: 4;
+  --lh: 1.6em;
+
+  /* 顶部淡入/底部淡出 */
+  --fade-top: 0.4em;
+  --fade-bottom: 1em;
+
+  /* 滚动条保护带宽度（按需 10~16px） */
+  --sbw: 14px;
+
+  /* 把淡入淡出区域让给 padding（不让文字落进渐隐区） */
+  padding-top: var(--fade-top);
+  padding-bottom: var(--fade-bottom);
+  box-sizing: content-box;
+
+  /* 保持“可视文字行数”不变：把 padding 高度加回 max-height */
+  max-height: calc(var(--lines) * var(--lh) + var(--fade-top) + var(--fade-bottom));
+  overflow: auto;
+  position: relative;
+  scrollbar-gutter: stable;
+
+  /* 第一层：上下渐隐（发生在 padding 区域） */
+  -webkit-mask-image:
+    linear-gradient(
+      to bottom,
+      rgba(0,0,0,0.25) 0,
+      rgba(0,0,0,1) var(--fade-top),
+      rgba(0,0,0,1) calc(100% - var(--fade-bottom)),
+      rgba(0,0,0,0.25) 100%
+    ),
+    /* 第二层：右侧滚动条保护带（永远不透明） */
+    linear-gradient(#000,#000);
+  -webkit-mask-size:
+    calc(100% - var(--sbw)) 100%,
+    var(--sbw) 100%;
+  -webkit-mask-position:
+    0 0,
+    100% 0;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-mode: alpha;
+
+  mask-image:
+    linear-gradient(
+      to bottom,
+      rgba(0,0,0,0) 0,
+      rgba(0,0,0,1) var(--fade-top),
+      rgba(0,0,0,1) calc(100% - var(--fade-bottom)),
+      rgba(0,0,0,0) 100%
+    ),
+    linear-gradient(#000,#000);
+  mask-size:
+    calc(100% - var(--sbw)) 100%,
+    var(--sbw) 100%;
+  mask-position:
+    0 0,
+    100% 0;
+  mask-repeat: no-repeat;
+  mask-mode: alpha;
+}
+
+.home-changelog-list--compact .home-changelog-item {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  gap: 2px;
+}
+
+.home-changelog-list--compact .home-changelog-head {
+  align-items: baseline;
+}
+
+.home-changelog-list--compact .home-changelog-points {
+  margin: 0 0 6px;
+}
+
+.home-changelog-list--compact .home-changelog-date {
+  margin-left: auto;
+}
+
+.home-changelog-list::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.home-changelog-list::-webkit-scrollbar-track {
+  background: rgb(from var(--panel) r g b / 70%);
+}
+
+.home-changelog-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  border: 2px solid rgb(from var(--panel) r g b / 70%);
+  background-clip: padding-box;
+}
+
+.home-changelog-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.34);
+}
+
+.home-changelog-item {
+  padding: 10px 11px;
+  display: grid;
+  gap: 6px;
+}
+
+.home-changelog-item.is-loading {
+  color: #a2bad8;
+}
+
+.home-changelog-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.home-changelog-version {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e8f2ff;
+}
+
+.home-changelog-date {
+  font-size: 12px;
+  color: #a6bdd9;
+}
+
+.home-changelog-points {
+  margin: 0;
+  padding-left: 18px;
+  color: #cde0f8;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 /* 动画 */

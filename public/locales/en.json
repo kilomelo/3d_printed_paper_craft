@@ -12,6 +12,8 @@
   "mainpage.links.github": "https://github.com/kilomelo/3d_printed_paper_craft",
   "mainpage.links.guide": "https://www.youtube.com/watch?v=kpObT-4yojI",
   "mainpage.localOnly": "Processing runs locally (models aren’t uploaded).",
+  "mainpage.changelogTitle": "Latest Update",
+  "mainpage.changelogFile": "/changelog_en.md",
 
   "menu.about": "Help & About",
   "menu.preview.exit": "Exit Preview",

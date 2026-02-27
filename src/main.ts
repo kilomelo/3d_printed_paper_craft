@@ -457,6 +457,7 @@ const logPanelEl = document.querySelector<HTMLDivElement>("#log-panel");
 const fileInput = document.querySelector<HTMLInputElement>("#file-input");
 const homeStartBtn = document.querySelector<HTMLButtonElement>("#home-start");
 const homeDemoBtn = document.querySelector<HTMLButtonElement>("#home-demo");
+const homeChangelogList = document.querySelector<HTMLDivElement>("#home-changelog-list");
 const exitPreviewBtn = document.querySelector<HTMLButtonElement>("#exit-preview-btn");
 const menuOpenBtn = document.querySelector<HTMLButtonElement>("#menu-open");
 const menuBlocker = document.querySelector<HTMLDivElement>("#menu-blocker");
@@ -538,7 +539,7 @@ const groupFacesCountLabel = document.querySelector<HTMLSpanElement>("#group-fac
 const groupColorBtn = document.querySelector<HTMLButtonElement>("#group-color-btn");
 const groupColorInput = document.querySelector<HTMLInputElement>("#group-color-input");
 const groupEditToggle = document.querySelector<HTMLButtonElement>("#group-edit-toggle");
-const layoutEmpty = document.querySelector<HTMLElement>("#layout-empty");
+const layoutHome = document.querySelector<HTMLElement>("#layout-home");
 const layoutWorkspace = document.querySelector<HTMLElement>("#layout-workspace");
 const versionBadgeGlobal = document.querySelector<HTMLDivElement>(".version-badge-global");
 const groupDeleteSlot = document.querySelector<HTMLDivElement>("#group-delete-slot");
@@ -572,7 +573,7 @@ if (
   !groupColorInput ||
   !groupDeleteSlot ||
   !groupEditToggle ||
-  !layoutEmpty ||
+  !layoutHome ||
   !layoutWorkspace ||
   !settingsOverlay ||
   !renameOverlay ||
@@ -629,6 +630,72 @@ const { log } = createLog(logListEl);
   await initI18n();
 })();
 onLanguageChanged(applyI18nTexts);
+
+type ChangelogItem = { version: string; date: string; points: string[] };
+
+const parseChangelogText = (text: string): ChangelogItem[] => {
+  const lines = text.split(/\r?\n/);
+  const result: ChangelogItem[] = [];
+  let current: ChangelogItem | null = null;
+
+  lines.forEach((raw) => {
+    const line = raw.trim();
+    if (!line) return;
+
+    const header = line.match(/^##\s*v?([0-9A-Za-z._-]+)\s*\|\s*(\d{4}-\d{2}-\d{2})$/);
+    if (header) {
+      if (current) result.push(current);
+      current = { version: header[1], date: header[2], points: [] };
+      return;
+    }
+
+    if (line.startsWith("- ") && current) {
+      current.points.push(line.slice(2).trim());
+    }
+  });
+
+  if (current) result.push(current);
+  return result;
+};
+
+const renderHomeChangelog = (items: ChangelogItem[]) => {
+  const allItemsHtml = !items.length
+    ? `<div class="home-changelog-item">No changelog data.</div>`
+    : items.map((item) => `
+    <article class="home-changelog-item">
+      <header class="home-changelog-head">
+        <span class="home-changelog-version">v${item.version}</span>
+        <span class="home-changelog-date">${item.date}</span>
+      </header>
+      <ul class="home-changelog-points">
+        ${item.points.map((point) => `<li>${point}</li>`).join("")}
+      </ul>
+    </article>
+  `).join("");
+  if (homeChangelogList) {
+    homeChangelogList.innerHTML = allItemsHtml;
+  }
+};
+
+const loadHomeChangelog = async () => {
+  if (!homeChangelogList) return;
+  try {
+    const changelogPath = t("mainpage.changelogFile");
+    const path = changelogPath && changelogPath !== "mainpage.changelogFile" ? changelogPath : "/changelog.md";
+    const res = await fetch(path, { cache: "no-cache" });
+    if (!res.ok) throw new Error(`failed: ${res.status}`);
+    const content = await res.text();
+    renderHomeChangelog(parseChangelogText(content));
+  } catch {
+    if (homeChangelogList) {
+      homeChangelogList.innerHTML = `<div class="home-changelog-item">Load changelog failed.</div>`;
+    }
+  }
+};
+onLanguageChanged(() => {
+  void loadHomeChangelog();
+});
+void loadHomeChangelog();
 
 // Initialize Vercel Web Analytics
 inject();
@@ -955,7 +1022,7 @@ appEventBus.on("historyErased", (erasedHistoryUid) => {
 const projectLoaded = () => {
   if (versionBadgeGlobal) versionBadgeGlobal.style.display = "none";
   logPanelEl?.classList.remove("hidden");
-  layoutEmpty.classList.toggle("active", false);
+  layoutHome.classList.toggle("active", false);
   layoutWorkspace.classList.toggle("active", true);
   layoutWorkspace.classList.remove("preloaded");
   updateMenuState();
@@ -1042,12 +1109,12 @@ fileInput.addEventListener("cancel", () => {
 fileInput.addEventListener("click", () => {
   window.addEventListener("focus", focusCancelHandler);
 });
-homeStartBtn.addEventListener("click", () => {
+const openFilePickerFromHome = () => {
   fileInput.value = "";
   showLoadingOverlay();
   fileInput.click();
-});
-homeDemoBtn?.addEventListener("click", async () => {
+};
+const loadDemoProjectFromHome = async () => {
   try {
     showLoadingOverlay();
     const demoFile = getDemoFileName();
@@ -1061,7 +1128,9 @@ homeDemoBtn?.addEventListener("click", async () => {
     log(t("log.demo.loadFail"), "error");
     hideLoadingOverlay();
   }
-});
+};
+homeStartBtn.addEventListener("click", openFilePickerFromHome);
+homeDemoBtn?.addEventListener("click", loadDemoProjectFromHome);
 menuOpenBtn.addEventListener("click", () => {
   fileInput.value = "";
   showLoadingOverlay();

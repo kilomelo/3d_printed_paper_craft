@@ -12,6 +12,8 @@
   "mainpage.links.github": "https://github.com/kilomelo/3d_printed_paper_craft",
   "mainpage.links.guide": "https://www.bilibili.com/video/BV1cAZkBeEZ6",
   "mainpage.localOnly": "所有处理都在本地完成，不上传模型",
+  "mainpage.changelogTitle": "更新日志",
+  "mainpage.changelogFile": "/changelog.md",
 
   "menu.about": "帮助 & 关于",
   "menu.preview.exit": "退出预览",
