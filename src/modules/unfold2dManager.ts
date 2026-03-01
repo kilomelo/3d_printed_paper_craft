@@ -593,15 +593,20 @@ export function createUnfold2dManager(
       angleIndex.getFaceNormal(fid, triNormal);
       const edgeIds = faceToEdges.get(fid) ?? [];
       const keyTo2D = new Map<string, Point2D>();
+      let triVertexKeys: [string, string, string] | null = null;
       const mapping = faceIndexMap.get(fid);
       if (mapping) {
         const geom = mapping.mesh.geometry;
         const pos = geom.getAttribute("position");
         if (pos) {
           const [ia, ib, ic] = getFaceVertexIndices(geom, mapping.localFace);
-          keyTo2D.set(makeVertexKey(pos, ia), [a.x, a.y]);
-          keyTo2D.set(makeVertexKey(pos, ib), [b.x, b.y]);
-          keyTo2D.set(makeVertexKey(pos, ic), [c.x, c.y]);
+          const keyA = makeVertexKey(pos, ia);
+          const keyB = makeVertexKey(pos, ib);
+          const keyC = makeVertexKey(pos, ic);
+          triVertexKeys = [keyA, keyB, keyC];
+          keyTo2D.set(keyA, [a.x, a.y]);
+          keyTo2D.set(keyB, [b.x, b.y]);
+          keyTo2D.set(keyC, [c.x, c.y]);
         }
       }
       const edgeInfo = edgeIds.map((eid, edgeIdx) => {
@@ -609,6 +614,8 @@ export function createUnfold2dManager(
         const isSeam = edgeRec?.faces && edgeRec.faces.size === 2 && sharedEdgeIsSeam([...edgeRec.faces][0], [...edgeRec.faces][1]);
         const isOuter = isSeam || (edgeRec?.faces.size ?? 0) === 1;
         const tabAngle: number[] = [];
+        let joinSide: "mp" | "fp" | undefined;
+        let stableOrder: "ab" | "ba" | undefined;
         if (isSeam && edgeRec?.vertices) {
           const [k1, k2] = edgeRec.vertices;
           // console.log("Processing seam edge:", edgeRec.id, k1, k2);
@@ -778,12 +785,26 @@ export function createUnfold2dManager(
               // console.log("[geometry] Found third vertex", thirdVertexKey, "for face", fid, "when processing seam edge", edgeRec.id);
               const thirdVertexPos = vertexKeyToPos.get(thirdVertexKey);
               if (thirdVertexPos) {
-                const isCCW = isCounterClockwiseFromFront(p1Vec, p2Vec, thirdVertexPos, [triNormal.x, triNormal.y, triNormal.z]);
-                if (!isCCW) {
+                const isEdgeOrderCCW = isCounterClockwiseFromFront(p1Vec, p2Vec, thirdVertexPos, [triNormal.x, triNormal.y, triNormal.z]);
+                if (!isEdgeOrderCCW) {
                   // console.log("Reversing tab angle order for edge:", edgeRec.id, "due to CW face winding", p1Vec, p2Vec, thirdVertexPos);
                   tabAngle.reverse();
                 }
-                // else console.log("Keeping tab angle order for edge:", edgeRec.id, "due to CCW face winding", p1Vec, p2Vec, thirdVertexPos);
+                if (triVertexKeys) {
+                  const localEndpoints: [string, string] | null =
+                    edgeIdx === 0 ? [triVertexKeys[0], triVertexKeys[1]]
+                    : edgeIdx === 1 ? [triVertexKeys[1], triVertexKeys[2]]
+                    : edgeIdx === 2 ? [triVertexKeys[2], triVertexKeys[0]]
+                    : null;
+                  if (localEndpoints) {
+                    const [pointAKey, pointBKey] = localEndpoints;
+                    stableOrder = pointAKey > pointBKey ? "ab" : "ba";
+                    const stableFirstKey = stableOrder === "ab" ? pointAKey : pointBKey;
+                    const stableMatchesEdgeOrder = stableFirstKey === k1;
+                    const isStableOrderCCW = stableMatchesEdgeOrder ? isEdgeOrderCCW : !isEdgeOrderCCW;
+                    joinSide = isStableOrderCCW ? "fp" : "mp";
+                  }
+                }
               }
               else {
                 console.warn("Cannot find third vertex position for face", fid, "when processing seam edge", k1, k2);
@@ -799,6 +820,8 @@ export function createUnfold2dManager(
           angle: angleIndex.getAngle(eid),
           isSeam: isSeam,
           tabAngle: tabAngle,
+          joinSide,
+          stableOrder,
         };
       });
       result.push({

@@ -12,7 +12,14 @@ export type Plane3D = { normal: Vec3; point: Point3D };
 export type TriangleWithEdgeInfo = {
   tri: Triangle2D;
   faceId: number;
-  edges: { isOuter: boolean; angle: number; isSeam?: boolean; tabAngle: number[] }[];
+  edges: {
+    isOuter: boolean;
+    angle: number;
+    isSeam?: boolean;
+    tabAngle: number[];
+    joinSide?: "mp" | "fp";
+    stableOrder?: "ab" | "ba";
+  }[];
   pointAngleData?: { vertexKey: string; unfold2dPos: Point2D; minAngle: number }[];
 };
 

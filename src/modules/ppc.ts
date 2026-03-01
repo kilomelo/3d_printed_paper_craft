@@ -1,6 +1,6 @@
 // 3dppc 格式处理：负责序列化/反序列化自定义 3dppc 文件，提供加载与下载工具。
 import { BufferGeometry, Float32BufferAttribute, Group, Mesh } from "three";
-import { collectGeometry, filterLargestComponent } from "./geometry";
+import { collectGeometry } from "./geometry";
 import { getCurrentProject } from "./project";
 import { getGroupColorCursor, exportGroupsData } from "./groups";
 import { getSettings } from "./settings";
@@ -52,11 +52,9 @@ async function computeChecksum(payload: unknown): Promise<string> {
 
 export async function build3dppcData(object: Group): Promise<PPCFile> {
   const collected = collectGeometry(object);
-  const filtered = filterLargestComponent(collected);
   const round5 = (n: number) => Math.round(n * 1e5) / 1e5;
-  const exportVertices = filtered.vertices.map(([x, y, z]) => [round5(x), round5(y), round5(z)]);
-  const exportTriangles = filtered.triangles;
-  const mapping = filtered.mapping;
+  const exportVertices = collected.vertices.map(([x, y, z]) => [round5(x), round5(y), round5(z)]);
+  const exportTriangles = collected.triangles;
 
   const checksum = await computeChecksum({
     vertices: exportVertices,
@@ -66,15 +64,10 @@ export async function build3dppcData(object: Group): Promise<PPCFile> {
   const groupsData: NonNullable<PPCFile["groups"]> = [];
   const rawGroups = exportGroupsData();
   rawGroups.forEach((g) => {
-    const filteredFaces: number[] = [];
-    g.faces.forEach((faceId) => {
-      const mapped = mapping[faceId];
-      if (mapped !== undefined && mapped >= 0) filteredFaces.push(mapped);
-    });
     groupsData.push({
       id: g.id,
       color: `#${g.color.toString(16).padStart(6, "0")}`,
-      faces: filteredFaces,
+      faces: [...g.faces],
       name: g.name,
       placeAngle: g.placeAngle,
     });

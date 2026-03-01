@@ -2,11 +2,11 @@
 import { appEventBus } from "./eventBus.js";
 
 export type Settings = {
-  joinType: "interlocking" | "clip";
   scale: number;
   layerHeight: number;
   connectionLayers: number;
   bodyLayers: number;
+  joinType: "interlocking" | "clip";
   tabWidth: number;
   tabThickness: number;
   tabClipGap: number;
@@ -16,11 +16,11 @@ export type Settings = {
 };
 
 export const SETTINGS_LIMITS = {
-  joinType: { allowed: ["interlocking", "clip"] as const },
   scale: { min: 0 },
   layerHeight: { min: 0, max: 0.5 },
   connectionLayers: { min: 1, max: 4 },
   bodyLayers: { min: 1, max: 8 },
+  joinType: { allowed: ["interlocking", "clip"] as const },
   tabWidth: { min: 0, max: 20 },
   tabThickness: { min: 0.8, max: 2 },
   tabClipGap: { min: 0.1, max: 0.3 },
