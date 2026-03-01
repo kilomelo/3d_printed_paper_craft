@@ -9,18 +9,34 @@ export type Vec2 = [number, number];
 export type Vec3 = [number, number, number];
 export type Plane3D = { normal: Vec3; point: Point3D };
 
+// 建模阶段使用的边属性。语义与旧的三角形数据保持一致，
+// 只是被提取为可复用的独立类型，便于三角形/多边形共用。
+export type PolygonEdgeInfo = {
+  isOuter: boolean;
+  angle: number;
+  isSeam?: boolean;
+  tabAngle: number[];
+  joinSide?: "mp" | "fp";
+  stableOrder?: "ab" | "ba";
+};
+
+// 顶点角度相关的附加信息，当前建模侧尚未正式消费，但保留类型语义。
+export type PointAngleData = { vertexKey: string; unfold2dPos: Point2D; minAngle: number };
+
+// 兼容现有建模链路的三角形数据结构。
+// 注意：faceId 已移除，因为这条数据链路中没有实际消费者。
 export type TriangleWithEdgeInfo = {
   tri: Triangle2D;
-  faceId: number;
-  edges: {
-    isOuter: boolean;
-    angle: number;
-    isSeam?: boolean;
-    tabAngle: number[];
-    joinSide?: "mp" | "fp";
-    stableOrder?: "ab" | "ba";
-  }[];
-  pointAngleData?: { vertexKey: string; unfold2dPos: Point2D; minAngle: number }[];
+  edges: PolygonEdgeInfo[];
+  pointAngleData?: PointAngleData[];
+};
+
+// 新的多边形建模输入。
+// points[i] -> points[(i + 1) % n] 对应 edges[i]。
+export type PolygonWithEdgeInfo = {
+  points: Point2D[];
+  edges: PolygonEdgeInfo[];
+  pointAngleData?: PointAngleData[];
 };
 
 export const v2 = (p: Point2D) => new THREE.Vector2(p[0], p[1]);
