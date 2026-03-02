@@ -420,13 +420,28 @@ const buildSolidFromPolygonsWithAngles = async (
           if (edge.isSeam) {
             const dirAB = [(pointA[0] - pointB[0]) / distAB, (pointA[1] - pointB[1]) / distAB];
             // 爪的伸出角度最大为90度，所以对于大于90度的拼接边，需要补一个基座，并且回退爪的位置
-            const baseOffsetAngle = Math.max(0, (edge.angle - 90) / 2);
-            const clawExtrudePlane = transformPlaneLocal(edgePerpendicularPlane, { offset: [-bodyThickness * Math.tan(degToRad(90 - edge.angle / 2)), connectionThickness + bodyThickness, (distAB - clawWidth) / 2]});
+            const clawIntersectionAngle =
+              edge.angle < 90 ? edge.angle : 
+              edge.angle < 180 ? 90 :
+              edge.angle < 225+1e-3 ? 270 - edge.angle :
+              360 - edge.angle;
+            const baseOffsetAngle =
+              edge.angle < 180 ? edge.angle - clawIntersectionAngle :
+              edge.angle < 225+1e-3 ? edge.angle - 135 :
+              180 - clawIntersectionAngle;
+            console.log('edge.angle', edge.angle, 'baseOffsetAngle', baseOffsetAngle, 'clawIntersectionAngle', clawIntersectionAngle);
+            const clawExtrudePlane = transformPlaneLocal(edgePerpendicularPlane, { offset: [
+              (edge.angle < 180 ? bodyThickness : (bodyThickness + connectionThickness)) * -Math.tan(degToRad(90 - edge.angle / 2)),
+              connectionThickness + bodyThickness, (distAB - clawWidth) / 2
+            ]});
             const clawShapeSketcher = new Sketcher(clawExtrudePlane.clone());
             clawShapeSketcher.movePointerTo([0, 0]);
-            const arcStartPoint: Point2D = [-clawTargetRadius * Math.cos(degToRad(baseOffsetAngle)), clawTargetRadius * Math.sin(degToRad(baseOffsetAngle))];
+            const arcStartPoint: Point2D = [
+              -clawTargetRadius * Math.cos(degToRad(baseOffsetAngle)),
+              clawTargetRadius * Math.sin(degToRad(baseOffsetAngle))
+            ];
             clawShapeSketcher.lineTo(arcStartPoint);
-            arcByCenterStartAngleSafe(clawShapeSketcher, [0,0], arcStartPoint, 2 * baseOffsetAngle - edge.angle);
+            arcByCenterStartAngleSafe(clawShapeSketcher, [0,0], arcStartPoint, -clawIntersectionAngle);
             const clawBaseCylinder = clawShapeSketcher.close().extrude(clawWidth);
 
             // 分割圆柱体，平面数组顺序必须从底到上
@@ -442,8 +457,9 @@ const buildSolidFromPolygonsWithAngles = async (
               return parts;
             }
             
-            const typeAAngle = 180 - edge.angle + baseOffsetAngle;
-            const typeBAngle = Math.max(270 - edge.angle, 180) - baseOffsetAngle;
+            const typeAAngle = 180 - clawIntersectionAngle - baseOffsetAngle;
+            const typeBAngle = typeAAngle + clawIntersectionAngle;
+            console.log('typeAAngle', typeAAngle, 'typeBAngle', typeBAngle);
             const splitPlanes: Plane[] = [];
             const planeA_ = transformPlaneLocal(clawExtrudePlane, { offset: [0, 0, clawWidth * 1 / 5], rotateAround: "z", angle: typeAAngle });
             const planeA = transformPlaneLocal(planeA_, { rotateAround: "x", angle: clawInterclockingAngle });
@@ -460,7 +476,7 @@ const buildSolidFromPolygonsWithAngles = async (
             const claws = splitCylinder(clawBaseCylinder, [planeA, planeB, planeC, planeD]);
             const mpClaw = claws[0].fuse(claws[2]).fuse(claws[4])
               .rotate(180, clawExtrudePlane.origin, [0,0,1])
-              .rotate(180 - edge.angle, clawExtrudePlane.origin, clawExtrudePlane.zDir)
+              .rotate(180 - 2 * baseOffsetAngle - clawIntersectionAngle, clawExtrudePlane.origin, clawExtrudePlane.zDir)
               .translate(dirAB[0] * clawWidth, dirAB[1] * clawWidth, 0);
             const fpClaw = claws[1].fuse(claws[3]);
             if (interlockingClaws.length === 0) interlockingClaws.push(joinSide === "mp" ? mpClaw : fpClaw);
@@ -469,6 +485,10 @@ const buildSolidFromPolygonsWithAngles = async (
             if (edge.angle > 90) {
               const clawBaseSketcher = new Sketcher(clawExtrudePlane);
               clawBaseSketcher.movePointerTo([0, 0]);
+              clawBaseSketcher.lineTo([
+                (edge.angle < 180 ? bodyThickness : (bodyThickness + connectionThickness)) * Math.tan(degToRad(90 - edge.angle / 2)),
+                - bodyThickness - connectionThickness
+              ]);
               clawBaseSketcher.lineTo([-clawTargetRadius, 0]);
               arcByCenterStartAngleSafe(clawBaseSketcher, [0,0], [-clawTargetRadius, 0], -baseOffsetAngle);
               interlockingClaws[0] = interlockingClaws[0].fuse(clawBaseSketcher.close().extrude(clawWidth));
