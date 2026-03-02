@@ -7,7 +7,7 @@ export type Settings = {
   connectionLayers: number;
   bodyLayers: number;
   joinType: "interlocking" | "clip";
-  clawInterclockingAngle: number;
+  clawInterlockingAngle: number;
   clawTargetRadius: number;
   clawWidth: number;
   tabWidth: number;
@@ -25,7 +25,7 @@ export const SETTINGS_LIMITS = {
   connectionLayers: { min: 1, max: 4 },
   bodyLayers: { min: 1, max: 8 },
   joinType: { allowed: ["interlocking", "clip"] as const },
-  clawInterclockingAngle: { min: 3, max: 7 },
+  clawInterlockingAngle: { min: 3, max: 50 },
   clawTargetRadius: { min: 2, max: 5 },
   clawWidth: { min: 5, max: 10 },
   tabWidth: { min: 0, max: 20 },
@@ -42,7 +42,7 @@ const defaultSettings: Settings = {
   layerHeight: 0.2,
   connectionLayers: 1,
   bodyLayers: 3,
-  clawInterclockingAngle: 5,
+  clawInterlockingAngle: 5,
   clawTargetRadius: 3,
   clawWidth: 7,
   tabWidth: 4,
@@ -80,13 +80,13 @@ export function setLayerHeight(val: number) {
   current = { ...current, layerHeight: val };
 }
 
-export function setClawInterclockingAngle(val: number) {
+export function setClawInterlockingAngle(val: number) {
   if (
     Number.isNaN(val) ||
-    val < SETTINGS_LIMITS.clawInterclockingAngle.min ||
-    val > SETTINGS_LIMITS.clawInterclockingAngle.max
+    val < SETTINGS_LIMITS.clawInterlockingAngle.min ||
+    val > SETTINGS_LIMITS.clawInterlockingAngle.max
   ) return;
-  current = { ...current, clawInterclockingAngle: val };
+  current = { ...current, clawInterlockingAngle: val };
 }
 
 export function setClawTargetRadius(val: number) {

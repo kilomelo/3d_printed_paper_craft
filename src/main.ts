@@ -128,12 +128,12 @@ const applyI18nTexts = () => {
       def: t(`settings.joinType.${defaultSettings.joinType}`),
     });
   }
-  const clawInterclockingAngleDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clawInterclockingAngle.desc"]');
-  if (clawInterclockingAngleDesc) {
-    clawInterclockingAngleDesc.textContent = t("settings.clawInterclockingAngle.desc", {
-      min: limits.clawInterclockingAngle.min,
-      max: limits.clawInterclockingAngle.max,
-      def: defaultSettings.clawInterclockingAngle,
+  const clawInterlockingAngleDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clawInterlockingAngle.desc"]');
+  if (clawInterlockingAngleDesc) {
+    clawInterlockingAngleDesc.textContent = t("settings.clawInterlockingAngle.desc", {
+      min: limits.clawInterlockingAngle.min,
+      max: limits.clawInterlockingAngle.max,
+      def: defaultSettings.clawInterlockingAngle,
     });
   }
   const clawTargetRadiusDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clawTargetRadius.desc"]');
@@ -433,12 +433,12 @@ app.innerHTML = `
           <div class="settings-panel" id="settings-panel-interlocking">
             <div class="setting-row">
               <div class="setting-label-row">
-                <label for="setting-claw-interclocking-angle" class="setting-label" data-i18n="settings.clawInterclockingAngle.label">咬合角度</label>
-                <span class="setting-desc" data-i18n="settings.clawInterclockingAngle.desc">抱爪的互锁角度，最小${limits.clawInterclockingAngle.min}，最大${limits.clawInterclockingAngle.max}，默认值${defaultSettings.clawInterclockingAngle}</span>
+                <label for="setting-claw-interlocking-angle" class="setting-label" data-i18n="settings.clawInterlockingAngle.label">咬合角度</label>
+                <span class="setting-desc" data-i18n="settings.clawInterlockingAngle.desc">抱爪的互锁角度，最小${limits.clawInterlockingAngle.min}，最大${limits.clawInterlockingAngle.max}，默认值${defaultSettings.clawInterlockingAngle}</span>
               </div>
               <div class="setting-field">
-                <input id="setting-claw-interclocking-angle" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
-                <button id="setting-claw-interclocking-angle-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+                <input id="setting-claw-interlocking-angle" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-claw-interlocking-angle-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
             <div class="setting-row">
@@ -616,8 +616,8 @@ const settingScaleInput = document.querySelector<HTMLInputElement>("#setting-sca
 const settingScaleResetBtn = document.querySelector<HTMLButtonElement>("#setting-scale-reset");
 const settingMinFoldAngleThresholdInput = document.querySelector<HTMLInputElement>("#setting-min-fold-angle-threshold");
 const settingMinFoldAngleThresholdResetBtn = document.querySelector<HTMLButtonElement>("#setting-min-fold-angle-threshold-reset");
-const settingClawInterclockingAngleInput = document.querySelector<HTMLInputElement>("#setting-claw-interclocking-angle");
-const settingClawInterclockingAngleResetBtn = document.querySelector<HTMLButtonElement>("#setting-claw-interclocking-angle-reset");
+const settingClawInterlockingAngleInput = document.querySelector<HTMLInputElement>("#setting-claw-interlocking-angle");
+const settingClawInterlockingAngleResetBtn = document.querySelector<HTMLButtonElement>("#setting-claw-interlocking-angle-reset");
 const settingClawTargetRadiusInput = document.querySelector<HTMLInputElement>("#setting-claw-target-radius");
 const settingClawTargetRadiusResetBtn = document.querySelector<HTMLButtonElement>("#setting-claw-target-radius-reset");
 const settingClawWidthInput = document.querySelector<HTMLInputElement>("#setting-claw-width");
@@ -709,8 +709,8 @@ if (
   !settingJoinTypeResetBtn ||
   !settingScaleInput ||
   !settingScaleResetBtn ||
-  !settingClawInterclockingAngleInput ||
-  !settingClawInterclockingAngleResetBtn ||
+  !settingClawInterlockingAngleInput ||
+  !settingClawInterlockingAngleResetBtn ||
   !settingClawTargetRadiusInput ||
   !settingClawTargetRadiusResetBtn ||
   !settingClawWidthInput ||
@@ -840,8 +840,8 @@ const settingsUI = createSettingsUI(
     scaleResetBtn: settingScaleResetBtn,
     minFoldAngleThresholdInput: settingMinFoldAngleThresholdInput,
     minFoldAngleThresholdResetBtn: settingMinFoldAngleThresholdResetBtn,
-    clawInterclockingAngleInput: settingClawInterclockingAngleInput,
-    clawInterclockingAngleResetBtn: settingClawInterclockingAngleResetBtn,
+    clawInterlockingAngleInput: settingClawInterlockingAngleInput,
+    clawInterlockingAngleResetBtn: settingClawInterlockingAngleResetBtn,
     clawTargetRadiusInput: settingClawTargetRadiusInput,
     clawTargetRadiusResetBtn: settingClawTargetRadiusResetBtn,
     clawWidthInput: settingClawWidthInput,
