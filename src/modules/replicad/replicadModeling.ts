@@ -8,7 +8,8 @@ import { getSettings } from "../settings";
 import {
   pointKey, degToRad,
   pointLineDistance2D, trapezoid, polygons2Outer, solveE, offsetTriangleSafe, OffsetFailReason, calculateIsoscelesRightTriangle,
-  buildTriangleByEdgeAndAngles
+  buildTriangleByEdgeAndAngles,
+  angleDegFromRadiusAndArcLength
 } from "../mathUtils";
 import {
   makeVerticalPlaneNormalAB,
@@ -425,15 +426,15 @@ const buildSolidFromPolygonsWithAngles = async (
               edge.angle < 180 ? 90 :
               edge.angle < 225+1e-3 ? 270 - edge.angle :
               360 - edge.angle;
-            const baseOffsetAngle =
-              edge.angle < 180 ? edge.angle - clawIntersectionAngle :
-              edge.angle < 225+1e-3 ? edge.angle - 135 :
-              180 - clawIntersectionAngle;
-            console.log('edge.angle', edge.angle, 'baseOffsetAngle', baseOffsetAngle, 'clawIntersectionAngle', clawIntersectionAngle);
-            const clawExtrudePlane = transformPlaneLocal(edgePerpendicularPlane, { offset: [
-              (edge.angle < 180 ? bodyThickness : (bodyThickness + connectionThickness)) * -Math.tan(degToRad(90 - edge.angle / 2)),
-              connectionThickness + bodyThickness, (distAB - clawWidth) / 2
-            ]});
+            const baseOffsetAngle = (edge.angle - clawIntersectionAngle) / 2
+            console.log('[ReplicadModeling] edge.angle', edge.angle, 'baseOffsetAngle', baseOffsetAngle, 'clawIntersectionAngle', clawIntersectionAngle);
+            const clawExtrudePlane = transformPlaneLocal(edgePerpendicularPlane, { offset: 
+              edge.angle < 225+1e-3 ? [
+                (edge.angle < 180 ? bodyThickness : (bodyThickness + connectionThickness)) * -Math.tan(degToRad(90 - edge.angle / 2)),
+                connectionThickness + bodyThickness, (distAB - clawWidth) / 2
+              ] :
+              [0, 0, (distAB - clawWidth) / 2]
+            });
             const clawShapeSketcher = new Sketcher(clawExtrudePlane.clone());
             clawShapeSketcher.movePointerTo([0, 0]);
             const arcStartPoint: Point2D = [
@@ -459,7 +460,8 @@ const buildSolidFromPolygonsWithAngles = async (
             
             const typeAAngle = 180 - clawIntersectionAngle - baseOffsetAngle;
             const typeBAngle = typeAAngle + clawIntersectionAngle;
-            console.log('typeAAngle', typeAAngle, 'typeBAngle', typeBAngle);
+            console.log('[ReplicadModeling] typeAAngle', typeAAngle, 'typeBAngle', typeBAngle);
+            // 四个平面分割为五个爪
             const splitPlanes: Plane[] = [];
             const planeA_ = transformPlaneLocal(clawExtrudePlane, { offset: [0, 0, clawWidth * 1 / 5], rotateAround: "z", angle: typeAAngle });
             const planeA = transformPlaneLocal(planeA_, { rotateAround: "x", angle: clawInterclockingAngle });
@@ -485,13 +487,29 @@ const buildSolidFromPolygonsWithAngles = async (
             if (edge.angle > 90) {
               const clawBaseSketcher = new Sketcher(clawExtrudePlane);
               clawBaseSketcher.movePointerTo([0, 0]);
-              clawBaseSketcher.lineTo([
-                (edge.angle < 180 ? bodyThickness : (bodyThickness + connectionThickness)) * Math.tan(degToRad(90 - edge.angle / 2)),
-                - bodyThickness - connectionThickness
-              ]);
+              if (edge.angle < 225+1e-3) {
+                clawBaseSketcher.lineTo([
+                  (edge.angle < 180 ? bodyThickness : (bodyThickness + connectionThickness)) * Math.tan(degToRad(90 - edge.angle / 2)),
+                  - bodyThickness - connectionThickness
+                ]);
+              }
               clawBaseSketcher.lineTo([-clawTargetRadius, 0]);
-              arcByCenterStartAngleSafe(clawBaseSketcher, [0,0], [-clawTargetRadius, 0], -baseOffsetAngle);
+              if (baseOffsetAngle < 90) {
+                arcByCenterStartAngleSafe(clawBaseSketcher, [0,0], [-clawTargetRadius, 0], -baseOffsetAngle);
+              } else {
+                // 基座太大的时候，只构造一个四边形而不是圆弧以节省材料
+                clawBaseSketcher.lineTo([
+                  -clawTargetRadius * Math.cos(degToRad(baseOffsetAngle - (angleDegFromRadiusAndArcLength(clawTargetRadius, 1)??0))),
+                  clawTargetRadius * Math.sin(degToRad(baseOffsetAngle - (angleDegFromRadiusAndArcLength(clawTargetRadius, 1)??0)))
+                ]);
+                clawBaseSketcher.lineTo(arcStartPoint);
+              }
               interlockingClaws[0] = interlockingClaws[0].fuse(clawBaseSketcher.close().extrude(clawWidth));
+            }
+            // 如果角度在225到270之间，则需要对body进行一些切割以让爪子通过
+            if (edge.angle > 225 && edge.angle < 270) {
+              const bodyCutSolid = extrudeFromContourPoints([[0, 0], [0, bodyThickness + connectionThickness + 1], arcStartPoint], clawExtrudePlane, 0, clawWidth);
+              if (bodyCutSolid) connectionSolid = connectionSolid.cut(bodyCutSolid);
             }
             claws.forEach(p => p.delete());
             splitPlanes.forEach(p => p.delete());

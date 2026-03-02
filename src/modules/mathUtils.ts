@@ -966,3 +966,21 @@ export function isCounterClockwiseFromFront(
   // 点积<0表示法向量方向相反，从正面看是顺时针
   return dot > 0;
 }
+
+/**
+ * 根据半径 r 和弧长 s 计算圆心角（弧度）
+ * 公式：theta = s / r
+ */
+export function angleFromRadiusAndArcLength(radius: number, arcLength: number): number | undefined {
+  if (!Number.isFinite(radius) || !Number.isFinite(arcLength)) return undefined;
+  if (radius <= 0) return undefined;
+  return arcLength / radius;
+}
+
+/**
+ * 根据半径 r 和弧长 s 计算圆心角（度）
+ */
+export function angleDegFromRadiusAndArcLength(radius: number, arcLength: number): number | undefined {
+  const rad = angleFromRadiusAndArcLength(radius, arcLength);
+  return rad === undefined ? undefined : radToDeg(rad);
+}
