@@ -19,6 +19,7 @@ import { AngleIndex } from "./geometry";
 import { appEventBus } from "./eventBus";
 import type { Renderer2DContext } from "./renderer2d";
 import {
+  createUnfoldEdgeLineCoplanarMaterial,
   createUnfoldFaceMaterial,
   createWarnningMaterial,
   createUnfoldEdgeLineFoldinMaterial,
@@ -527,14 +528,15 @@ export function createUnfold2dManager(
         edgeRec.faces.size === 2 &&
         !isSeamEdge &&
         Math.abs(angleRad - Math.PI) <= coplanarThresholdRad;
-      if (isCoplanarInnerEdge) return;
       rec.forEach((unfoldedEdge) => {
         const p1 = unfoldedEdge.unfoldedPos[0];
         const p2 = unfoldedEdge.unfoldedPos[1];
         const lineGeom = new LineSegmentsGeometry();
         lineGeom.setPositions(new Float32Array([p1.x, p1.y, 0, p2.x, p2.y, 1]));
         const mat =
-        angleRad > Math.PI + 1e-4
+        isCoplanarInnerEdge
+        ? createUnfoldEdgeLineCoplanarMaterial({ width: sizeVec.x || 1, height: sizeVec.y || 1 })
+        : angleRad > Math.PI + 1e-4
         ? createUnfoldEdgeLineFoldinMaterial({ width: sizeVec.x || 1, height: sizeVec.y || 1 }, foldinDashScale)
         : createUnfoldEdgeLineFoldoutMaterial({ width: sizeVec.x || 1, height: sizeVec.y || 1 });
         const line = new LineSegments2(lineGeom, mat);

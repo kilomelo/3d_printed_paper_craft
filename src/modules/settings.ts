@@ -24,7 +24,7 @@ export const SETTINGS_LIMITS = {
   joinType: { allowed: ["interlocking", "clip"] as const },
   tabWidth: { min: 0, max: 20 },
   tabThickness: { min: 0.8, max: 2 },
-  minFoldAngleThreshold: { min: 0.1, max: 15 },
+  minFoldAngleThreshold: { min: 0.1, max: 5 },
   tabClipGap: { min: 0.1, max: 0.3 },
   clipGapAdjust: { allowed: ["off", "on"] as const },
   wireframeThickness: { min: 4, max: 10 },

@@ -258,12 +258,11 @@ const buildSolidFromPolygonsWithAngles = async (
     const { layerHeight, connectionLayers, bodyLayers, joinType, tabWidth, tabThickness, hollowStyle, wireframeThickness } = getSettings();
     const bodyThickness = bodyLayers * layerHeight;
     const connectionThickness = connectionLayers * layerHeight;
-    console.log("polygonsWithAngles", polygonsWithAngles, "joinType", joinType);
     onProgress?.(1);
     await ensureReplicadOC();
 
     // 第一步：生成连接层和主体
-    const outerResult  = (polygonsWithAngles);
+    const outerResult  = polygons2Outer(polygonsWithAngles);
     if (!outerResult || !outerResult.outer || outerResult.outer.length < 3) {
       onLog?.(t("log.replicad.outer.fail"));
       throw new Error("外轮廓查找失败");
@@ -359,7 +358,7 @@ const buildSolidFromPolygonsWithAngles = async (
         // 这里不再依赖三角形专用的 pick()，直接按环索引取前后邻边。
         const adjEdgeCutToolL = edgeCutTools[nextEdgeIdx];
         const adjEdgeCutToolR = edgeCutTools[prevEdgeIdx];
-        if ((!edge.isOuter && Math.abs(edge.angle - Math.PI) > 1e-3) || edge.angle < Math.PI - 1e-3) {
+        if (!edge.isOuter) {
           // 第二步：生成弯折、拼接坡度刀具
           const slopeStartZ = edge.isOuter ? layerHeight : connectionThickness;
           const slopeZDelta = slopToolHeight - slopeStartZ;

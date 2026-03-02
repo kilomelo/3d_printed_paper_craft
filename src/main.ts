@@ -122,6 +122,12 @@ const applyI18nTexts = () => {
       def: defaultSettings.bodyLayers,
     });
   }
+  const joinTypeDesc = document.querySelector<HTMLElement>('[data-i18n="settings.joinType.desc"]');
+  if (joinTypeDesc) {
+    joinTypeDesc.textContent = t("settings.joinType.desc", {
+      def: t(`settings.joinType.${defaultSettings.joinType}`),
+    });
+  }
   const tabWidthDesc = document.querySelector<HTMLElement>('[data-i18n="settings.tabWidth.desc"]');
   if (tabWidthDesc) {
     tabWidthDesc.textContent = t("settings.tabWidth.desc", {
@@ -150,6 +156,18 @@ const applyI18nTexts = () => {
       min: limits.tabClipGap.min,
       max: limits.tabClipGap.max,
       def: defaultSettings.tabClipGap,
+    });
+  }
+  const clipGapAdjustDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clipGapAdjusts.desc"]');
+  if (clipGapAdjustDesc) {
+    clipGapAdjustDesc.textContent = t("settings.clipGapAdjusts.desc", {
+      def: t(`settings.clipGapAdjusts.${defaultSettings.clipGapAdjust}`),
+    });
+  }
+  const hollowDesc = document.querySelector<HTMLElement>('[data-i18n="settings.hollow.desc"]');
+  if (hollowDesc) {
+    hollowDesc.textContent = t("settings.hollow.desc", {
+      def: t(defaultSettings.hollowStyle ? "settings.hollow.on" : "settings.hollow.off"),
     });
   }
   const wireframeDesc = document.querySelector<HTMLElement>('[data-i18n="settings.wireframeThickness.desc"]');
@@ -367,7 +385,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.joinType.label">拼接方式</span>
-                <span class="setting-desc" data-i18n="settings.joinType.desc">拼接边的连接方式，默认咬合</span>
+                <span class="setting-desc" data-i18n="settings.joinType.desc">拼接边的连接方式，默认${defaultSettings.joinType === "interlocking" ? "咬合" : "卡扣"}</span>
               </div>
               <div class="setting-field">
                 <div class="settings-toggle-group">
@@ -423,7 +441,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.clipGapAdjusts.label">夹子厚度</span>
-                <span class="setting-desc" data-i18n="settings.clipGapAdjusts.desc">夹子厚度描述</span>
+                <span class="setting-desc" data-i18n="settings.clipGapAdjusts.desc">夹子模型的配合间隙自动根据舌片厚度反比补偿，默认${defaultSettings.clipGapAdjust === "off" ? "关闭" : "开启"}</span>
               </div>
               <div class="setting-field">
                 <div class="settings-toggle-group">
@@ -438,7 +456,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.hollow.label">镂空风格</span>
-                <span class="setting-desc" data-i18n="settings.hollow.desc">去除三角面的中间部分，默认关闭</span>
+                <span class="setting-desc" data-i18n="settings.hollow.desc">去除三角面的中间部分，默认${defaultSettings.hollowStyle ? "开启" : "关闭"}</span>
               </div>
               <div class="setting-field">
                 <div class="settings-toggle-group">
