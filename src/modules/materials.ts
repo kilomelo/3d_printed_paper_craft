@@ -209,7 +209,7 @@ export function createUnfoldEdgeLineCoplanarMaterial(resolution: { width: number
     resolution,
   });
   mat.transparent = true;
-  mat.opacity = 0.15;
+  mat.opacity = 0.1;
   return mat;
 }
 

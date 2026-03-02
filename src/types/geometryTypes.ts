@@ -13,6 +13,9 @@ export type Plane3D = { normal: Vec3; point: Point3D };
 // 只是被提取为可复用的独立类型，便于三角形/多边形共用。
 export type PolygonEdgeInfo = {
   isOuter: boolean;
+  // 二面角，单位为角度（degree）。
+  // 几何索引层内部仍使用弧度，只有在 PolygonWithEdgeInfo 这层输出时统一转换为角度，
+  // 这样建模侧的配置和日志都能直接使用更直观的数值。
   angle: number;
   isSeam?: boolean;
   tabAngle: number[];

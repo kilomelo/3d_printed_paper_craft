@@ -7,6 +7,9 @@ export type Settings = {
   connectionLayers: number;
   bodyLayers: number;
   joinType: "interlocking" | "clip";
+  clawInterclockingAngle: number;
+  clawTargetRadius: number;
+  clawWidth: number;
   tabWidth: number;
   tabThickness: number;
   minFoldAngleThreshold: number;
@@ -22,6 +25,9 @@ export const SETTINGS_LIMITS = {
   connectionLayers: { min: 1, max: 4 },
   bodyLayers: { min: 1, max: 8 },
   joinType: { allowed: ["interlocking", "clip"] as const },
+  clawInterclockingAngle: { min: 3, max: 7 },
+  clawTargetRadius: { min: 2, max: 5 },
+  clawWidth: { min: 5, max: 10 },
   tabWidth: { min: 0, max: 20 },
   tabThickness: { min: 0.8, max: 2 },
   minFoldAngleThreshold: { min: 0.1, max: 5 },
@@ -36,6 +42,9 @@ const defaultSettings: Settings = {
   layerHeight: 0.2,
   connectionLayers: 1,
   bodyLayers: 3,
+  clawInterclockingAngle: 5,
+  clawTargetRadius: 3,
+  clawWidth: 7,
   tabWidth: 4,
   tabThickness: 1,
   minFoldAngleThreshold: 1,
@@ -69,6 +78,33 @@ export function setLayerHeight(val: number) {
   )
     return;
   current = { ...current, layerHeight: val };
+}
+
+export function setClawInterclockingAngle(val: number) {
+  if (
+    Number.isNaN(val) ||
+    val < SETTINGS_LIMITS.clawInterclockingAngle.min ||
+    val > SETTINGS_LIMITS.clawInterclockingAngle.max
+  ) return;
+  current = { ...current, clawInterclockingAngle: val };
+}
+
+export function setClawTargetRadius(val: number) {
+  if (
+    Number.isNaN(val) ||
+    val < SETTINGS_LIMITS.clawTargetRadius.min ||
+    val > SETTINGS_LIMITS.clawTargetRadius.max
+  ) return;
+  current = { ...current, clawTargetRadius: val };
+}
+
+export function setClawWidth(val: number) {
+  if (
+    Number.isNaN(val) ||
+    val < SETTINGS_LIMITS.clawWidth.min ||
+    val > SETTINGS_LIMITS.clawWidth.max
+  ) return;
+  current = { ...current, clawWidth: val };
 }
 
 export function setConnectionLayers(val: number) {

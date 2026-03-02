@@ -128,6 +128,30 @@ const applyI18nTexts = () => {
       def: t(`settings.joinType.${defaultSettings.joinType}`),
     });
   }
+  const clawInterclockingAngleDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clawInterclockingAngle.desc"]');
+  if (clawInterclockingAngleDesc) {
+    clawInterclockingAngleDesc.textContent = t("settings.clawInterclockingAngle.desc", {
+      min: limits.clawInterclockingAngle.min,
+      max: limits.clawInterclockingAngle.max,
+      def: defaultSettings.clawInterclockingAngle,
+    });
+  }
+  const clawTargetRadiusDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clawTargetRadius.desc"]');
+  if (clawTargetRadiusDesc) {
+    clawTargetRadiusDesc.textContent = t("settings.clawTargetRadius.desc", {
+      min: limits.clawTargetRadius.min,
+      max: limits.clawTargetRadius.max,
+      def: defaultSettings.clawTargetRadius,
+    });
+  }
+  const clawWidthDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clawWidth.desc"]');
+  if (clawWidthDesc) {
+    clawWidthDesc.textContent = t("settings.clawWidth.desc", {
+      min: limits.clawWidth.min,
+      max: limits.clawWidth.max,
+      def: defaultSettings.clawWidth,
+    });
+  }
   const tabWidthDesc = document.querySelector<HTMLElement>('[data-i18n="settings.tabWidth.desc"]');
   if (tabWidthDesc) {
     tabWidthDesc.textContent = t("settings.tabWidth.desc", {
@@ -406,7 +430,38 @@ app.innerHTML = `
               </div>
             </div>
           </div>
-          <div class="settings-panel" id="settings-panel-interlocking"></div>
+          <div class="settings-panel" id="settings-panel-interlocking">
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <label for="setting-claw-interclocking-angle" class="setting-label" data-i18n="settings.clawInterclockingAngle.label">咬合角度</label>
+                <span class="setting-desc" data-i18n="settings.clawInterclockingAngle.desc">抱爪的互锁角度，最小${limits.clawInterclockingAngle.min}，最大${limits.clawInterclockingAngle.max}，默认值${defaultSettings.clawInterclockingAngle}</span>
+              </div>
+              <div class="setting-field">
+                <input id="setting-claw-interclocking-angle" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-claw-interclocking-angle-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <label for="setting-claw-target-radius" class="setting-label" data-i18n="settings.clawTargetRadius.label">目标抱爪半径</label>
+                <span class="setting-desc" data-i18n="settings.clawTargetRadius.desc">抱爪的期望大小，最小${limits.clawTargetRadius.min}，最大${limits.clawTargetRadius.max}，默认值${defaultSettings.clawTargetRadius}，单位mm</span>
+              </div>
+              <div class="setting-field">
+                <input id="setting-claw-target-radius" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-claw-target-radius-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <label for="setting-claw-width" class="setting-label" data-i18n="settings.clawWidth.label">抱爪宽度</label>
+                <span class="setting-desc" data-i18n="settings.clawWidth.desc">单个抱爪的宽度，最小${limits.clawWidth.min}，最大${limits.clawWidth.max}，默认值${defaultSettings.clawWidth}，单位mm</span>
+              </div>
+              <div class="setting-field">
+                <input id="setting-claw-width" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-claw-width-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+          </div>
           <div class="settings-panel" id="settings-panel-clip">
             <div class="setting-row">
               <div class="setting-label-row">
@@ -561,6 +616,12 @@ const settingScaleInput = document.querySelector<HTMLInputElement>("#setting-sca
 const settingScaleResetBtn = document.querySelector<HTMLButtonElement>("#setting-scale-reset");
 const settingMinFoldAngleThresholdInput = document.querySelector<HTMLInputElement>("#setting-min-fold-angle-threshold");
 const settingMinFoldAngleThresholdResetBtn = document.querySelector<HTMLButtonElement>("#setting-min-fold-angle-threshold-reset");
+const settingClawInterclockingAngleInput = document.querySelector<HTMLInputElement>("#setting-claw-interclocking-angle");
+const settingClawInterclockingAngleResetBtn = document.querySelector<HTMLButtonElement>("#setting-claw-interclocking-angle-reset");
+const settingClawTargetRadiusInput = document.querySelector<HTMLInputElement>("#setting-claw-target-radius");
+const settingClawTargetRadiusResetBtn = document.querySelector<HTMLButtonElement>("#setting-claw-target-radius-reset");
+const settingClawWidthInput = document.querySelector<HTMLInputElement>("#setting-claw-width");
+const settingClawWidthResetBtn = document.querySelector<HTMLButtonElement>("#setting-claw-width-reset");
 const settingLayerHeightInput = document.querySelector<HTMLInputElement>("#setting-layer-height");
 const settingLayerHeightResetBtn = document.querySelector<HTMLButtonElement>("#setting-layer-height-reset");
 const settingConnectionLayersDecBtn = document.querySelector<HTMLButtonElement>("#setting-connection-layers-dec");
@@ -648,6 +709,12 @@ if (
   !settingJoinTypeResetBtn ||
   !settingScaleInput ||
   !settingScaleResetBtn ||
+  !settingClawInterclockingAngleInput ||
+  !settingClawInterclockingAngleResetBtn ||
+  !settingClawTargetRadiusInput ||
+  !settingClawTargetRadiusResetBtn ||
+  !settingClawWidthInput ||
+  !settingClawWidthResetBtn ||
   !settingTabWidthInput ||
   !settingTabWidthResetBtn ||
   !settingLayerHeightInput ||
@@ -773,6 +840,12 @@ const settingsUI = createSettingsUI(
     scaleResetBtn: settingScaleResetBtn,
     minFoldAngleThresholdInput: settingMinFoldAngleThresholdInput,
     minFoldAngleThresholdResetBtn: settingMinFoldAngleThresholdResetBtn,
+    clawInterclockingAngleInput: settingClawInterclockingAngleInput,
+    clawInterclockingAngleResetBtn: settingClawInterclockingAngleResetBtn,
+    clawTargetRadiusInput: settingClawTargetRadiusInput,
+    clawTargetRadiusResetBtn: settingClawTargetRadiusResetBtn,
+    clawWidthInput: settingClawWidthInput,
+    clawWidthResetBtn: settingClawWidthResetBtn,
     tabWidthInput: settingTabWidthInput,
     tabWidthResetBtn: settingTabWidthResetBtn,
     tabThicknessInput: settingTabThicknessInput,

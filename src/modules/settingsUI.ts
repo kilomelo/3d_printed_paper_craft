@@ -15,6 +15,12 @@ type SettingsUIRefs = {
   scaleResetBtn: HTMLButtonElement;
   minFoldAngleThresholdInput: HTMLInputElement;
   minFoldAngleThresholdResetBtn: HTMLButtonElement;
+  clawInterclockingAngleInput: HTMLInputElement;
+  clawInterclockingAngleResetBtn: HTMLButtonElement;
+  clawTargetRadiusInput: HTMLInputElement;
+  clawTargetRadiusResetBtn: HTMLButtonElement;
+  clawWidthInput: HTMLInputElement;
+  clawWidthResetBtn: HTMLButtonElement;
   tabWidthInput: HTMLInputElement;
   tabWidthResetBtn: HTMLButtonElement;
   tabThicknessInput: HTMLInputElement;
@@ -106,6 +112,9 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     const defaults = getDefaultSettings();
     setRowModified(refs.scaleInput, settingsDraft.scale !== defaults.scale);
     setRowModified(refs.minFoldAngleThresholdInput, settingsDraft.minFoldAngleThreshold !== defaults.minFoldAngleThreshold);
+    setRowModified(refs.clawInterclockingAngleInput, settingsDraft.clawInterclockingAngle !== defaults.clawInterclockingAngle);
+    setRowModified(refs.clawTargetRadiusInput, settingsDraft.clawTargetRadius !== defaults.clawTargetRadius);
+    setRowModified(refs.clawWidthInput, settingsDraft.clawWidth !== defaults.clawWidth);
     setRowModified(refs.layerHeightInput, settingsDraft.layerHeight !== defaults.layerHeight);
     setRowModified(refs.connectionLayersValue, settingsDraft.connectionLayers !== defaults.connectionLayers);
     setRowModified(refs.bodyLayersValue, settingsDraft.bodyLayers !== defaults.bodyLayers);
@@ -181,6 +190,18 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
       !Number.isNaN(val) &&
       val >= SETTINGS_LIMITS.minFoldAngleThreshold.min &&
       val <= SETTINGS_LIMITS.minFoldAngleThreshold.max,
+    clawInterclockingAngle: (val: number) =>
+      !Number.isNaN(val) &&
+      val >= SETTINGS_LIMITS.clawInterclockingAngle.min &&
+      val <= SETTINGS_LIMITS.clawInterclockingAngle.max,
+    clawTargetRadius: (val: number) =>
+      !Number.isNaN(val) &&
+      val >= SETTINGS_LIMITS.clawTargetRadius.min &&
+      val <= SETTINGS_LIMITS.clawTargetRadius.max,
+    clawWidth: (val: number) =>
+      !Number.isNaN(val) &&
+      val >= SETTINGS_LIMITS.clawWidth.min &&
+      val <= SETTINGS_LIMITS.clawWidth.max,
     tabThickness: (val: number) =>
       !Number.isNaN(val) && val >= SETTINGS_LIMITS.tabThickness.min && val <= SETTINGS_LIMITS.tabThickness.max,
     layerHeight: (val: number) =>
@@ -218,6 +239,9 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateJoinTypeButtons();
     refs.scaleInput.value = String(settingsDraft.scale);
     refs.minFoldAngleThresholdInput.value = String(settingsDraft.minFoldAngleThreshold);
+    refs.clawInterclockingAngleInput.value = String(settingsDraft.clawInterclockingAngle);
+    refs.clawTargetRadiusInput.value = String(settingsDraft.clawTargetRadius);
+    refs.clawWidthInput.value = String(settingsDraft.clawWidth);
     refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
     refs.layerHeightInput.value = String(settingsDraft.layerHeight);
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
@@ -229,7 +253,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateClipGapAdjustButtons();
     updateHollowButtons();
     updateWireframeEnabled();
-    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
+    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterclockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
       updateInputColor(el, true),
     );
     updateModifiedIndicators();
@@ -370,6 +394,33 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     () => getDefaultSettings().minFoldAngleThreshold,
   );
   bindNumericInput(
+    refs.clawInterclockingAngleInput,
+    refs.clawInterclockingAngleResetBtn,
+    (raw) => parseFloat(raw),
+    () => settingsDraft.clawInterclockingAngle,
+    (v) => (settingsDraft.clawInterclockingAngle = v),
+    validators.clawInterclockingAngle,
+    () => getDefaultSettings().clawInterclockingAngle,
+  );
+  bindNumericInput(
+    refs.clawTargetRadiusInput,
+    refs.clawTargetRadiusResetBtn,
+    (raw) => parseFloat(raw),
+    () => settingsDraft.clawTargetRadius,
+    (v) => (settingsDraft.clawTargetRadius = v),
+    validators.clawTargetRadius,
+    () => getDefaultSettings().clawTargetRadius,
+  );
+  bindNumericInput(
+    refs.clawWidthInput,
+    refs.clawWidthResetBtn,
+    (raw) => parseFloat(raw),
+    () => settingsDraft.clawWidth,
+    (v) => (settingsDraft.clawWidth = v),
+    validators.clawWidth,
+    () => getDefaultSettings().clawWidth,
+  );
+  bindNumericInput(
     refs.layerHeightInput,
     refs.layerHeightResetBtn,
     (raw) => parseFloat(raw),
@@ -443,6 +494,9 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     settingsDraft = getSettings();
     refs.scaleInput.value = String(settingsDraft.scale);
     refs.minFoldAngleThresholdInput.value = String(settingsDraft.minFoldAngleThreshold);
+    refs.clawInterclockingAngleInput.value = String(settingsDraft.clawInterclockingAngle);
+    refs.clawTargetRadiusInput.value = String(settingsDraft.clawTargetRadius);
+    refs.clawWidthInput.value = String(settingsDraft.clawWidth);
     refs.layerHeightInput.value = String(settingsDraft.layerHeight);
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
     refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
@@ -453,7 +507,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateJoinTypeButtons();
     updateClipGapAdjustButtons();
     updateHollowButtons();
-    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
+    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterclockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
       updateInputColor(el, true),
     );
     updateModifiedIndicators();
@@ -478,6 +532,15 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     }
     if (settingsDraft.minFoldAngleThreshold !== settingsSnapshot.minFoldAngleThreshold) {
       changes.push(t("log.settings.changed", { label: t("settings.minFoldAngleThreshold.label"), value: settingsDraft.minFoldAngleThreshold }));
+    }
+    if (settingsDraft.clawInterclockingAngle !== settingsSnapshot.clawInterclockingAngle) {
+      changes.push(t("log.settings.changed", { label: t("settings.clawInterclockingAngle.label"), value: settingsDraft.clawInterclockingAngle }));
+    }
+    if (settingsDraft.clawTargetRadius !== settingsSnapshot.clawTargetRadius) {
+      changes.push(t("log.settings.changed", { label: t("settings.clawTargetRadius.label"), value: settingsDraft.clawTargetRadius }));
+    }
+    if (settingsDraft.clawWidth !== settingsSnapshot.clawWidth) {
+      changes.push(t("log.settings.changed", { label: t("settings.clawWidth.label"), value: settingsDraft.clawWidth }));
     }
     if (settingsDraft.tabWidth !== settingsSnapshot.tabWidth) {
       changes.push(t("log.settings.changed", { label: t("settings.tabWidth.label"), value: settingsDraft.tabWidth }));

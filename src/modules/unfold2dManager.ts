@@ -37,6 +37,7 @@ import {
   isCounterClockwiseFromFront,
   pointKey3D,
   edgeKey3D,
+  radToDeg,
   sub3,
   cross3,
   norm3,
@@ -1074,7 +1075,9 @@ export function createUnfold2dManager(
         }
         return {
           isOuter: isOuter,
-          angle: angleIndex.getAngle(eid),
+          // PolygonEdgeInfo 约定使用角度制；内部几何索引仍保留弧度，
+          // 因此只在最终构造输出数据时做一次转换，避免影响依赖原始坐标/拓扑的中间计算。
+          angle: radToDeg(angleIndex.getAngle(eid)),
           isSeam: isSeam,
           tabAngle: tabAngle,
           joinSide,

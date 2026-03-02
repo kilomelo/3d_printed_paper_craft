@@ -1,5 +1,6 @@
 import { Sketcher, Sketch, PlaneName, Point, Plane, drawCircle, drawRectangle, Shape3D } from "replicad";
 import type { Point2D } from "../../types/geometryTypes";
+import { degToRad } from "../mathUtils";
 
 export function makeVerticalPlaneThroughAB(a: Point2D, b: Point2D, z = 0): Plane | undefined {
   const ax = a[0], ay = a[1];
@@ -212,11 +213,15 @@ export function transformPlaneLocal(
 
 /**
  * 从当前点（应等于 start）开始，
- * 按“圆心 + 起点 + 弧度”画圆弧。
+ * 按“圆心 + 起点 + 角度”画圆弧。
  *
  * deltaAngle:
  *   > 0 逆时针
  *   < 0 顺时针
+ *
+ * 约定：
+ * - 对外接口统一使用角度制，和 PolygonEdgeInfo.angle 的语义保持一致。
+ * - 函数内部在进入三角函数计算前再转换为弧度。
  */
 function arcByCenterStartAngle(
   sketcher: Sketcher,
@@ -226,6 +231,7 @@ function arcByCenterStartAngle(
   eps = 1e-12
 ) {
   if (Math.abs(deltaAngle) < eps) return sketcher;
+  const deltaAngleRad = degToRad(deltaAngle);
 
   const [cx, cy] = center;
   const [sx, sy] = start;
@@ -238,8 +244,8 @@ function arcByCenterStartAngle(
   }
 
   const startAngle = Math.atan2(vy, vx);
-  const endAngle = startAngle + deltaAngle;
-  const midAngle = startAngle + deltaAngle * 0.5;
+  const endAngle = startAngle + deltaAngleRad;
+  const midAngle = startAngle + deltaAngleRad * 0.5;
 
   const end: Point2D = [
     cx + r * Math.cos(endAngle),
@@ -263,7 +269,9 @@ export function arcByCenterStartAngleSafe(
 ) {
   if (Math.abs(deltaAngle) < eps) return sketcher;
 
-  if (Math.abs(deltaAngle) <= Math.PI) {
+  // threePointsArcTo 对超大圆弧更脆弱，因此超过 180 度时拆成两段。
+  // 这里对外仍按角度制判断，避免调用方再自己换算。
+  if (Math.abs(deltaAngle) <= 180) {
     return arcByCenterStartAngle(sketcher, center, start, deltaAngle, eps);
   }
 

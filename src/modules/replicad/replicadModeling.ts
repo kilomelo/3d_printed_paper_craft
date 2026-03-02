@@ -6,7 +6,7 @@ import ocWasmUrl from "replicad-opencascadejs/src/replicad_single.wasm?url";
 import type { Point2D, PolygonWithEdgeInfo } from "../../types/geometryTypes";
 import { getSettings } from "../settings";
 import {
-  pointKey, radToDeg, degToRad,
+  pointKey, degToRad,
   pointLineDistance2D, trapezoid, polygons2Outer, solveE, offsetTriangleSafe, OffsetFailReason, calculateIsoscelesRightTriangle,
   buildTriangleByEdgeAndAngles
 } from "../mathUtils";
@@ -105,7 +105,7 @@ const buildSeamTab = (edge: {
 
   // 根据舌片宽度裁剪舌片三角形求出梯形
   // 首先求得实际舌片宽度，因为实际宽度需要根据二面角做调整，以保证连接槽的高度一致
-  const tabAngle = 180 - radToDeg(edge.angle / 2);
+  const tabAngle = 180 - edge.angle / 2;
   const tabClipWingExtrWidth = tabAngle < 90 ? 0 : tabClipWingThickness * Math.tan(degToRad(tabAngle - 90));
   const tabExtraWidth = tabAngle < 90 ? (bodyThickness + connectionThickness - layerHeight) * Math.sin(degToRad(tabAngle))
     : (bodyThickness + connectionThickness - layerHeight) / Math.cos(degToRad(tabAngle - 90))
@@ -127,7 +127,7 @@ const buildSeamTab = (edge: {
   ] as Point2D;
 
   // 向下延伸一点点以确保舌片和主体连接良好
-  if (edge.angle > Math.PI) {
+  if (edge.angle > 180) {
     const pointA_Incenter_extend: Point2D = [
       tabPoint[0] + (pointA[0] - tabPoint[0]) * (tabExtendMargin + distAP) / distAP,
       tabPoint[1] + (pointA[1] - tabPoint[1]) * (tabExtendMargin + distAP) / distAP];
@@ -207,7 +207,7 @@ const buildSeamTab = (edge: {
 
   const tabCutTools: Shape3D[] = [adjEdgeCutToolL.clone(), adjEdgeCutToolR.clone()];
   // 向外翻的舌片可能需要根据外轮廓顶点角度进行相邻外轮廓舌片防干涉的裁剪
-  if (edge.angle > Math.PI) {
+  if (edge.angle > 180) {
     const pointAKey = pointKey(pointA);
     const pointBKey = pointKey(pointB);
     const pointAAngle = outerPointAngleMap.get(pointAKey);
@@ -255,7 +255,19 @@ const buildSolidFromPolygonsWithAngles = async (
   try {
     await ensureI18nReady(lang);
     onProgress?.(0);
-    const { layerHeight, connectionLayers, bodyLayers, joinType, tabWidth, tabThickness, hollowStyle, wireframeThickness } = getSettings();
+    const {
+      layerHeight,
+      connectionLayers,
+      bodyLayers,
+      joinType,
+      clawInterclockingAngle,
+      clawTargetRadius,
+      clawWidth,
+      tabWidth,
+      tabThickness,
+      hollowStyle,
+      wireframeThickness,
+    } = getSettings();
     const bodyThickness = bodyLayers * layerHeight;
     const connectionThickness = connectionLayers * layerHeight;
     onProgress?.(1);
@@ -358,16 +370,16 @@ const buildSolidFromPolygonsWithAngles = async (
         // 这里不再依赖三角形专用的 pick()，直接按环索引取前后邻边。
         const adjEdgeCutToolL = edgeCutTools[nextEdgeIdx];
         const adjEdgeCutToolR = edgeCutTools[prevEdgeIdx];
-        if (!edge.isOuter) {
+        if ((!edge.isOuter && edge.angle > 180) || edge.angle < 180) {
           // 第二步：生成弯折、拼接坡度刀具
           const slopeStartZ = edge.isOuter ? layerHeight : connectionThickness;
           const slopeZDelta = slopToolHeight - slopeStartZ;
             // 这是数学上的标准偏移
-          const mathmaticalTopOffset = slopeZDelta * Math.tan(degToRad(90 - (radToDeg(edge.angle / 2))));
+          const mathmaticalTopOffset = slopeZDelta * Math.tan(degToRad(90 - edge.angle / 2));
           const excessiveBend = 6;
           const slopeTopOffset = Math.max(mathmaticalTopOffset, minDistance / 2)
             // 这是超量弯折需要的额外偏移量（为什么需要超量弯折？因为打印机因流量校准等因素不可能生产出绝对符合数学模型的尺寸，且装配中超量弯折会有帮助）
-            + (edge.isOuter ? 0 : (slopeZDelta * Math.tan(degToRad(excessiveBend / 2 + 90 - (radToDeg(edge.angle / 2)))) - mathmaticalTopOffset));
+            + (edge.isOuter ? 0 : (slopeZDelta * Math.tan(degToRad(excessiveBend / 2 + 90 - edge.angle / 2)) - mathmaticalTopOffset));
           // 需要确保斜坡首层（layerHeight/2处）的最小间距，以保证两边的斜坡的首层不融合
           // 切片软甲中的“切片间隙闭合半径”需要设置得尽量小以减少该问题，但仍然需要从数据上保证间距
           // 注意这里公式求得的是确保首层的偏移为minDistance / 2时的坡底偏移
@@ -406,18 +418,13 @@ const buildSolidFromPolygonsWithAngles = async (
         }
         else if (joinType === "interlocking") {
           if (edge.isSeam) {
-            // 抱爪总宽度
-            const clawTotalWidth = 6.6;
-            // 抱爪半径
-            const clawRadius = 3;
-            const clawInterclockingAngle = 5;
             const dirAB = [(pointA[0] - pointB[0]) / distAB, (pointA[1] - pointB[1]) / distAB];
-            const clawExtrudePlane = transformPlaneLocal(edgePerpendicularPlane, { offset: [-bodyThickness * Math.tan(degToRad(90 - (radToDeg(edge.angle / 2)))), connectionThickness + bodyThickness, (distAB - clawTotalWidth) / 2]});
+            const clawExtrudePlane = transformPlaneLocal(edgePerpendicularPlane, { offset: [-bodyThickness * Math.tan(degToRad(90 - edge.angle / 2)), connectionThickness + bodyThickness, (distAB - clawWidth) / 2]});
             const clawShapeSketcher = new Sketcher(clawExtrudePlane);
             clawShapeSketcher.movePointerTo([0, 0]);
-            clawShapeSketcher.lineTo([-clawRadius, 0]);
-            arcByCenterStartAngleSafe(clawShapeSketcher, [0,0], [-clawRadius, 0], -edge.angle);
-            const clawBaseCylinder = clawShapeSketcher.close().extrude(clawTotalWidth);
+            clawShapeSketcher.lineTo([-clawTargetRadius, 0]);
+            arcByCenterStartAngleSafe(clawShapeSketcher, [0,0], [-clawTargetRadius, 0], -edge.angle);
+            const clawBaseCylinder = clawShapeSketcher.close().extrude(clawWidth);
 
             // 分割圆柱体，平面数组顺序必须从底到上
             const splitCylinder = (cylinder: Shape3D, planes: Plane[]): Shape3D[] => {
@@ -434,19 +441,23 @@ const buildSolidFromPolygonsWithAngles = async (
             }
             
             const splitPlanes: Plane[] = [];
-            const planeA_ = transformPlaneLocal(clawExtrudePlane, { offset: [0, 0, clawTotalWidth * 1 / 5], rotateAround: "z", angle: 180 -  radToDeg(edge.angle)});
+            const planeA_ = transformPlaneLocal(clawExtrudePlane, { offset: [0, 0, clawWidth * 1 / 5], rotateAround: "z", angle: 180 - edge.angle});
             const planeA = transformPlaneLocal(planeA_, { rotateAround: "x", angle: clawInterclockingAngle });
             planeA_.delete();
-            const planeB = transformPlaneLocal(clawExtrudePlane, { offset: [0, 0, clawTotalWidth * 2 / 5], rotateAround: "x", angle: clawInterclockingAngle });
-            const planeC_ = transformPlaneLocal(clawExtrudePlane, { offset: [0, 0, clawTotalWidth * 3 / 5], rotateAround: "z", angle: 180 -  radToDeg(edge.angle) });
+            const planeB_ = transformPlaneLocal(clawExtrudePlane, { offset: [0, 0, clawWidth * 2 / 5], rotateAround: "z", angle: Math.min(270 - edge.angle, 180) });
+            const planeB = transformPlaneLocal(planeB_, { rotateAround: "x", angle: -clawInterclockingAngle });
+            planeB_.delete();
+            const planeC_ = transformPlaneLocal(clawExtrudePlane, { offset: [0, 0, clawWidth * 3 / 5], rotateAround: "z", angle: 180 - edge.angle });
             const planeC = transformPlaneLocal(planeC_, { rotateAround: "x", angle: clawInterclockingAngle });
             planeC_.delete();
-            const planeD = transformPlaneLocal(clawExtrudePlane, { offset: [0, 0, clawTotalWidth * 4 / 5], rotateAround: "x", angle: clawInterclockingAngle });
+            const planeD_ = transformPlaneLocal(clawExtrudePlane, { offset: [0, 0, clawWidth * 4 / 5], rotateAround: "z", angle: Math.min(270 - edge.angle, 180) });
+            const planeD = transformPlaneLocal(planeD_, { rotateAround: "x", angle: -clawInterclockingAngle });
+            planeD_.delete();
             const claws = splitCylinder(clawBaseCylinder, [planeA, planeB, planeC, planeD]);
             const mpClaw = claws[0].fuse(claws[2]).fuse(claws[4])
               .rotate(180, clawExtrudePlane.origin, [0,0,1])
-              .rotate(180 - radToDeg(edge.angle), clawExtrudePlane.origin, clawExtrudePlane.zDir)
-              .translate(dirAB[0] * clawTotalWidth, dirAB[1] * clawTotalWidth, 0);
+              .rotate(180 - edge.angle, clawExtrudePlane.origin, clawExtrudePlane.zDir)
+              .translate(dirAB[0] * clawWidth, dirAB[1] * clawWidth, 0);
             const fpClaw = claws[1].fuse(claws[3]);
             if (interlockingClaws.length === 0) interlockingClaws.push(joinSide === "mp" ? mpClaw : fpClaw);
             else interlockingClaws[0] = interlockingClaws[0].fuse(joinSide === "mp" ? mpClaw : fpClaw);
