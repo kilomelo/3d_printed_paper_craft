@@ -19,6 +19,9 @@ type SettingsUIRefs = {
   clawInterlockingAngleResetBtn: HTMLButtonElement;
   clawTargetRadiusInput: HTMLInputElement;
   clawTargetRadiusResetBtn: HTMLButtonElement;
+  clawRadiusAdaptiveOffBtn: HTMLButtonElement;
+  clawRadiusAdaptiveOnBtn: HTMLButtonElement;
+  clawRadiusAdaptiveResetBtn: HTMLButtonElement;
   clawWidthInput: HTMLInputElement;
   clawWidthResetBtn: HTMLButtonElement;
   tabWidthInput: HTMLInputElement;
@@ -93,6 +96,11 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.clipGapAdjustNarrowBtn.classList.toggle("active", settingsDraft.clipGapAdjust === "on");
   };
 
+  const updateClawRadiusAdaptiveButtons = () => {
+    refs.clawRadiusAdaptiveOffBtn.classList.toggle("active", settingsDraft.clawRadiusAdaptive === "off");
+    refs.clawRadiusAdaptiveOnBtn.classList.toggle("active", settingsDraft.clawRadiusAdaptive === "on");
+  };
+
   const updateWireframeEnabled = () => {
     const enabled = settingsDraft.hollowStyle;
     refs.wireframeThicknessInput.disabled = !enabled;
@@ -114,6 +122,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     setRowModified(refs.minFoldAngleThresholdInput, settingsDraft.minFoldAngleThreshold !== defaults.minFoldAngleThreshold);
     setRowModified(refs.clawInterlockingAngleInput, settingsDraft.clawInterlockingAngle !== defaults.clawInterlockingAngle);
     setRowModified(refs.clawTargetRadiusInput, settingsDraft.clawTargetRadius !== defaults.clawTargetRadius);
+    setRowModified(refs.clawRadiusAdaptiveOffBtn, settingsDraft.clawRadiusAdaptive !== defaults.clawRadiusAdaptive);
     setRowModified(refs.clawWidthInput, settingsDraft.clawWidth !== defaults.clawWidth);
     setRowModified(refs.layerHeightInput, settingsDraft.layerHeight !== defaults.layerHeight);
     setRowModified(refs.connectionLayersValue, settingsDraft.connectionLayers !== defaults.connectionLayers);
@@ -241,6 +250,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.minFoldAngleThresholdInput.value = String(settingsDraft.minFoldAngleThreshold);
     refs.clawInterlockingAngleInput.value = String(settingsDraft.clawInterlockingAngle);
     refs.clawTargetRadiusInput.value = String(settingsDraft.clawTargetRadius);
+    updateClawRadiusAdaptiveButtons();
     refs.clawWidthInput.value = String(settingsDraft.clawWidth);
     refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
     refs.layerHeightInput.value = String(settingsDraft.layerHeight);
@@ -317,6 +327,21 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
   refs.clipGapAdjustResetBtn.addEventListener("click", () => {
     settingsDraft.clipGapAdjust = getDefaultSettings().clipGapAdjust;
     updateClipGapAdjustButtons();
+    updateModifiedIndicators();
+  });
+  refs.clawRadiusAdaptiveOffBtn.addEventListener("click", () => {
+    settingsDraft.clawRadiusAdaptive = "off";
+    updateClawRadiusAdaptiveButtons();
+    updateModifiedIndicators();
+  });
+  refs.clawRadiusAdaptiveOnBtn.addEventListener("click", () => {
+    settingsDraft.clawRadiusAdaptive = "on";
+    updateClawRadiusAdaptiveButtons();
+    updateModifiedIndicators();
+  });
+  refs.clawRadiusAdaptiveResetBtn.addEventListener("click", () => {
+    settingsDraft.clawRadiusAdaptive = getDefaultSettings().clawRadiusAdaptive;
+    updateClawRadiusAdaptiveButtons();
     updateModifiedIndicators();
   });
   refs.navBasic.addEventListener("click", () => {
@@ -496,6 +521,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.minFoldAngleThresholdInput.value = String(settingsDraft.minFoldAngleThreshold);
     refs.clawInterlockingAngleInput.value = String(settingsDraft.clawInterlockingAngle);
     refs.clawTargetRadiusInput.value = String(settingsDraft.clawTargetRadius);
+    updateClawRadiusAdaptiveButtons();
     refs.clawWidthInput.value = String(settingsDraft.clawWidth);
     refs.layerHeightInput.value = String(settingsDraft.layerHeight);
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
@@ -538,6 +564,10 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     }
     if (settingsDraft.clawTargetRadius !== settingsSnapshot.clawTargetRadius) {
       changes.push(t("log.settings.changed", { label: t("settings.clawTargetRadius.label"), value: settingsDraft.clawTargetRadius }));
+    }
+    if (settingsDraft.clawRadiusAdaptive !== settingsSnapshot.clawRadiusAdaptive) {
+      const label = settingsDraft.clawRadiusAdaptive === "off" ? t("settings.clawRadiusAdaptive.off") : t("settings.clawRadiusAdaptive.on");
+      changes.push(t("log.settings.changed", { label: t("settings.clawRadiusAdaptive.label"), value: label }));
     }
     if (settingsDraft.clawWidth !== settingsSnapshot.clawWidth) {
       changes.push(t("log.settings.changed", { label: t("settings.clawWidth.label"), value: settingsDraft.clawWidth }));

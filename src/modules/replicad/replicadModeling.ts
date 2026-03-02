@@ -263,6 +263,7 @@ const buildSolidFromPolygonsWithAngles = async (
       joinType,
       clawInterlockingAngle,
       clawTargetRadius,
+      clawRadiusAdaptive,
       clawWidth,
       tabWidth,
       tabThickness,
@@ -429,9 +430,15 @@ const buildSolidFromPolygonsWithAngles = async (
             const baseOffsetAngle = (edge.angle - clawIntersectionAngle) / 2
             // 根据爪的伸出角度，计算爪的实际半径和互锁角度，以平衡各种角度拼接的限位力度
             // 伸出角度越小，半径越大（提供更高的限位力度）
-            const actualClawRadius = clawIntersectionAngle > 90 ? clawTargetRadius : clawTargetRadius * (90 / clawIntersectionAngle);
+            const actualClawRadius =
+              clawRadiusAdaptive === "on"
+                ? (clawIntersectionAngle > 90 ? clawTargetRadius : clawTargetRadius * Math.sqrt(90 / clawIntersectionAngle))
+                : clawTargetRadius;
             // 半径越大，互锁角度越小（使安装难度一致）
-            const actualClawInterlockAngle = clawIntersectionAngle > 90 ? clawInterlockingAngle : clawInterlockingAngle / (90 / clawIntersectionAngle);
+            const actualClawInterlockAngle =
+              clawRadiusAdaptive === "on"
+                ? (clawIntersectionAngle > 90 ? clawInterlockingAngle : clawInterlockingAngle / Math.sqrt(90 / clawIntersectionAngle))
+                : clawInterlockingAngle;
 
             console.log('[ReplicadModeling] edge.angle', edge.angle, 'baseOffsetAngle', baseOffsetAngle, 'clawIntersectionAngle', clawIntersectionAngle);
             const clawExtrudePlane = transformPlaneLocal(edgePerpendicularPlane, { offset: 

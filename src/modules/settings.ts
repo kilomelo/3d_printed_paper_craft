@@ -9,6 +9,7 @@ export type Settings = {
   joinType: "interlocking" | "clip";
   clawInterlockingAngle: number;
   clawTargetRadius: number;
+  clawRadiusAdaptive: "off" | "on";
   clawWidth: number;
   tabWidth: number;
   tabThickness: number;
@@ -25,8 +26,9 @@ export const SETTINGS_LIMITS = {
   connectionLayers: { min: 1, max: 4 },
   bodyLayers: { min: 1, max: 8 },
   joinType: { allowed: ["interlocking", "clip"] as const },
-  clawInterlockingAngle: { min: 3, max: 50 },
-  clawTargetRadius: { min: 2, max: 5 },
+  clawInterlockingAngle: { min: 1, max: 6 },
+  clawTargetRadius: { min: 2, max: 6 },
+  clawRadiusAdaptive: { allowed: ["off", "on"] as const },
   clawWidth: { min: 5, max: 10 },
   tabWidth: { min: 0, max: 20 },
   tabThickness: { min: 0.8, max: 2 },
@@ -42,8 +44,9 @@ const defaultSettings: Settings = {
   layerHeight: 0.2,
   connectionLayers: 1,
   bodyLayers: 3,
-  clawInterlockingAngle: 5,
+  clawInterlockingAngle: 3,
   clawTargetRadius: 3,
+  clawRadiusAdaptive: "on",
   clawWidth: 7,
   tabWidth: 4,
   tabThickness: 1,
@@ -96,6 +99,11 @@ export function setClawTargetRadius(val: number) {
     val > SETTINGS_LIMITS.clawTargetRadius.max
   ) return;
   current = { ...current, clawTargetRadius: val };
+}
+
+export function setClawRadiusAdaptive(val: Settings["clawRadiusAdaptive"]) {
+  if (!SETTINGS_LIMITS.clawRadiusAdaptive.allowed.includes(val)) return;
+  current = { ...current, clawRadiusAdaptive: val };
 }
 
 export function setClawWidth(val: number) {
@@ -169,6 +177,134 @@ export function resetSettings() {
   current = { ...defaultSettings };
 }
 
+const clamp = (value: number, min: number, max?: number) => {
+  if (max == null) return Math.max(value, min);
+  return Math.min(Math.max(value, min), max);
+};
+
+const readFiniteNumber = (value: unknown): number | null => {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const readBoolean = (value: unknown): boolean | null => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    if (value === "true") return true;
+    if (value === "false") return false;
+  }
+  return null;
+};
+
+// 3dppc 文件里的 settings 可能来自旧版本，或者带着历史脏值。
+// 导入时按字段清洗：
+// 1. 缺失字段回退到当前版本默认值；
+// 2. 枚举字段只接受白名单；
+// 3. 数值字段接受 number 或可解析的数字字符串，并按当前版本约束裁剪；
+// 4. 布尔字段接受 boolean 或 "true"/"false"。
+const sanitizeImportedSettings = (imported: Partial<Record<keyof Settings, unknown>>): Settings => {
+  const next: Settings = { ...defaultSettings };
+
+  if (typeof imported.joinType === "string" && SETTINGS_LIMITS.joinType.allowed.includes(imported.joinType)) {
+    next.joinType = imported.joinType;
+  }
+  if (typeof imported.clawRadiusAdaptive === "string" && SETTINGS_LIMITS.clawRadiusAdaptive.allowed.includes(imported.clawRadiusAdaptive)) {
+    next.clawRadiusAdaptive = imported.clawRadiusAdaptive;
+  }
+  if (typeof imported.clipGapAdjust === "string" && SETTINGS_LIMITS.clipGapAdjust.allowed.includes(imported.clipGapAdjust)) {
+    next.clipGapAdjust = imported.clipGapAdjust;
+  }
+  const hollowStyle = readBoolean(imported.hollowStyle);
+  if (hollowStyle != null) {
+    next.hollowStyle = hollowStyle;
+  }
+
+  const scale = readFiniteNumber(imported.scale);
+  if (scale != null) {
+    next.scale = clamp(scale, SETTINGS_LIMITS.scale.min);
+  }
+  const layerHeight = readFiniteNumber(imported.layerHeight);
+  if (layerHeight != null) {
+    next.layerHeight = clamp(layerHeight, Number.EPSILON, SETTINGS_LIMITS.layerHeight.max);
+  }
+  const connectionLayers = readFiniteNumber(imported.connectionLayers);
+  if (connectionLayers != null) {
+    next.connectionLayers = clamp(
+      Math.round(connectionLayers),
+      SETTINGS_LIMITS.connectionLayers.min,
+      SETTINGS_LIMITS.connectionLayers.max,
+    );
+  }
+  const bodyLayers = readFiniteNumber(imported.bodyLayers);
+  if (bodyLayers != null) {
+    next.bodyLayers = clamp(
+      Math.round(bodyLayers),
+      SETTINGS_LIMITS.bodyLayers.min,
+      SETTINGS_LIMITS.bodyLayers.max,
+    );
+  }
+  const clawInterlockingAngle = readFiniteNumber(imported.clawInterlockingAngle);
+  if (clawInterlockingAngle != null) {
+    next.clawInterlockingAngle = clamp(
+      clawInterlockingAngle,
+      SETTINGS_LIMITS.clawInterlockingAngle.min,
+      SETTINGS_LIMITS.clawInterlockingAngle.max,
+    );
+  }
+  const clawTargetRadius = readFiniteNumber(imported.clawTargetRadius);
+  if (clawTargetRadius != null) {
+    next.clawTargetRadius = clamp(
+      clawTargetRadius,
+      SETTINGS_LIMITS.clawTargetRadius.min,
+      SETTINGS_LIMITS.clawTargetRadius.max,
+    );
+  }
+  const clawWidth = readFiniteNumber(imported.clawWidth);
+  if (clawWidth != null) {
+    next.clawWidth = clamp(clawWidth, SETTINGS_LIMITS.clawWidth.min, SETTINGS_LIMITS.clawWidth.max);
+  }
+  const tabWidth = readFiniteNumber(imported.tabWidth);
+  if (tabWidth != null) {
+    next.tabWidth = clamp(tabWidth, SETTINGS_LIMITS.tabWidth.min, SETTINGS_LIMITS.tabWidth.max - 1e-6);
+  }
+  const tabThickness = readFiniteNumber(imported.tabThickness);
+  if (tabThickness != null) {
+    next.tabThickness = clamp(
+      tabThickness,
+      SETTINGS_LIMITS.tabThickness.min,
+      SETTINGS_LIMITS.tabThickness.max,
+    );
+  }
+  const minFoldAngleThreshold = readFiniteNumber(imported.minFoldAngleThreshold);
+  if (minFoldAngleThreshold != null) {
+    next.minFoldAngleThreshold = clamp(
+      minFoldAngleThreshold,
+      SETTINGS_LIMITS.minFoldAngleThreshold.min,
+      SETTINGS_LIMITS.minFoldAngleThreshold.max,
+    );
+  }
+  const tabClipGap = readFiniteNumber(imported.tabClipGap);
+  if (tabClipGap != null) {
+    next.tabClipGap = clamp(tabClipGap, SETTINGS_LIMITS.tabClipGap.min, SETTINGS_LIMITS.tabClipGap.max);
+  }
+  const wireframeThickness = readFiniteNumber(imported.wireframeThickness);
+  if (wireframeThickness != null) {
+    next.wireframeThickness = clamp(
+      wireframeThickness,
+      SETTINGS_LIMITS.wireframeThickness.min,
+      SETTINGS_LIMITS.wireframeThickness.max,
+    );
+  }
+
+  return next;
+};
+
 export function applySettings(next: Partial<Settings>, emitEvent: boolean = true) {
   // 如果没有实际变化则直接返回
   const merged = { ...current, ...next };
@@ -183,8 +319,8 @@ export function applySettings(next: Partial<Settings>, emitEvent: boolean = true
   if (emitEvent) appEventBus.emit("settingsChanged", changedItemCnt);
 }
 
-export function importSettings(imported: Partial<Settings>) {
-  applySettings(imported, false);
+export function importSettings(imported: Partial<Record<keyof Settings, unknown>>) {
+  current = sanitizeImportedSettings(imported);
 }
 
 export function getDefaultSettings(): Settings {

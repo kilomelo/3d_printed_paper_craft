@@ -144,6 +144,12 @@ const applyI18nTexts = () => {
       def: defaultSettings.clawTargetRadius,
     });
   }
+  const clawRadiusAdaptiveDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clawRadiusAdaptive.desc"]');
+  if (clawRadiusAdaptiveDesc) {
+    clawRadiusAdaptiveDesc.textContent = t("settings.clawRadiusAdaptive.desc", {
+      def: t(`settings.clawRadiusAdaptive.${defaultSettings.clawRadiusAdaptive}`),
+    });
+  }
   const clawWidthDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clawWidth.desc"]');
   if (clawWidthDesc) {
     clawWidthDesc.textContent = t("settings.clawWidth.desc", {
@@ -453,6 +459,19 @@ app.innerHTML = `
             </div>
             <div class="setting-row">
               <div class="setting-label-row">
+                <span class="setting-label" data-i18n="settings.clawRadiusAdaptive.label">抱爪半径自适应</span>
+                <span class="setting-desc" data-i18n="settings.clawRadiusAdaptive.desc">根据拼接夹角调整抱爪半径，改善拼接牢固度，默认${defaultSettings.clawRadiusAdaptive === "on" ? "开启" : "关闭"}</span>
+              </div>
+              <div class="setting-field">
+                <div class="settings-toggle-group">
+                  <button id="setting-claw-radius-adaptive-off" class="btn settings-inline-btn" data-i18n="settings.clawRadiusAdaptive.off">关闭</button>
+                  <button id="setting-claw-radius-adaptive-on" class="btn settings-inline-btn" data-i18n="settings.clawRadiusAdaptive.on">开启</button>
+                </div>
+                <button id="setting-claw-radius-adaptive-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
                 <label for="setting-claw-width" class="setting-label" data-i18n="settings.clawWidth.label">抱爪宽度</label>
                 <span class="setting-desc" data-i18n="settings.clawWidth.desc">单个抱爪的宽度，最小${limits.clawWidth.min}，最大${limits.clawWidth.max}，默认值${defaultSettings.clawWidth}，单位mm</span>
               </div>
@@ -620,6 +639,9 @@ const settingClawInterlockingAngleInput = document.querySelector<HTMLInputElemen
 const settingClawInterlockingAngleResetBtn = document.querySelector<HTMLButtonElement>("#setting-claw-interlocking-angle-reset");
 const settingClawTargetRadiusInput = document.querySelector<HTMLInputElement>("#setting-claw-target-radius");
 const settingClawTargetRadiusResetBtn = document.querySelector<HTMLButtonElement>("#setting-claw-target-radius-reset");
+const settingClawRadiusAdaptiveOffBtn = document.querySelector<HTMLButtonElement>("#setting-claw-radius-adaptive-off");
+const settingClawRadiusAdaptiveOnBtn = document.querySelector<HTMLButtonElement>("#setting-claw-radius-adaptive-on");
+const settingClawRadiusAdaptiveResetBtn = document.querySelector<HTMLButtonElement>("#setting-claw-radius-adaptive-reset");
 const settingClawWidthInput = document.querySelector<HTMLInputElement>("#setting-claw-width");
 const settingClawWidthResetBtn = document.querySelector<HTMLButtonElement>("#setting-claw-width-reset");
 const settingLayerHeightInput = document.querySelector<HTMLInputElement>("#setting-layer-height");
@@ -713,6 +735,9 @@ if (
   !settingClawInterlockingAngleResetBtn ||
   !settingClawTargetRadiusInput ||
   !settingClawTargetRadiusResetBtn ||
+  !settingClawRadiusAdaptiveOffBtn ||
+  !settingClawRadiusAdaptiveOnBtn ||
+  !settingClawRadiusAdaptiveResetBtn ||
   !settingClawWidthInput ||
   !settingClawWidthResetBtn ||
   !settingTabWidthInput ||
@@ -844,6 +869,9 @@ const settingsUI = createSettingsUI(
     clawInterlockingAngleResetBtn: settingClawInterlockingAngleResetBtn,
     clawTargetRadiusInput: settingClawTargetRadiusInput,
     clawTargetRadiusResetBtn: settingClawTargetRadiusResetBtn,
+    clawRadiusAdaptiveOffBtn: settingClawRadiusAdaptiveOffBtn,
+    clawRadiusAdaptiveOnBtn: settingClawRadiusAdaptiveOnBtn,
+    clawRadiusAdaptiveResetBtn: settingClawRadiusAdaptiveResetBtn,
     clawWidthInput: settingClawWidthInput,
     clawWidthResetBtn: settingClawWidthResetBtn,
     tabWidthInput: settingTabWidthInput,
