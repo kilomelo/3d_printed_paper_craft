@@ -1444,14 +1444,14 @@ exportGroupStepBtn.addEventListener("click", async () => {
     }
     const groupName = groupController.getGroupName(targetGroupId) ?? `group-${targetGroupId}`;
     const projectName = getCurrentProject().name || "未命名工程";
-    const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
-    if (!trisWithAngles.length) {
+    const polygonsWithAngles = unfold2d.getGroupPolygonsData(targetGroupId);
+    if (!polygonsWithAngles.length) {
       log(t("log.export.noFaces"), "error");
       return;
     }
     log(t("log.export.step.start"), "info");
     const { blob } = await buildStepInWorker(
-      trisWithAngles,
+      polygonsWithAngles,
       (progress) => log(progress, "progress"),
       (msg, tone) => log(msg, (tone as any) ?? "error"),
     );
@@ -1505,14 +1505,14 @@ exportGroupStlBtn.addEventListener("click", async () => {
     const groupName = groupController.getGroupName(targetGroupId) ?? `group-${targetGroupId}`;
     const cached = getCachedPreviewMesh(targetGroupId);
     if (!cached) {
-      const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
-      if (!trisWithAngles.length) {
+      const polygonsWithAngles = unfold2d.getGroupPolygonsData(targetGroupId);
+      if (!polygonsWithAngles.length) {
         log(t("log.export.noFaces"), "error");
         return;
       }
       log(t("log.export.stl.start"), "info");
       const { blob } = await buildStlInWorker(
-        trisWithAngles,
+        polygonsWithAngles,
         (progress) => log(progress, "progress"),
         (msg, tone) => log(msg, (tone as any) ?? "error"),
       );
@@ -1548,14 +1548,14 @@ previewGroupModelBtn.addEventListener("click", async () => {
     if (cached) {
       renderer3d.loadPreviewModel(cached.mesh, cached.angle);
     } else {
-      const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
-      if (!trisWithAngles.length) {
+      const polygonsWithAngles = unfold2d.getGroupPolygonsData(targetGroupId);
+      if (!polygonsWithAngles.length) {
         log(t("log.export.noFaces"), "error");
         return;
       }
       // log("正在用 Replicad 生成 mesh...", "info");
       const { mesh } = await buildMeshInWorker(
-        trisWithAngles,
+        polygonsWithAngles,
         (progress) => log(progress, "progress"),
         (msg, tone) => log(msg, (tone as any) ?? "error"),
       );

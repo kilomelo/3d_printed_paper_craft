@@ -1,16 +1,16 @@
 import {
-  buildGroupMeshFromTriangles,
-  buildGroupStepFromTriangles,
-  buildGroupStlFromTriangles,
+  buildGroupMeshFromPolygons,
+  buildGroupStepFromPolygons,
+  buildGroupStlFromPolygons,
 } from "./replicadModeling";
-import type { TriangleWithEdgeInfo } from "../../types/geometryTypes";
+import type { PolygonWithEdgeInfo } from "../../types/geometryTypes";
 import { applySettings, type Settings } from "../settings";
 import type { LogTone } from "../log";
 
 type WorkerRequest =
-  | { id: number; type: "step"; triangles: TriangleWithEdgeInfo[]; settings: Settings; lang?: string }
-  | { id: number; type: "stl"; triangles: TriangleWithEdgeInfo[]; settings: Settings; lang?: string }
-  | { id: number; type: "mesh"; triangles: TriangleWithEdgeInfo[]; settings: Settings; lang?: string };
+  | { id: number; type: "step"; polygons: PolygonWithEdgeInfo[]; settings: Settings; lang?: string }
+  | { id: number; type: "stl"; polygons: PolygonWithEdgeInfo[]; settings: Settings; lang?: string }
+  | { id: number; type: "mesh"; polygons: PolygonWithEdgeInfo[]; settings: Settings; lang?: string };
 
 type MeshPayload = {
   positions: ArrayBuffer;
@@ -31,11 +31,11 @@ type WorkerResponse =
 const ctx: DedicatedWorkerGlobalScope = self as any;
 
 const serializeMesh = async (
-  triangles: TriangleWithEdgeInfo[],
+  polygons: PolygonWithEdgeInfo[],
   onProgress?: (msg: number) => void,
   onLog?: (msg: string) => void,
 ): Promise<MeshPayload> => {
-  const { mesh } = await buildGroupMeshFromTriangles(triangles, onProgress, onLog);
+  const { mesh } = await buildGroupMeshFromPolygons(polygons, onProgress, onLog);
   const geom = mesh.geometry;
   const posAttr = geom.getAttribute("position");
   const normAttr = geom.getAttribute("normal");
@@ -66,14 +66,14 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     const reportLog = (msg: string, tone: LogTone = "error") =>
       ctx.postMessage({ id, ok: true, type: "log", message: msg, tone } as WorkerResponse);
     if (type === "step") {
-      const blob = await buildGroupStepFromTriangles(event.data.triangles, report, reportLog, lang);
+      const blob = await buildGroupStepFromPolygons(event.data.polygons, report, reportLog, lang);
       const buffer = await blob.arrayBuffer();
       const resp: WorkerResponse = { id, ok: true, type: "step", buffer, mime: "application/step" };
       ctx.postMessage(resp, [resp.buffer]);
       return;
     }
     if (type === "stl") {
-      const blob = await buildGroupStlFromTriangles(event.data.triangles, report, reportLog, lang);
+      const blob = await buildGroupStlFromPolygons(event.data.polygons, report, reportLog, lang);
       const buffer = await blob.arrayBuffer();
       const resp: WorkerResponse = { id, ok: true, type: "stl", buffer, mime: "model/stl" };
       ctx.postMessage(resp, [resp.buffer]);
@@ -81,7 +81,7 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     }
     if (type === "mesh") {
       // 通过生成 STL，再由主线程解析为 mesh，减少重复建模路径
-      const blob = await buildGroupStlFromTriangles(event.data.triangles, report, reportLog, lang);
+      const blob = await buildGroupStlFromPolygons(event.data.polygons, report, reportLog, lang);
       const buffer = await blob.arrayBuffer();
       const resp: WorkerResponse = { id, ok: true, type: "mesh", buffer, mime: "model/stl" };
       ctx.postMessage(resp, [resp.buffer]);

@@ -3,7 +3,7 @@ import { localGC, setOC, getOC, Shape3D, makeBox, drawCircle, drawRectangle, Poi
 import type { OpenCascadeInstance } from "replicad-opencascadejs";
 import initOC from "replicad-opencascadejs/src/replicad_single.js";
 import ocWasmUrl from "replicad-opencascadejs/src/replicad_single.wasm?url";
-import type { Point2D, TriangleWithEdgeInfo } from "../../types/geometryTypes";
+import type { Point2D, PolygonWithEdgeInfo } from "../../types/geometryTypes";
 import { getSettings } from "../settings";
 import {
   pointKey, radToDeg, degToRad,
@@ -246,8 +246,11 @@ const buildSeamTab = (edge: {
   return { solid: tabSolid, booleanOperations};
 };
 // 实际实行参数化建模的方法【核心逻辑】
-const buildSolidFromTrianglesWithAngles = async (
-  trianglesWithAngles: TriangleWithEdgeInfo[],
+// 这里已经从“按三角形输入”改为“按多边形输入”。
+// 多边形的边按 points[i] -> points[(i + 1) % n] 解释。
+// hollowStyle 开启时，生产端会退回为“三角形 polygon”，因此仍可复用现有镂空逻辑。
+const buildSolidFromPolygonsWithAngles = async (
+  polygonsWithAngles: PolygonWithEdgeInfo[],
   onProgress?: (progress: number) => void,
   onLog?: (msg: string) => void,
   lang?: string,
@@ -259,12 +262,12 @@ const buildSolidFromTrianglesWithAngles = async (
     const { layerHeight, connectionLayers, bodyLayers, joinType, tabWidth, tabThickness, hollowStyle, wireframeThickness } = getSettings();
     const bodyThickness = bodyLayers * layerHeight;
     const connectionThickness = connectionLayers * layerHeight;
-    console.log("trianglesWithAngles", trianglesWithAngles, "joinType", joinType);
+    console.log("polygonsWithAngles", polygonsWithAngles, "joinType", joinType);
     onProgress?.(1);
     await ensureReplicadOC();
 
     // 第一步：生成连接层和主体
-    const outerResult  = triangles2Outer(trianglesWithAngles);
+    const outerResult  = triangles2Outer(polygonsWithAngles);
     if (!outerResult || !outerResult.outer || outerResult.outer.length < 3) {
       onLog?.(t("log.replicad.outer.fail"));
       throw new Error("外轮廓查找失败");
@@ -285,7 +288,7 @@ const buildSolidFromTrianglesWithAngles = async (
       throw new Error("连接层建模失败");
     }
     onProgress?.(2);
-    const progressPerTriangle = 48 / trianglesWithAngles.length;
+    const progressPerPolygon = 48 / polygonsWithAngles.length;
     const tabCutToolMarginMin = tabWidth * 1.5;
     const slopToolHeight = 1e-3 + Math.hypot(tabWidth, tabThickness) + bodyThickness * 2 + connectionThickness + 1;
     const slopeTools: Shape3D[] = [];
@@ -298,66 +301,69 @@ const buildSolidFromTrianglesWithAngles = async (
     const interlockingClaws: Shape3D[] = [];
 
     let booleanOperations: number = 0;
-    trianglesWithAngles.forEach((triData, i) => {
+    polygonsWithAngles.forEach((polyData, i) => {
       const isDefined = <T,>(v: T | undefined | null): v is T => v != null;
       // 收集顶点最小角度信息
-      triData.pointAngleData?.forEach((item) => {
+      polyData.pointAngleData?.forEach((item) => {
         const key = pointKey(item.unfold2dPos);
         const prev = vertexAngleMap.get(key);
         if (!prev || item.minAngle < prev.minAngle) {
           vertexAngleMap.set(key, { position: item.unfold2dPos, minAngle: item.minAngle });
         }
       });
-      const [p0, p1, p2] = triData.tri;
-      // 基准顺序：AC, CB, BA 对应 [p0->p2, p2->p1, p1->p0]
-      const planes = [makeVerticalPlaneNormalAB(p2, p1), makeVerticalPlaneNormalAB(p0, p2), makeVerticalPlaneNormalAB(p1, p0)];
-      if (!planes.every(isDefined)) {
-        onLog?.(t("log.replicad.edgePlane.fail"));
-        console.warn('[ReplicadModeling] failed to create edge cutting planes for triangle, skip this triangle', triData);
+      const points = polyData.points;
+      if (points.length < 3 || polyData.edges.length !== points.length) {
+        onLog?.(t("log.replicad.outer.fail"));
+        console.warn("[ReplicadModeling] invalid polygon input, skip this polygon", polyData);
         return;
       }
-      const dists  = [Math.hypot(p2[0] - p1[0], p2[1] - p1[1]), Math.hypot(p2[0] - p0[0], p2[1] - p0[1]), Math.hypot(p1[0] - p0[0], p1[1] - p0[1])];
+      // 为每条边构造一个垂直切割平面。
+      // 这里沿用旧三角形版本的约定：以边的反向向量作为平面法向。
+      const planes = points.map((pointA, edgeIdx) => {
+        const pointB = points[(edgeIdx + 1) % points.length];
+        return makeVerticalPlaneNormalAB(pointB, pointA);
+      });
+      if (!planes.every(isDefined)) {
+        onLog?.(t("log.replicad.edgePlane.fail"));
+        console.warn("[ReplicadModeling] failed to create edge cutting planes for polygon, skip this polygon", polyData);
+        return;
+      }
+      const dists = points.map((pointA, edgeIdx) => {
+        const pointB = points[(edgeIdx + 1) % points.length];
+        return Math.hypot(pointB[0] - pointA[0], pointB[1] - pointA[1]);
+      });
       // 准备每条边都要用到的辅助刀具
       const tabExtendMargin = Math.max(...dists);
       const cutToolMargin = Math.max(tabCutToolMarginMin, tabExtendMargin);
-      const edgeCutTools = [
-        extrudeFromContourPoints(
+      const edgeCutTools = planes.map((plane, edgeIdx) => extrudeFromContourPoints(
           [[0,-cutToolMargin], [0,cutToolMargin], [cutToolMargin,cutToolMargin], [cutToolMargin,-cutToolMargin]],
-          planes[0],
+          plane,
           -cutToolMargin,
-          dists[0] + 2 * cutToolMargin,
-        ),
-        extrudeFromContourPoints(
-          [[0,-cutToolMargin], [0,cutToolMargin], [cutToolMargin,cutToolMargin], [cutToolMargin,-cutToolMargin]],
-          planes[1],
-          -cutToolMargin,
-          dists[1] + 2 * cutToolMargin,
-        ),
-        extrudeFromContourPoints(
-          [[0,-cutToolMargin], [0,cutToolMargin], [cutToolMargin,cutToolMargin], [cutToolMargin,-cutToolMargin]],
-          planes[2],
-          -cutToolMargin,
-          dists[2] + 2 * cutToolMargin,
-        ),
-      ];
+          dists[edgeIdx] + 2 * cutToolMargin,
+        ));
       if (!edgeCutTools.every(isDefined)) {
         onLog?.(t("log.replicad.edgeSketch.fail"));
-        console.warn('[ReplicadModeling] failed to create edge cut tools for triangle, skip this triangle', triData);
+        console.warn("[ReplicadModeling] failed to create edge cut tools for polygon, skip this polygon", polyData);
         return;
       }
 
       // 舌片卡子相关定义
       const { tabClipKeelThickness, tabClipWingThickness, tabClipWingLength, tabClipMinSpacing, tabClipMaxSpacing } = tabClipGemometry();
-      triData.edges.forEach((edge, idx) => {
-        const pick = (k: 0 | 1 | 2): 0 | 1 | 2 => ((k + (idx % 3) + 3) % 3) as 0 | 1 | 2;
-        const [pointA, pointB] = [triData.tri[pick(0)], triData.tri[pick(1)]];
+      polyData.edges.forEach((edge, idx) => {
+        const pointA = points[idx];
+        const pointB = points[(idx + 1) % points.length];
+        const nextEdgeIdx = (idx + 1) % points.length;
+        const prevEdgeIdx = (idx - 1 + points.length) % points.length;
         const joinSide = edge.joinSide;
         const stableOrder = edge.stableOrder ?? "ab";
-        const [stablePointA, stablePointB] = stableOrder === "ab" ? [pointA, pointB] : [pointB, pointA];
-        const distAB = dists[pick(2)];
-        const edgePerpendicularPlane = planes[pick(2)];
-        const adjEdgeCutToolL = edgeCutTools[pick(0)];
-        const adjEdgeCutToolR = edgeCutTools[pick(1)];
+        const [stablePointA, stablePointB] =
+          stableOrder === "ab" ? [pointA, pointB] : [pointB, pointA];
+        const distAB = dists[idx];
+        const edgePerpendicularPlane = planes[idx];
+        // 相邻两条边的刀具用于裁剪当前边生成的几何体。
+        // 这里不再依赖三角形专用的 pick()，直接按环索引取前后邻边。
+        const adjEdgeCutToolL = edgeCutTools[nextEdgeIdx];
+        const adjEdgeCutToolR = edgeCutTools[prevEdgeIdx];
         if ((!edge.isOuter && Math.abs(edge.angle - Math.PI) > 1e-3) || edge.angle < Math.PI - 1e-3) {
           // 第二步：生成弯折、拼接坡度刀具
           const slopeStartZ = edge.isOuter ? layerHeight : connectionThickness;
@@ -415,7 +421,7 @@ const buildSolidFromTrianglesWithAngles = async (
             // 抱爪半径
             const clawRadius = 3;
             const clawInterclockingAngle = 5;
-            const dirAB = [(pointA[0] - pointB[0]) / distAB, (pointA[1] - pointB[1], 0) / distAB];
+            const dirAB = [(pointA[0] - pointB[0]) / distAB, (pointA[1] - pointB[1]) / distAB];
             const clawExtrudePlane = transformPlaneLocal(edgePerpendicularPlane, { offset: [-bodyThickness * Math.tan(degToRad(90 - (radToDeg(edge.angle / 2)))), connectionThickness + bodyThickness, (distAB - clawTotalWidth) / 2]});
             const clawShapeSketcher = new Sketcher(clawExtrudePlane);
             clawShapeSketcher.movePointerTo([0, 0]);
@@ -463,7 +469,7 @@ const buildSolidFromTrianglesWithAngles = async (
       edgeCutTools.forEach((tool) => tool.delete());
       planes.forEach((plane) => { if (plane) plane.delete(); });
 
-      onProgress?.(Math.floor(2 + progressPerTriangle * (i + 1)));
+      onProgress?.(Math.floor(2 + progressPerPolygon * (i + 1)));
 
       if (hollowStyle) {
         const msg: Record<OffsetFailReason, string> = {
@@ -475,11 +481,19 @@ const buildSolidFromTrianglesWithAngles = async (
           INFEASIBLE_OFFSETS: t("log.replicad.offset.reason.infeasibleOffsets"),
         };
           // 镂空
-          const offsets = triData.edges.map(e => {
+          const offsets = polyData.edges.map(e => {
             return (e.isOuter && !e.isSeam) ? wireframeThickness : (wireframeThickness / 2);
           });
-          // console.log('[ReplicadModeling] offsetting triangle for hollow', { tri: triData.tri, offsets });
-          const offsetResult = offsetTriangleSafe(triData.tri, offsets);
+          // 根据当前数据生产约束，镂空模式下输入应保持为三角形。
+          // 这里仍加显式保护，避免后续改动破坏这个前提时静默产出错误结果。
+          if (points.length !== 3) {
+            console.warn("[ReplicadModeling] hollow mode expects triangle polygons, skip this polygon", polyData);
+            booleanOperations += 1;
+            return;
+          }
+          const triangleForHollow = [points[0], points[1], points[2]] as [Point2D, Point2D, Point2D];
+          // console.log('[ReplicadModeling] offsetting triangle for hollow', { tri: triangleForHollow, offsets });
+          const offsetResult = offsetTriangleSafe(triangleForHollow, offsets);
           if (!offsetResult.tri) {
             onLog?.(t("log.replicad.offset.fail", { reason: msg[offsetResult.reason!] }));
           }
@@ -536,7 +550,7 @@ const buildSolidFromTrianglesWithAngles = async (
       onLog?.(t("log.replicad.invalid.final"));
       console.warn('[ReplicadModeling] final solid is not valid OCCT shape');
     }
-    // console.log(`[ReplicadModeling] buildSolidFromTrianglesWithAngles completed with ${booleanOperations} boolean operations`);
+    // console.log(`[ReplicadModeling] buildSolidFromPolygonsWithAngles completed with ${booleanOperations} boolean operations`);
     return { solid: connectionSolid };
   }
   finally {
@@ -578,47 +592,47 @@ export const buildTabClip = async () => {
   return tabClipSolidHalf.fuse(tabClipSolidHalf.clone().mirror("XZ")).simplify();
 };
 
-export async function buildGroupStepFromTriangles(
-  trisWithAngles: TriangleWithEdgeInfo[],
+export async function buildGroupStepFromPolygons(
+  polygonsWithAngles: PolygonWithEdgeInfo[],
   onProgress?: (msg: number) => void,
   onLog?: (msg: string) => void,
   lang?: string,
 ): Promise<Blob> {
-  if (!trisWithAngles.length) {
+  if (!polygonsWithAngles.length) {
     onLog?.(t("log.replicad.noTriangles"));
-    throw new Error("没有可用于建模的展开三角形");
+    throw new Error("没有可用于建模的展开面片");
   }
-  const { solid } = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog, lang);
+  const { solid } = await buildSolidFromPolygonsWithAngles(polygonsWithAngles, onProgress, onLog, lang);
   return solid.blobSTEP();
 }
 
 const buildMeshTolerance = 0.1;
 const buildMeshAngularTolerance = 0.5;
-export async function buildGroupStlFromTriangles(
-  trisWithAngles: TriangleWithEdgeInfo[],
+export async function buildGroupStlFromPolygons(
+  polygonsWithAngles: PolygonWithEdgeInfo[],
   onProgress?: (msg: number) => void,
   onLog?: (msg: string) => void,
   lang?: string,
 ): Promise<Blob> {
-  if (!trisWithAngles.length) {
+  if (!polygonsWithAngles.length) {
     onLog?.(t("log.replicad.noTriangles"));
-    throw new Error("没有可用于建模的展开三角形");
+    throw new Error("没有可用于建模的展开面片");
   }
-  const { solid } = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog, lang);
+  const { solid } = await buildSolidFromPolygonsWithAngles(polygonsWithAngles, onProgress, onLog, lang);
   return solid.blobSTL({ binary: true, tolerance: buildMeshTolerance, angularTolerance: buildMeshAngularTolerance });
 }
 
-export async function buildGroupMeshFromTriangles(
-  trisWithAngles: TriangleWithEdgeInfo[],
+export async function buildGroupMeshFromPolygons(
+  polygonsWithAngles: PolygonWithEdgeInfo[],
   onProgress?: (msg: number) => void,
   onLog?: (msg: string) => void,
   lang?: string,
 ): Promise<{ mesh: Mesh }> {
-  if (!trisWithAngles.length) {
+  if (!polygonsWithAngles.length) {
     onLog?.(t("log.replicad.noTriangles"));
-    throw new Error("没有可用于建模的展开三角形");
+    throw new Error("没有可用于建模的展开面片");
   }
-  const { solid } = await buildSolidFromTrianglesWithAngles(trisWithAngles, onProgress, onLog, lang);
+  const { solid } = await buildSolidFromPolygonsWithAngles(polygonsWithAngles, onProgress, onLog, lang);
   const mesh = solid.mesh({ tolerance: buildMeshTolerance, angularTolerance: buildMeshAngularTolerance });
   const geometry = new BufferGeometry();
   const position = new Float32BufferAttribute(mesh.vertices, 3);

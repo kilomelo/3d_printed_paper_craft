@@ -1,5 +1,5 @@
 import { Vector3 } from "three";
-import type { Point2D, Point3D, Vec3, Triangle2D, Vec2, Plane3D, TriangleWithEdgeInfo } from "../types/geometryTypes";
+import type { Point2D, Point3D, Vec3, Triangle2D, Vec2, Plane3D, TriangleWithEdgeInfo, PolygonWithEdgeInfo } from "../types/geometryTypes";
 
 // 弧度转角度
 export function radToDeg(rad: number) { return (rad * 180) / Math.PI; }
@@ -315,27 +315,33 @@ export function reflectPointAcrossLine(p: Point2D, l0: Point2D, l1: Point2D): Po
   return [2 * proj[0] - p[0], 2 * proj[1] - p[1]];
 }
 
-// 通过展开后的三角形信息找到外轮廓，并且计算用于参数化建模的一系列数据
-export function triangles2Outer(trianglesWithAngles: TriangleWithEdgeInfo[]): {
+// 通过展开后的面片信息找到整体外轮廓，并计算建模所需的边界数据。
+// 名称暂时保留为 triangles2Outer，避免同时引发过多调用点改名；
+// 但这里的实现已经泛化，可同时接受：
+// 1. 旧的 TriangleWithEdgeInfo[]
+// 2. 新的 PolygonWithEdgeInfo[]
+export function triangles2Outer(items: Array<TriangleWithEdgeInfo | PolygonWithEdgeInfo>): {
   outer: Point2D[];
   min: Point2D;
   max: Point2D;
-  maxEdgeLen: number; // 所有三角形的边中最长的边长
+  maxEdgeLen: number; // 所有输入面片边中最长的边长
   outerPointAngleMap: Map<string, number>;
 } | undefined {
-  if (!trianglesWithAngles.length) return undefined;
+  if (!items.length) return undefined;
   const edgeMap = new Map<string, { a: Point2D; b: Point2D; isSeam: boolean }>();
   const max: Point2D = [-Infinity, -Infinity];
   const min: Point2D = [Infinity, Infinity];
   let maxEdgeLen = 0;
-  trianglesWithAngles.forEach((triData) => {
-    const edges: [Point2D, Point2D, { isOuter: boolean; angle: number; isSeam?: boolean } | undefined][] = [
-      [triData.tri[0], triData.tri[1], triData.edges?.[0]],
-      [triData.tri[1], triData.tri[2], triData.edges?.[1]],
-      [triData.tri[2], triData.tri[0], triData.edges?.[2]],
-    ];
+  items.forEach((item) => {
+    const points = "tri" in item ? item.tri : item.points;
+    // edges[i] 对应 points[i] -> points[(i + 1) % n]。
+    const edges = points.map((point, idx) => [
+      point,
+      points[(idx + 1) % points.length],
+      item.edges?.[idx],
+    ] as [Point2D, Point2D, { isOuter: boolean; angle: number; isSeam?: boolean } | undefined]);
 
-    triData.tri.forEach((pt) => {
+    points.forEach((pt) => {
       if (pt[0] < min[0]) min[0] = pt[0];
       if (pt[1] < min[1]) min[1] = pt[1];
       if (pt[0] > max[0]) max[0] = pt[0];
