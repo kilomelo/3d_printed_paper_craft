@@ -9,6 +9,7 @@ export type Settings = {
   joinType: "interlocking" | "clip";
   tabWidth: number;
   tabThickness: number;
+  minFoldAngleThreshold: number;
   tabClipGap: number;
   clipGapAdjust: "off" | "on";
   hollowStyle: boolean;
@@ -23,6 +24,7 @@ export const SETTINGS_LIMITS = {
   joinType: { allowed: ["interlocking", "clip"] as const },
   tabWidth: { min: 0, max: 20 },
   tabThickness: { min: 0.8, max: 2 },
+  minFoldAngleThreshold: { min: 0.1, max: 5 },
   tabClipGap: { min: 0.1, max: 0.3 },
   clipGapAdjust: { allowed: ["off", "on"] as const },
   wireframeThickness: { min: 4, max: 10 },
@@ -36,6 +38,7 @@ const defaultSettings: Settings = {
   bodyLayers: 3,
   tabWidth: 4,
   tabThickness: 1,
+  minFoldAngleThreshold: 1,
   tabClipGap: 0.12,
   clipGapAdjust: "off",
   hollowStyle: false,
@@ -96,6 +99,15 @@ export function setTabWidth(val: number) {
 export function setTabThickness(val: number) {
   if (Number.isNaN(val) || val < SETTINGS_LIMITS.tabThickness.min || val > SETTINGS_LIMITS.tabThickness.max) return;
   current = { ...current, tabThickness: val };
+}
+
+export function setMinFoldAngleThreshold(val: number) {
+  if (
+    Number.isNaN(val) ||
+    val < SETTINGS_LIMITS.minFoldAngleThreshold.min ||
+    val > SETTINGS_LIMITS.minFoldAngleThreshold.max
+  ) return;
+  current = { ...current, minFoldAngleThreshold: val };
 }
 
 export function setTabClipGap(val: number) {

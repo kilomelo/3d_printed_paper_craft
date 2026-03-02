@@ -7,6 +7,7 @@ const BACK_DEFAULT_COLOR = new THREE.Color(0x666666);
 const SILHOUETTE_COLOR = new THREE.Color(0xffffff);
 const EDGE_DEFAULT_COLOR = new THREE.Color(0x442200);
 const SEAMEDGE_DEFAULT_COLOR = new THREE.Color(0x222222);
+const UNFOLD_COPLANAR_EDGE_COLOR = new THREE.Color(0xffffff);
 const HOVERLINE_DEFAULT_COLOR = new THREE.Color(0xffa500);
 const SEAM_CONNECT_LINE_COLOR = new THREE.Color(0x00ff88);
 
@@ -197,6 +198,19 @@ export function createUnfoldEdgeLineFoldoutMaterial(resolution: { width: number;
         linewidth: 1.5,
         resolution: new THREE.Vector2(resolution.width, resolution.height),
       });
+}
+
+// 2D 视图中，用于表示“已被上游共面合并逻辑折叠掉的内部边”。
+// 这类边仍保留渲染对象，便于用户感知原始三角划分，但用白色与真实折痕区分。
+export function createUnfoldEdgeLineCoplanarMaterial(resolution: { width: number; height: number }) {
+  const mat = createLineMaterial({
+    color: UNFOLD_COPLANAR_EDGE_COLOR.getHex(),
+    linewidth: 1.5,
+    resolution,
+  });
+  mat.transparent = true;
+  mat.opacity = 0.15;
+  return mat;
 }
 
 // 两遍渲染

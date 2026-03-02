@@ -122,6 +122,12 @@ const applyI18nTexts = () => {
       def: defaultSettings.bodyLayers,
     });
   }
+  const joinTypeDesc = document.querySelector<HTMLElement>('[data-i18n="settings.joinType.desc"]');
+  if (joinTypeDesc) {
+    joinTypeDesc.textContent = t("settings.joinType.desc", {
+      def: t(`settings.joinType.${defaultSettings.joinType}`),
+    });
+  }
   const tabWidthDesc = document.querySelector<HTMLElement>('[data-i18n="settings.tabWidth.desc"]');
   if (tabWidthDesc) {
     tabWidthDesc.textContent = t("settings.tabWidth.desc", {
@@ -138,12 +144,30 @@ const applyI18nTexts = () => {
       def: defaultSettings.tabThickness,
     });
   }
+  const minFoldAngleThresholdDesc = document.querySelector<HTMLElement>('[data-i18n="settings.minFoldAngleThreshold.desc"]');
+  if (minFoldAngleThresholdDesc) {
+    minFoldAngleThresholdDesc.textContent = t("settings.minFoldAngleThreshold.desc", {
+      def: defaultSettings.minFoldAngleThreshold,
+    });
+  }
   const tabClipDesc = document.querySelector<HTMLElement>('[data-i18n="settings.tabClipGap.desc"]');
   if (tabClipDesc) {
     tabClipDesc.textContent = t("settings.tabClipGap.desc", {
       min: limits.tabClipGap.min,
       max: limits.tabClipGap.max,
       def: defaultSettings.tabClipGap,
+    });
+  }
+  const clipGapAdjustDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clipGapAdjusts.desc"]');
+  if (clipGapAdjustDesc) {
+    clipGapAdjustDesc.textContent = t("settings.clipGapAdjusts.desc", {
+      def: t(`settings.clipGapAdjusts.${defaultSettings.clipGapAdjust}`),
+    });
+  }
+  const hollowDesc = document.querySelector<HTMLElement>('[data-i18n="settings.hollow.desc"]');
+  if (hollowDesc) {
+    hollowDesc.textContent = t("settings.hollow.desc", {
+      def: t(defaultSettings.hollowStyle ? "settings.hollow.on" : "settings.hollow.off"),
     });
   }
   const wireframeDesc = document.querySelector<HTMLElement>('[data-i18n="settings.wireframeThickness.desc"]');
@@ -361,7 +385,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.joinType.label">拼接方式</span>
-                <span class="setting-desc" data-i18n="settings.joinType.desc">拼接边的连接方式，默认咬合</span>
+                <span class="setting-desc" data-i18n="settings.joinType.desc">拼接边的连接方式，默认${defaultSettings.joinType === "interlocking" ? "咬合" : "卡扣"}</span>
               </div>
               <div class="setting-field">
                 <div class="settings-toggle-group">
@@ -369,6 +393,16 @@ app.innerHTML = `
                   <button id="setting-join-type-clip" class="btn settings-inline-btn" data-i18n="settings.joinType.clip">卡扣</button>
                 </div>
                 <button id="setting-join-type-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <label for="setting-min-fold-angle-threshold" class="setting-label" data-i18n="settings.minFoldAngleThreshold.label">折痕最小角度阈值</label>
+                <span class="setting-desc" data-i18n="settings.minFoldAngleThreshold.desc">角度小于该数值的三角面之间不会生成折痕，默认值 ${defaultSettings.minFoldAngleThreshold}</span>
+              </div>
+              <div class="setting-field">
+                <input id="setting-min-fold-angle-threshold" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-min-fold-angle-threshold-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
           </div>
@@ -407,7 +441,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.clipGapAdjusts.label">夹子厚度</span>
-                <span class="setting-desc" data-i18n="settings.clipGapAdjusts.desc">夹子厚度描述</span>
+                <span class="setting-desc" data-i18n="settings.clipGapAdjusts.desc">夹子模型的配合间隙自动根据舌片厚度反比补偿，默认${defaultSettings.clipGapAdjust === "off" ? "关闭" : "开启"}</span>
               </div>
               <div class="setting-field">
                 <div class="settings-toggle-group">
@@ -422,7 +456,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.hollow.label">镂空风格</span>
-                <span class="setting-desc" data-i18n="settings.hollow.desc">去除三角面的中间部分，默认关闭</span>
+                <span class="setting-desc" data-i18n="settings.hollow.desc">去除三角面的中间部分，默认${defaultSettings.hollowStyle ? "开启" : "关闭"}</span>
               </div>
               <div class="setting-field">
                 <div class="settings-toggle-group">
@@ -525,6 +559,8 @@ const settingJoinTypeClipBtn = document.querySelector<HTMLButtonElement>("#setti
 const settingJoinTypeResetBtn = document.querySelector<HTMLButtonElement>("#setting-join-type-reset");
 const settingScaleInput = document.querySelector<HTMLInputElement>("#setting-scale");
 const settingScaleResetBtn = document.querySelector<HTMLButtonElement>("#setting-scale-reset");
+const settingMinFoldAngleThresholdInput = document.querySelector<HTMLInputElement>("#setting-min-fold-angle-threshold");
+const settingMinFoldAngleThresholdResetBtn = document.querySelector<HTMLButtonElement>("#setting-min-fold-angle-threshold-reset");
 const settingLayerHeightInput = document.querySelector<HTMLInputElement>("#setting-layer-height");
 const settingLayerHeightResetBtn = document.querySelector<HTMLButtonElement>("#setting-layer-height-reset");
 const settingConnectionLayersDecBtn = document.querySelector<HTMLButtonElement>("#setting-connection-layers-dec");
@@ -735,6 +771,8 @@ const settingsUI = createSettingsUI(
     joinTypeResetBtn: settingJoinTypeResetBtn,
     scaleInput: settingScaleInput,
     scaleResetBtn: settingScaleResetBtn,
+    minFoldAngleThresholdInput: settingMinFoldAngleThresholdInput,
+    minFoldAngleThresholdResetBtn: settingMinFoldAngleThresholdResetBtn,
     tabWidthInput: settingTabWidthInput,
     tabWidthResetBtn: settingTabWidthResetBtn,
     tabThicknessInput: settingTabThicknessInput,
@@ -1444,14 +1482,14 @@ exportGroupStepBtn.addEventListener("click", async () => {
     }
     const groupName = groupController.getGroupName(targetGroupId) ?? `group-${targetGroupId}`;
     const projectName = getCurrentProject().name || "未命名工程";
-    const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
-    if (!trisWithAngles.length) {
+    const polygonsWithAngles = unfold2d.getGroupPolygonsData(targetGroupId);
+    if (!polygonsWithAngles.length) {
       log(t("log.export.noFaces"), "error");
       return;
     }
     log(t("log.export.step.start"), "info");
     const { blob } = await buildStepInWorker(
-      trisWithAngles,
+      polygonsWithAngles,
       (progress) => log(progress, "progress"),
       (msg, tone) => log(msg, (tone as any) ?? "error"),
     );
@@ -1505,14 +1543,14 @@ exportGroupStlBtn.addEventListener("click", async () => {
     const groupName = groupController.getGroupName(targetGroupId) ?? `group-${targetGroupId}`;
     const cached = getCachedPreviewMesh(targetGroupId);
     if (!cached) {
-      const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
-      if (!trisWithAngles.length) {
+      const polygonsWithAngles = unfold2d.getGroupPolygonsData(targetGroupId);
+      if (!polygonsWithAngles.length) {
         log(t("log.export.noFaces"), "error");
         return;
       }
       log(t("log.export.stl.start"), "info");
       const { blob } = await buildStlInWorker(
-        trisWithAngles,
+        polygonsWithAngles,
         (progress) => log(progress, "progress"),
         (msg, tone) => log(msg, (tone as any) ?? "error"),
       );
@@ -1548,14 +1586,14 @@ previewGroupModelBtn.addEventListener("click", async () => {
     if (cached) {
       renderer3d.loadPreviewModel(cached.mesh, cached.angle);
     } else {
-      const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
-      if (!trisWithAngles.length) {
+      const polygonsWithAngles = unfold2d.getGroupPolygonsData(targetGroupId);
+      if (!polygonsWithAngles.length) {
         log(t("log.export.noFaces"), "error");
         return;
       }
       // log("正在用 Replicad 生成 mesh...", "info");
       const { mesh } = await buildMeshInWorker(
-        trisWithAngles,
+        polygonsWithAngles,
         (progress) => log(progress, "progress"),
         (msg, tone) => log(msg, (tone as any) ?? "error"),
       );

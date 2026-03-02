@@ -869,6 +869,11 @@ textarea {
   pointer-events: none;
 }
 
+/* 设置项与默认值不一致时，用黄色强调标题，便于快速识别改动。 */
+.setting-row.modified .setting-label {
+  color: #faec95;
+}
+
 .setting-counter-group {
   flex: 1;
   display: flex;
