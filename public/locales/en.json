@@ -63,6 +63,8 @@
   "settings.joinType.desc": "Connection mode for seam edges. Default Interlocking.",
   "settings.joinType.interlocking": "Interlocking",
   "settings.joinType.clip": "Clip",
+  "settings.minFoldAngleThreshold.label": "Min Fold Angle",
+  "settings.minFoldAngleThreshold.desc": "No fold is generated when the angle is below this value. Default {def}.",
   "settings.layerHeight.label": "Layer Height",
   "settings.layerHeight.desc": "Layer height for printing. Max {max}, default {def}, in mm.",
   "settings.connectionLayers.label": "Connection Layers",

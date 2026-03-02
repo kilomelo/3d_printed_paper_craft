@@ -23,14 +23,6 @@ export type PolygonEdgeInfo = {
 // 顶点角度相关的附加信息，当前建模侧尚未正式消费，但保留类型语义。
 export type PointAngleData = { vertexKey: string; unfold2dPos: Point2D; minAngle: number };
 
-// 兼容现有建模链路的三角形数据结构。
-// 注意：faceId 已移除，因为这条数据链路中没有实际消费者。
-export type TriangleWithEdgeInfo = {
-  tri: Triangle2D;
-  edges: PolygonEdgeInfo[];
-  pointAngleData?: PointAngleData[];
-};
-
 // 新的多边形建模输入。
 // points[i] -> points[(i + 1) % n] 对应 edges[i]。
 export type PolygonWithEdgeInfo = {

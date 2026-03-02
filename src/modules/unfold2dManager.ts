@@ -15,7 +15,6 @@ import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { EdgeRecord, getFaceVertexIndices } from "./model";
 import { sharedEdgeIsSeam } from "./groups";
-import {  } from "./model";
 import { AngleIndex } from "./geometry";
 import { appEventBus } from "./eventBus";
 import type { Renderer2DContext } from "./renderer2d";
@@ -29,7 +28,6 @@ import type {
   Point2D,
   Point3D,
   Vec3,
-  TriangleWithEdgeInfo as TriangleData,
   PolygonWithEdgeInfo as PolygonData,
   PolygonEdgeInfo,
 } from "../types/geometryTypes";
@@ -510,14 +508,31 @@ export function createUnfold2dManager(
     // 展开边线段渲染
     const sizeVec = new Vector2();
     renderer2d.renderer.getSize(sizeVec);
+    const { minFoldAngleThreshold } = getSettings();
+    // 与 getGroupPolygonsData 中的共面合并规则保持一致：
+    // 仅当一条边确实是双面共享边，且其二面角距离 180° 的偏差不超过阈值时，
+    // 才认为它不会形成折痕，因此在 2D 预览中不绘制该线段。
+    // 外轮廓边只有一个相邻面，必须继续显示，不能因为 fallback angle = PI 而被误隐藏。
+    const coplanarThresholdRad = (minFoldAngleThreshold * Math.PI) / 180;
     edgeCache.forEach((rec, eid) => {
       if (!rec || rec.length === 0) return;
+      const edgeRec = edgesArray[eid];
+      const angleRad = angleIndex.getAngle(eid);
+      const isSeamEdge =
+        !!edgeRec &&
+        edgeRec.faces.size === 2 &&
+        sharedEdgeIsSeam(...Array.from(edgeRec.faces) as [number, number]);
+      const isCoplanarInnerEdge =
+        !!edgeRec &&
+        edgeRec.faces.size === 2 &&
+        !isSeamEdge &&
+        Math.abs(angleRad - Math.PI) <= coplanarThresholdRad;
+      if (isCoplanarInnerEdge) return;
       rec.forEach((unfoldedEdge) => {
         const p1 = unfoldedEdge.unfoldedPos[0];
         const p2 = unfoldedEdge.unfoldedPos[1];
         const lineGeom = new LineSegmentsGeometry();
         lineGeom.setPositions(new Float32Array([p1.x, p1.y, 0, p2.x, p2.y, 1]));
-        const angleRad = angleIndex.getAngle(eid);
         const mat =
         angleRad > Math.PI + 1e-4
         ? createUnfoldEdgeLineFoldinMaterial({ width: sizeVec.x || 1, height: sizeVec.y || 1 }, foldinDashScale)
@@ -561,38 +576,16 @@ export function createUnfold2dManager(
     renderer2d.bboxRuler.update(minX, maxX, minY, maxY, scale);
   }
 
-  // 获取指定展开组的三角形数据（含边信息），用于生成 2D 展开图及用于打印的展开3D模型
-  // 兼容旧建模链路：仍按三角形输出。
-  // scale 只在最终返回时应用，避免影响依赖原始坐标/顶点 key 的中间计算。
-  const getGroupTrianglesData = (groupId: number): TriangleData[] => {
-    const tris = buildSnappedTris(groupId);
-    if (!tris.length) return [];
-    const { scale } = getSettings();
-    const seamContext = createSeamContext();
-    return tris.map(({ faceId: fid, tri, vertexKeys, edgeIds }) => {
-      const [a, b, c] = tri;
-      const triNormal = new Vector3();
-      angleIndex.getFaceNormal(fid, triNormal);
-      const edgeInfo = buildFaceEdgeInfo(fid, vertexKeys, edgeIds, [a, b, c], triNormal, seamContext);
-      return {
-        tri: [
-          [a.x * scale, a.y * scale],
-          [b.x * scale, b.y * scale],
-          [c.x * scale, c.y * scale],
-        ],
-        edges: edgeInfo,
-      };
-    });
-  };
-
   // 新建模链路：按“共面连通块”输出多边形。
   // 这里刻意复用单面边信息计算，再做边界合并，避免重复实现 tabAngle / joinSide 等规则。
-  // 与旧逻辑一致，scale 只在最终构造返回结果时应用。
+  // scale 只在最终构造返回结果时应用，避免影响依赖原始坐标/顶点 key 的中间计算。
   const getGroupPolygonsData = (groupId: number): PolygonData[] => {
     const tris = buildSnappedTris(groupId);
     if (!tris.length) return [];
-    const { scale, hollowStyle } = getSettings();
-    const coplanarThresholdRad = Math.PI / 180;
+    const { scale, hollowStyle, minFoldAngleThreshold } = getSettings();
+    // 当前设置项的单位是“度”，表示与完全共面（180°）的允许偏差。
+    // 偏差不超过该阈值的相邻三角面，会被视为共面并参与合并。
+    const coplanarThresholdRad = (minFoldAngleThreshold * Math.PI) / 180;
     const seamContext = createSeamContext();
     type FacePolygonSeed = {
       faceId: number;
@@ -614,7 +607,6 @@ export function createUnfold2dManager(
         faceId: fid,
         points: [
           // 保持未缩放坐标参与后续合并。
-          // 这样可以严格遵循旧 getGroupTrianglesData 的原则：
           // 任何依赖原始展开坐标的判断，都在 scale 之前完成。
           [a.x, a.y],
           [b.x, b.y],
@@ -834,7 +826,7 @@ export function createUnfold2dManager(
       seamEdgeAngleMap: Map<string, number>;
     },
   ): PolygonEdgeInfo[] => {
-    // 这里保留旧 getGroupTrianglesData 的单面边信息语义。
+    // 这里定义“单个三角面上的边信息”。
     // 多边形模式只是复用该结果，再按边界顺序重排，不改变单边的几何定义。
     const faceIndexMap = getFaceIndexMap();
     const vertexKeyToPos = getVertexKeyToPos();
@@ -1089,8 +1081,7 @@ export function createUnfold2dManager(
     });
   };
 
-  // 这部分缓存原本在旧 getGroupTrianglesData 中只构建一次。
-  // 抽成单独上下文后，三角形/多边形导出都能复用，避免每个面重复扫描所有边。
+  // seam 相关缓存按一次导出构建一次，避免每个面重复扫描所有边。
   const createSeamContext = () => {
     const vertexKeyToPos = getVertexKeyToPos();
     const edgesArray = getEdgesArray();
@@ -1205,9 +1196,13 @@ export function createUnfold2dManager(
   appEventBus.on("groupCurrentChanged", (groupId: number) => rebuildGroup2D(groupId));
 
   appEventBus.on("settingsChanged", (changedItemCnt) => {
+    // 目前没有细粒度的“某个设置项发生变化”事件。
+    // 为了让 minFoldAngleThreshold 改动后立即反映到 2D 边线显示，
+    // 这里在任意设置变更时直接强制重建当前展开组。
+    // 这样 bbox 尺寸线、折痕线过滤、拼接线材质都会同步刷新。
     if (!lastBounds) return;
-    const { scale } = getSettings();
-    renderer2d.bboxRuler.update(lastBounds.minX, lastBounds.maxX, lastBounds.minY, lastBounds.maxY, scale);
+    const gid = getPreviewGroupId();
+    rebuildGroup2D(gid, true);
   });
 
   appEventBus.on("groupPlaceAngleChanged", ({ groupId, newAngle, oldAngle }) => {
@@ -1226,7 +1221,6 @@ export function createUnfold2dManager(
   });
 
   return {
-    getGroupTrianglesData,
     getGroupPolygonsData,
     getEdges2D: () => groupEdgesCache,
     getLastBounds,

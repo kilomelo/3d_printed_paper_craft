@@ -7,7 +7,7 @@ import type { Point2D, PolygonWithEdgeInfo } from "../../types/geometryTypes";
 import { getSettings } from "../settings";
 import {
   pointKey, radToDeg, degToRad,
-  pointLineDistance2D, trapezoid, triangles2Outer, solveE, offsetTriangleSafe, OffsetFailReason, calculateIsoscelesRightTriangle,
+  pointLineDistance2D, trapezoid, polygons2Outer, solveE, offsetTriangleSafe, OffsetFailReason, calculateIsoscelesRightTriangle,
   buildTriangleByEdgeAndAngles
 } from "../mathUtils";
 import {
@@ -88,8 +88,7 @@ const buildSeamTab = (edge: {
   outerPointAngleMap: Map<string, number>,
   edgePerpendicularPlane: Plane, adjEdgeCutToolL: Shape3D, adjEdgeCutToolR: Shape3D,
   onLog?: (msg: string) => void
-): { solid: Shape3D, booleanOperations: number } | null => {
-  let booleanOperations = 0;
+): Shape3D | null => {
   const tabClipGrooveClearance = 0.1;
   // 设置的舌片宽度过小时不创建舌片
   if (!edge.isSeam || tabWidth < bodyThickness + connectionThickness) return null;
@@ -178,7 +177,6 @@ const buildSeamTab = (edge: {
       for (let clipIdx = 0; clipIdx < tabClipNum; clipIdx++) {
         const distance2MiddlePoint = (-0.5 * tabClipNum +clipIdx + 0.5) * tabClipSpacing;
         tabSolid = tabSolid.cut(tabClipGroovingTool.clone().translate(dirAB[0] * distance2MiddlePoint, dirAB[1] * distance2MiddlePoint, 0)).simplify();
-        booleanOperations += 1;
       }
       tabClipGroovingTool.delete();
     }
@@ -204,7 +202,6 @@ const buildSeamTab = (edge: {
     tabSolid = tabSolid.cut(tabChamferTool).simplify();
     tabSolid = tabSolid.cut(tabEndChamferSolid.clone().rotate(-tabAngleA, [pointA[0], pointA[1], 0], [0,0,1])).simplify();
     tabSolid = tabSolid.cut(tabEndChamferSolid.rotate(tabAngleB, [pointB[0], pointB[1], 0], [0,0,1])).simplify();
-    booleanOperations += 3;
   }
   tabSolid = tabSolid.rotate(tabAngle, [pointA[0], pointA[1], layerHeight], [pointA[0] - pointB[0], pointA[1] - pointB[1], 0]);
 
@@ -241,9 +238,8 @@ const buildSeamTab = (edge: {
   tabCutTools.forEach((tool) => {
     if (tool) tabSolid = tabSolid.cut(tool).simplify();
   });
-  booleanOperations += tabCutTools.length + 1;
 
-  return { solid: tabSolid, booleanOperations};
+  return tabSolid;
 };
 // 实际实行参数化建模的方法【核心逻辑】
 // 这里已经从“按三角形输入”改为“按多边形输入”。
@@ -267,7 +263,7 @@ const buildSolidFromPolygonsWithAngles = async (
     await ensureReplicadOC();
 
     // 第一步：生成连接层和主体
-    const outerResult  = triangles2Outer(polygonsWithAngles);
+    const outerResult  = (polygonsWithAngles);
     if (!outerResult || !outerResult.outer || outerResult.outer.length < 3) {
       onLog?.(t("log.replicad.outer.fail"));
       throw new Error("外轮廓查找失败");
@@ -300,7 +296,6 @@ const buildSolidFromPolygonsWithAngles = async (
     // 
     const interlockingClaws: Shape3D[] = [];
 
-    let booleanOperations: number = 0;
     polygonsWithAngles.forEach((polyData, i) => {
       const isDefined = <T,>(v: T | undefined | null): v is T => v != null;
       // 收集顶点最小角度信息
@@ -393,7 +388,6 @@ const buildSolidFromPolygonsWithAngles = async (
           }
           // 超量挤出了坡度刀具并切掉两头超出的部分，以更好地应付钝角
           const slopeTool = slopeToolBase.cut(adjEdgeCutToolL.clone()).cut(adjEdgeCutToolR.clone()).simplify();
-          booleanOperations += 2;
           if (!slopeTool) {
             onLog?.(t("log.replicad.slopeTool.fail"));
             console.warn('[ReplicadModeling] failed to create slope tool for edge, skip this edge', edge);
@@ -402,17 +396,14 @@ const buildSolidFromPolygonsWithAngles = async (
           slopeTools.push(slopeTool);
         }
         if (joinType === "clip") {
-          const tabResult = buildSeamTab(edge, pointA, pointB, distAB,
+          const seamTabSolid = buildSeamTab(edge, pointA, pointB, distAB,
             connectionThickness, bodyThickness, layerHeight, tabWidth, tabThickness,
             tabClipKeelThickness, tabClipWingThickness, tabClipWingLength, tabClipMinSpacing, tabClipMaxSpacing,
             tabChamferSize, tabExtendMargin, cutToolMargin, minDistance,
             outerResult.outerPointAngleMap, edgePerpendicularPlane, adjEdgeCutToolL, adjEdgeCutToolR,
             onLog,
           );
-          if (tabResult && tabResult.solid) {
-            connectionSolid = connectionSolid.fuse(tabResult.solid).simplify();
-            booleanOperations += tabResult.booleanOperations + 1;
-          }
+          if (seamTabSolid) connectionSolid = connectionSolid.fuse(seamTabSolid).simplify();
         }
         else if (joinType === "interlocking") {
           if (edge.isSeam) {
@@ -488,7 +479,6 @@ const buildSolidFromPolygonsWithAngles = async (
           // 这里仍加显式保护，避免后续改动破坏这个前提时静默产出错误结果。
           if (points.length !== 3) {
             console.warn("[ReplicadModeling] hollow mode expects triangle polygons, skip this polygon", polyData);
-            booleanOperations += 1;
             return;
           }
           const triangleForHollow = [points[0], points[1], points[2]] as [Point2D, Point2D, Point2D];
@@ -508,7 +498,6 @@ const buildSolidFromPolygonsWithAngles = async (
             if (voronoiCutTool)
               connectionSolid = connectionSolid.cut(voronoiCutTool).simplify();
           }
-          booleanOperations += 1;
       }
     });
 
@@ -523,7 +512,6 @@ const buildSolidFromPolygonsWithAngles = async (
     slopeTools.forEach((tool, idx) => {
       connectionSolid = connectionSolid.cut(tool).simplify();
       onProgress?.(Math.floor(50 + progressPerSlope * (idx + 1)));
-      booleanOperations += 1;
     });
     slopeTools.forEach((tool) => tool.delete());
     if (!isOcctValid(connectionSolid)) {
@@ -543,14 +531,12 @@ const buildSolidFromPolygonsWithAngles = async (
       [outerResult.max[0] + margin, outerResult.max[1] + margin, 0] as Point
     );
     connectionSolid = connectionSolid.cut(tool) as Shape3D;
-    booleanOperations += 1;
     connectionSolid = connectionSolid.simplify().mirror("XY").rotate(180, [0, 0, 0], [0, 1, 0])
     onProgress?.(100);
     if (!isOcctValid(connectionSolid)) {
       onLog?.(t("log.replicad.invalid.final"));
       console.warn('[ReplicadModeling] final solid is not valid OCCT shape');
     }
-    // console.log(`[ReplicadModeling] buildSolidFromPolygonsWithAngles completed with ${booleanOperations} boolean operations`);
     return { solid: connectionSolid };
   }
   finally {

@@ -138,6 +138,12 @@ const applyI18nTexts = () => {
       def: defaultSettings.tabThickness,
     });
   }
+  const minFoldAngleThresholdDesc = document.querySelector<HTMLElement>('[data-i18n="settings.minFoldAngleThreshold.desc"]');
+  if (minFoldAngleThresholdDesc) {
+    minFoldAngleThresholdDesc.textContent = t("settings.minFoldAngleThreshold.desc", {
+      def: defaultSettings.minFoldAngleThreshold,
+    });
+  }
   const tabClipDesc = document.querySelector<HTMLElement>('[data-i18n="settings.tabClipGap.desc"]');
   if (tabClipDesc) {
     tabClipDesc.textContent = t("settings.tabClipGap.desc", {
@@ -371,6 +377,16 @@ app.innerHTML = `
                 <button id="setting-join-type-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <label for="setting-min-fold-angle-threshold" class="setting-label" data-i18n="settings.minFoldAngleThreshold.label">折痕最小角度阈值</label>
+                <span class="setting-desc" data-i18n="settings.minFoldAngleThreshold.desc">角度小于该数值的三角面之间不会生成折痕，默认值 ${defaultSettings.minFoldAngleThreshold}</span>
+              </div>
+              <div class="setting-field">
+                <input id="setting-min-fold-angle-threshold" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-min-fold-angle-threshold-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
           </div>
           <div class="settings-panel" id="settings-panel-interlocking"></div>
           <div class="settings-panel" id="settings-panel-clip">
@@ -525,6 +541,8 @@ const settingJoinTypeClipBtn = document.querySelector<HTMLButtonElement>("#setti
 const settingJoinTypeResetBtn = document.querySelector<HTMLButtonElement>("#setting-join-type-reset");
 const settingScaleInput = document.querySelector<HTMLInputElement>("#setting-scale");
 const settingScaleResetBtn = document.querySelector<HTMLButtonElement>("#setting-scale-reset");
+const settingMinFoldAngleThresholdInput = document.querySelector<HTMLInputElement>("#setting-min-fold-angle-threshold");
+const settingMinFoldAngleThresholdResetBtn = document.querySelector<HTMLButtonElement>("#setting-min-fold-angle-threshold-reset");
 const settingLayerHeightInput = document.querySelector<HTMLInputElement>("#setting-layer-height");
 const settingLayerHeightResetBtn = document.querySelector<HTMLButtonElement>("#setting-layer-height-reset");
 const settingConnectionLayersDecBtn = document.querySelector<HTMLButtonElement>("#setting-connection-layers-dec");
@@ -735,6 +753,8 @@ const settingsUI = createSettingsUI(
     joinTypeResetBtn: settingJoinTypeResetBtn,
     scaleInput: settingScaleInput,
     scaleResetBtn: settingScaleResetBtn,
+    minFoldAngleThresholdInput: settingMinFoldAngleThresholdInput,
+    minFoldAngleThresholdResetBtn: settingMinFoldAngleThresholdResetBtn,
     tabWidthInput: settingTabWidthInput,
     tabWidthResetBtn: settingTabWidthResetBtn,
     tabThicknessInput: settingTabThicknessInput,

@@ -1,5 +1,4 @@
 import {
-  buildGroupMeshFromPolygons,
   buildGroupStepFromPolygons,
   buildGroupStlFromPolygons,
 } from "./replicadModeling";
@@ -12,13 +11,6 @@ type WorkerRequest =
   | { id: number; type: "stl"; polygons: PolygonWithEdgeInfo[]; settings: Settings; lang?: string }
   | { id: number; type: "mesh"; polygons: PolygonWithEdgeInfo[]; settings: Settings; lang?: string };
 
-type MeshPayload = {
-  positions: ArrayBuffer;
-  normals: ArrayBuffer;
-  indices: ArrayBuffer | null;
-  indexType: "uint16" | "uint32" | null;
-};
-
 type WorkerResponse =
   | { id: number; ok: true; type: "step"; buffer: ArrayBuffer; mime: string }
   | { id: number; ok: true; type: "stl"; buffer: ArrayBuffer; mime: string }
@@ -29,33 +21,6 @@ type WorkerResponse =
 
 /// <reference lib="webworker" />
 const ctx: DedicatedWorkerGlobalScope = self as any;
-
-const serializeMesh = async (
-  polygons: PolygonWithEdgeInfo[],
-  onProgress?: (msg: number) => void,
-  onLog?: (msg: string) => void,
-): Promise<MeshPayload> => {
-  const { mesh } = await buildGroupMeshFromPolygons(polygons, onProgress, onLog);
-  const geom = mesh.geometry;
-  const posAttr = geom.getAttribute("position");
-  const normAttr = geom.getAttribute("normal");
-  const index = geom.getIndex();
-  const positions = posAttr?.array ? new Float32Array(posAttr.array).buffer : new ArrayBuffer(0);
-  const normals = normAttr?.array ? new Float32Array(normAttr.array).buffer : new ArrayBuffer(0);
-  let indices: ArrayBuffer | null = null;
-  let indexType: MeshPayload["indexType"] = null;
-  if (index) {
-    const arr = index.array;
-    if (arr instanceof Uint32Array) {
-      indices = new Uint32Array(arr).buffer;
-      indexType = "uint32";
-    } else {
-      indices = new Uint16Array(arr as any).buffer;
-      indexType = "uint16";
-    }
-  }
-  return { positions, normals, indices, indexType };
-};
 
 ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const { id, type, settings, lang } = event.data;

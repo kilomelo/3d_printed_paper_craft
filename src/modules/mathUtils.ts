@@ -1,5 +1,5 @@
 import { Vector3 } from "three";
-import type { Point2D, Point3D, Vec3, Triangle2D, Vec2, Plane3D, TriangleWithEdgeInfo, PolygonWithEdgeInfo } from "../types/geometryTypes";
+import type { Point2D, Point3D, Vec3, Triangle2D, Vec2, Plane3D, PolygonWithEdgeInfo } from "../types/geometryTypes";
 
 // 弧度转角度
 export function radToDeg(rad: number) { return (rad * 180) / Math.PI; }
@@ -315,12 +315,8 @@ export function reflectPointAcrossLine(p: Point2D, l0: Point2D, l1: Point2D): Po
   return [2 * proj[0] - p[0], 2 * proj[1] - p[1]];
 }
 
-// 通过展开后的面片信息找到整体外轮廓，并计算建模所需的边界数据。
-// 名称暂时保留为 triangles2Outer，避免同时引发过多调用点改名；
-// 但这里的实现已经泛化，可同时接受：
-// 1. 旧的 TriangleWithEdgeInfo[]
-// 2. 新的 PolygonWithEdgeInfo[]
-export function triangles2Outer(items: Array<TriangleWithEdgeInfo | PolygonWithEdgeInfo>): {
+// 通过展开后的多边形面片信息找到整体外轮廓，并计算建模所需的边界数据。
+export function polygons2Outer(items: PolygonWithEdgeInfo[]): {
   outer: Point2D[];
   min: Point2D;
   max: Point2D;
@@ -333,7 +329,7 @@ export function triangles2Outer(items: Array<TriangleWithEdgeInfo | PolygonWithE
   const min: Point2D = [Infinity, Infinity];
   let maxEdgeLen = 0;
   items.forEach((item) => {
-    const points = "tri" in item ? item.tri : item.points;
+    const points = item.points;
     // edges[i] 对应 points[i] -> points[(i + 1) % n]。
     const edges = points.map((point, idx) => [
       point,

@@ -13,6 +13,8 @@ type SettingsUIRefs = {
   joinTypeResetBtn: HTMLButtonElement;
   scaleInput: HTMLInputElement;
   scaleResetBtn: HTMLButtonElement;
+  minFoldAngleThresholdInput: HTMLInputElement;
+  minFoldAngleThresholdResetBtn: HTMLButtonElement;
   tabWidthInput: HTMLInputElement;
   tabWidthResetBtn: HTMLButtonElement;
   tabThicknessInput: HTMLInputElement;
@@ -151,6 +153,10 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
 
   const validators = {
     scale: (val: number) => !Number.isNaN(val) && val > SETTINGS_LIMITS.scale.min,
+    minFoldAngleThreshold: (val: number) =>
+      !Number.isNaN(val) &&
+      val >= SETTINGS_LIMITS.minFoldAngleThreshold.min &&
+      val <= SETTINGS_LIMITS.minFoldAngleThreshold.max,
     tabThickness: (val: number) =>
       !Number.isNaN(val) && val >= SETTINGS_LIMITS.tabThickness.min && val <= SETTINGS_LIMITS.tabThickness.max,
     layerHeight: (val: number) =>
@@ -187,6 +193,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     settingsDraft = { ...settingsSnapshot };
     updateJoinTypeButtons();
     refs.scaleInput.value = String(settingsDraft.scale);
+    refs.minFoldAngleThresholdInput.value = String(settingsDraft.minFoldAngleThreshold);
     refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
     refs.layerHeightInput.value = String(settingsDraft.layerHeight);
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
@@ -198,7 +205,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateClipGapAdjustButtons();
     updateHollowButtons();
     updateWireframeEnabled();
-    [refs.scaleInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
+    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
       updateInputColor(el, true),
     );
     updateWireframeEnabled();
@@ -318,6 +325,15 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     () => getDefaultSettings().scale,
   );
   bindNumericInput(
+    refs.minFoldAngleThresholdInput,
+    refs.minFoldAngleThresholdResetBtn,
+    (raw) => parseFloat(raw),
+    () => settingsDraft.minFoldAngleThreshold,
+    (v) => (settingsDraft.minFoldAngleThreshold = v),
+    validators.minFoldAngleThreshold,
+    () => getDefaultSettings().minFoldAngleThreshold,
+  );
+  bindNumericInput(
     refs.layerHeightInput,
     refs.layerHeightResetBtn,
     (raw) => parseFloat(raw),
@@ -388,6 +404,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     closeSettings();
     settingsDraft = getSettings();
     refs.scaleInput.value = String(settingsDraft.scale);
+    refs.minFoldAngleThresholdInput.value = String(settingsDraft.minFoldAngleThreshold);
     refs.layerHeightInput.value = String(settingsDraft.layerHeight);
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
     refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
@@ -398,7 +415,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateJoinTypeButtons();
     updateClipGapAdjustButtons();
     updateHollowButtons();
-    [refs.scaleInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
+    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
       updateInputColor(el, true),
     );
   });
@@ -419,6 +436,9 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     }
     if (settingsDraft.scale !== settingsSnapshot.scale) {
       changes.push(t("log.settings.changed", { label: t("settings.scale.label"), value: settingsDraft.scale }));
+    }
+    if (settingsDraft.minFoldAngleThreshold !== settingsSnapshot.minFoldAngleThreshold) {
+      changes.push(t("log.settings.changed", { label: t("settings.minFoldAngleThreshold.label"), value: settingsDraft.minFoldAngleThreshold }));
     }
     if (settingsDraft.tabWidth !== settingsSnapshot.tabWidth) {
       changes.push(t("log.settings.changed", { label: t("settings.tabWidth.label"), value: settingsDraft.tabWidth }));
