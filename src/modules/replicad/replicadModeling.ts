@@ -419,11 +419,14 @@ const buildSolidFromPolygonsWithAngles = async (
         else if (joinType === "interlocking") {
           if (edge.isSeam) {
             const dirAB = [(pointA[0] - pointB[0]) / distAB, (pointA[1] - pointB[1]) / distAB];
+            // 爪的伸出角度最大为90度，所以对于大于90度的拼接边，需要补一个基座，并且回退爪的位置
+            const baseOffsetAngle = Math.max(0, (edge.angle - 90) / 2);
             const clawExtrudePlane = transformPlaneLocal(edgePerpendicularPlane, { offset: [-bodyThickness * Math.tan(degToRad(90 - edge.angle / 2)), connectionThickness + bodyThickness, (distAB - clawWidth) / 2]});
-            const clawShapeSketcher = new Sketcher(clawExtrudePlane);
+            const clawShapeSketcher = new Sketcher(clawExtrudePlane.clone());
             clawShapeSketcher.movePointerTo([0, 0]);
-            clawShapeSketcher.lineTo([-clawTargetRadius, 0]);
-            arcByCenterStartAngleSafe(clawShapeSketcher, [0,0], [-clawTargetRadius, 0], -edge.angle);
+            const arcStartPoint: Point2D = [-clawTargetRadius * Math.cos(degToRad(baseOffsetAngle)), clawTargetRadius * Math.sin(degToRad(baseOffsetAngle))];
+            clawShapeSketcher.lineTo(arcStartPoint);
+            arcByCenterStartAngleSafe(clawShapeSketcher, [0,0], arcStartPoint, 2 * baseOffsetAngle - edge.angle);
             const clawBaseCylinder = clawShapeSketcher.close().extrude(clawWidth);
 
             // 分割圆柱体，平面数组顺序必须从底到上
@@ -434,23 +437,24 @@ const buildSolidFromPolygonsWithAngles = async (
                 const splitResult = splitSolidByPlane(c, p);
                 parts.push(splitResult[1]);
                 c = splitResult[0];
-              }
-              )
+              })
               parts.push(c);
               return parts;
             }
             
+            const typeAAngle = 180 - edge.angle + baseOffsetAngle;
+            const typeBAngle = Math.max(270 - edge.angle, 180) - baseOffsetAngle;
             const splitPlanes: Plane[] = [];
-            const planeA_ = transformPlaneLocal(clawExtrudePlane, { offset: [0, 0, clawWidth * 1 / 5], rotateAround: "z", angle: 180 - edge.angle});
+            const planeA_ = transformPlaneLocal(clawExtrudePlane, { offset: [0, 0, clawWidth * 1 / 5], rotateAround: "z", angle: typeAAngle });
             const planeA = transformPlaneLocal(planeA_, { rotateAround: "x", angle: clawInterclockingAngle });
             planeA_.delete();
-            const planeB_ = transformPlaneLocal(clawExtrudePlane, { offset: [0, 0, clawWidth * 2 / 5], rotateAround: "z", angle: Math.min(270 - edge.angle, 180) });
+            const planeB_ = transformPlaneLocal(clawExtrudePlane, { offset: [0, 0, clawWidth * 2 / 5], rotateAround: "z", angle: typeBAngle });
             const planeB = transformPlaneLocal(planeB_, { rotateAround: "x", angle: -clawInterclockingAngle });
             planeB_.delete();
-            const planeC_ = transformPlaneLocal(clawExtrudePlane, { offset: [0, 0, clawWidth * 3 / 5], rotateAround: "z", angle: 180 - edge.angle });
+            const planeC_ = transformPlaneLocal(clawExtrudePlane, { offset: [0, 0, clawWidth * 3 / 5], rotateAround: "z", angle: typeAAngle });
             const planeC = transformPlaneLocal(planeC_, { rotateAround: "x", angle: clawInterclockingAngle });
             planeC_.delete();
-            const planeD_ = transformPlaneLocal(clawExtrudePlane, { offset: [0, 0, clawWidth * 4 / 5], rotateAround: "z", angle: Math.min(270 - edge.angle, 180) });
+            const planeD_ = transformPlaneLocal(clawExtrudePlane, { offset: [0, 0, clawWidth * 4 / 5], rotateAround: "z", angle: typeBAngle });
             const planeD = transformPlaneLocal(planeD_, { rotateAround: "x", angle: -clawInterclockingAngle });
             planeD_.delete();
             const claws = splitCylinder(clawBaseCylinder, [planeA, planeB, planeC, planeD]);
@@ -461,6 +465,14 @@ const buildSolidFromPolygonsWithAngles = async (
             const fpClaw = claws[1].fuse(claws[3]);
             if (interlockingClaws.length === 0) interlockingClaws.push(joinSide === "mp" ? mpClaw : fpClaw);
             else interlockingClaws[0] = interlockingClaws[0].fuse(joinSide === "mp" ? mpClaw : fpClaw);
+            // 补基座
+            if (edge.angle > 90) {
+              const clawBaseSketcher = new Sketcher(clawExtrudePlane);
+              clawBaseSketcher.movePointerTo([0, 0]);
+              clawBaseSketcher.lineTo([-clawTargetRadius, 0]);
+              arcByCenterStartAngleSafe(clawBaseSketcher, [0,0], [-clawTargetRadius, 0], -baseOffsetAngle);
+              interlockingClaws[0] = interlockingClaws[0].fuse(clawBaseSketcher.close().extrude(clawWidth));
+            }
             claws.forEach(p => p.delete());
             splitPlanes.forEach(p => p.delete());
             clawExtrudePlane.delete();
