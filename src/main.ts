@@ -115,7 +115,6 @@ const applyI18nTexts = () => {
   if (layerHeightDesc) {
     layerHeightDesc.textContent = t("settings.layerHeight.desc", {
       max: limits.layerHeight.max,
-      def: defaultSettings.layerHeight,
     });
   }
   const connectionDesc = document.querySelector<HTMLElement>('[data-i18n="settings.connectionLayers.desc"]');
@@ -123,7 +122,6 @@ const applyI18nTexts = () => {
     connectionDesc.textContent = t("settings.connectionLayers.desc", {
       min: limits.connectionLayers.min,
       max: limits.connectionLayers.max,
-      def: defaultSettings.connectionLayers,
     });
   }
   const bodyLayersDesc = document.querySelector<HTMLElement>('[data-i18n="settings.bodyLayers.desc"]');
@@ -131,21 +129,17 @@ const applyI18nTexts = () => {
     bodyLayersDesc.textContent = t("settings.bodyLayers.desc", {
       min: limits.bodyLayers.min,
       max: limits.bodyLayers.max,
-      def: defaultSettings.bodyLayers,
     });
   }
   const joinTypeDesc = document.querySelector<HTMLElement>('[data-i18n="settings.joinType.desc"]');
   if (joinTypeDesc) {
-    joinTypeDesc.textContent = t("settings.joinType.desc", {
-      def: t(`settings.joinType.${defaultSettings.joinType}`),
-    });
+    joinTypeDesc.textContent = t("settings.joinType.desc");
   }
   const clawInterlockingAngleDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clawInterlockingAngle.desc"]');
   if (clawInterlockingAngleDesc) {
     clawInterlockingAngleDesc.textContent = t("settings.clawInterlockingAngle.desc", {
       min: limits.clawInterlockingAngle.min,
       max: limits.clawInterlockingAngle.max,
-      def: defaultSettings.clawInterlockingAngle,
     });
   }
   const clawTargetRadiusDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clawTargetRadius.desc"]');
@@ -153,21 +147,17 @@ const applyI18nTexts = () => {
     clawTargetRadiusDesc.textContent = t("settings.clawTargetRadius.desc", {
       min: limits.clawTargetRadius.min,
       max: limits.clawTargetRadius.max,
-      def: defaultSettings.clawTargetRadius,
     });
   }
   const clawRadiusAdaptiveDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clawRadiusAdaptive.desc"]');
   if (clawRadiusAdaptiveDesc) {
-    clawRadiusAdaptiveDesc.textContent = t("settings.clawRadiusAdaptive.desc", {
-      def: t(`settings.clawRadiusAdaptive.${defaultSettings.clawRadiusAdaptive}`),
-    });
+    clawRadiusAdaptiveDesc.textContent = t("settings.clawRadiusAdaptive.desc");
   }
   const clawWidthDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clawWidth.desc"]');
   if (clawWidthDesc) {
     clawWidthDesc.textContent = t("settings.clawWidth.desc", {
       min: limits.clawWidth.min,
       max: limits.clawWidth.max,
-      def: defaultSettings.clawWidth,
     });
   }
   const tabWidthDesc = document.querySelector<HTMLElement>('[data-i18n="settings.tabWidth.desc"]');
@@ -175,7 +165,6 @@ const applyI18nTexts = () => {
     tabWidthDesc.textContent = t("settings.tabWidth.desc", {
       min: limits.tabWidth.min,
       max: limits.tabWidth.max,
-      def: defaultSettings.tabWidth,
     });
   }
   const tabThicknessDesc = document.querySelector<HTMLElement>('[data-i18n="settings.tabThickness.desc"]');
@@ -183,41 +172,32 @@ const applyI18nTexts = () => {
     tabThicknessDesc.textContent = t("settings.tabThickness.desc", {
       min: limits.tabThickness.min,
       max: limits.tabThickness.max,
-      def: defaultSettings.tabThickness,
     });
   }
   const minFoldAngleThresholdDesc = document.querySelector<HTMLElement>('[data-i18n="settings.minFoldAngleThreshold.desc"]');
   if (minFoldAngleThresholdDesc) {
-    minFoldAngleThresholdDesc.textContent = t("settings.minFoldAngleThreshold.desc", {
-      def: defaultSettings.minFoldAngleThreshold,
-    });
+    minFoldAngleThresholdDesc.textContent = t("settings.minFoldAngleThreshold.desc");
   }
   const tabClipDesc = document.querySelector<HTMLElement>('[data-i18n="settings.tabClipGap.desc"]');
   if (tabClipDesc) {
     tabClipDesc.textContent = t("settings.tabClipGap.desc", {
       min: limits.tabClipGap.min,
       max: limits.tabClipGap.max,
-      def: defaultSettings.tabClipGap,
     });
   }
   const clipGapAdjustDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clipGapAdjusts.desc"]');
   if (clipGapAdjustDesc) {
-    clipGapAdjustDesc.textContent = t("settings.clipGapAdjusts.desc", {
-      def: t(`settings.clipGapAdjusts.${defaultSettings.clipGapAdjust}`),
-    });
+    clipGapAdjustDesc.textContent = t("settings.clipGapAdjusts.desc");
   }
   const hollowDesc = document.querySelector<HTMLElement>('[data-i18n="settings.hollow.desc"]');
   if (hollowDesc) {
-    hollowDesc.textContent = t("settings.hollow.desc", {
-      def: t(defaultSettings.hollowStyle ? "settings.hollow.on" : "settings.hollow.off"),
-    });
+    hollowDesc.textContent = t("settings.hollow.desc");
   }
   const wireframeDesc = document.querySelector<HTMLElement>('[data-i18n="settings.wireframeThickness.desc"]');
   if (wireframeDesc) {
     wireframeDesc.textContent = t("settings.wireframeThickness.desc", {
       min: limits.wireframeThickness.min,
       max: limits.wireframeThickness.max,
-      def: defaultSettings.wireframeThickness,
     });
   }
   refreshToggleTextLabels?.();
@@ -400,7 +380,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-layer-height" class="setting-label" data-i18n="settings.layerHeight.label">打印层高</label>
-                <span class="setting-desc" data-i18n="settings.layerHeight.desc">实际打印时的层高设置，最大${limits.layerHeight.max}，默认${defaultSettings.layerHeight}，单位mm</span>
+                <span class="setting-desc" data-i18n="settings.layerHeight.desc">实际打印时的层高设置，最大${limits.layerHeight.max}，单位mm</span>
               </div>
               <div class="setting-field">
                 <input id="setting-layer-height" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
@@ -410,7 +390,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.connectionLayers.label">连接层数</span>
-                <span class="setting-desc" data-i18n="settings.connectionLayers.desc">面之间连接处的层数，${limits.connectionLayers.min}-${limits.connectionLayers.max}，默认${defaultSettings.connectionLayers}</span>
+                <span class="setting-desc" data-i18n="settings.connectionLayers.desc">面之间连接处的层数，${limits.connectionLayers.min}-${limits.connectionLayers.max}</span>
               </div>
               <div class="setting-field">
                 <div class="setting-counter-group">
@@ -424,7 +404,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.bodyLayers.label">主体额外层数</span>
-                <span class="setting-desc" data-i18n="settings.bodyLayers.desc">面主体的额外层数，${limits.bodyLayers.min}-${limits.bodyLayers.max}，默认${defaultSettings.bodyLayers}</span>
+                <span class="setting-desc" data-i18n="settings.bodyLayers.desc">面主体的额外层数，${limits.bodyLayers.min}-${limits.bodyLayers.max}</span>
               </div>
               <div class="setting-field">
                 <div class="setting-counter-group">
@@ -438,7 +418,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.joinType.label">拼接方式</span>
-                <span class="setting-desc" data-i18n="settings.joinType.desc">拼接边的连接方式，默认${defaultSettings.joinType === "interlocking" ? "咬合" : "卡扣"}</span>
+                <span class="setting-desc" data-i18n="settings.joinType.desc">拼接边的默认连接方式</span>
               </div>
               <div class="setting-field">
                 <div class="settings-toggle-group">
@@ -451,7 +431,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-min-fold-angle-threshold" class="setting-label" data-i18n="settings.minFoldAngleThreshold.label">折痕最小角度阈值</label>
-                <span class="setting-desc" data-i18n="settings.minFoldAngleThreshold.desc">角度小于该数值的三角面之间不会生成折痕，默认值 ${defaultSettings.minFoldAngleThreshold}</span>
+                <span class="setting-desc" data-i18n="settings.minFoldAngleThreshold.desc">角度小于该数值的三角面之间不会生成折痕</span>
               </div>
               <div class="setting-field">
                 <input id="setting-min-fold-angle-threshold" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
@@ -463,7 +443,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-claw-interlocking-angle" class="setting-label" data-i18n="settings.clawInterlockingAngle.label">咬合角度</label>
-                <span class="setting-desc" data-i18n="settings.clawInterlockingAngle.desc">抱爪的互锁角度，最小${limits.clawInterlockingAngle.min}，最大${limits.clawInterlockingAngle.max}，默认值${defaultSettings.clawInterlockingAngle}</span>
+                <span class="setting-desc" data-i18n="settings.clawInterlockingAngle.desc">抱爪的互锁角度，最小${limits.clawInterlockingAngle.min}，最大${limits.clawInterlockingAngle.max}</span>
               </div>
               <div class="setting-field">
                 <input id="setting-claw-interlocking-angle" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
@@ -473,7 +453,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-claw-target-radius" class="setting-label" data-i18n="settings.clawTargetRadius.label">目标抱爪半径</label>
-                <span class="setting-desc" data-i18n="settings.clawTargetRadius.desc">抱爪的期望大小，最小${limits.clawTargetRadius.min}，最大${limits.clawTargetRadius.max}，默认值${defaultSettings.clawTargetRadius}，单位mm</span>
+                <span class="setting-desc" data-i18n="settings.clawTargetRadius.desc">抱爪的期望大小，最小${limits.clawTargetRadius.min}，最大${limits.clawTargetRadius.max}，单位mm</span>
               </div>
               <div class="setting-field">
                 <input id="setting-claw-target-radius" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
@@ -483,7 +463,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.clawRadiusAdaptive.label">抱爪半径自适应</span>
-                <span class="setting-desc" data-i18n="settings.clawRadiusAdaptive.desc">根据拼接夹角调整抱爪半径，改善拼接牢固度，默认${defaultSettings.clawRadiusAdaptive === "on" ? "开启" : "关闭"}</span>
+                <span class="setting-desc" data-i18n="settings.clawRadiusAdaptive.desc">根据拼接夹角调整抱爪半径，改善拼接牢固度</span>
               </div>
               <div class="setting-field">
                 <div class="settings-toggle-group">
@@ -496,7 +476,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-claw-width" class="setting-label" data-i18n="settings.clawWidth.label">抱爪宽度</label>
-                <span class="setting-desc" data-i18n="settings.clawWidth.desc">单个抱爪的宽度，最小${limits.clawWidth.min}，最大${limits.clawWidth.max}，默认值${defaultSettings.clawWidth}，单位mm</span>
+                <span class="setting-desc" data-i18n="settings.clawWidth.desc">单个抱爪的宽度，最小${limits.clawWidth.min}，最大${limits.clawWidth.max}，单位mm</span>
               </div>
               <div class="setting-field">
                 <input id="setting-claw-width" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
@@ -508,7 +488,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-tab-width" class="setting-label" data-i18n="settings.tabWidth.label">拼接边舌片宽度</label>
-                <span class="setting-desc" data-i18n="settings.tabWidth.desc">用于拼接边粘接的舌片宽度，${limits.tabWidth.min}-${limits.tabWidth.max}，默认${defaultSettings.tabWidth}，单位mm</span>
+                <span class="setting-desc" data-i18n="settings.tabWidth.desc">用于拼接边粘接的舌片宽度，${limits.tabWidth.min}-${limits.tabWidth.max}，单位mm</span>
               </div>
               <div class="setting-field">
                 <input id="setting-tab-width" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
@@ -518,7 +498,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-tab-thickness" class="setting-label" data-i18n="settings.tabThickness.label">拼接边舌片厚度</label>
-                <span class="setting-desc" data-i18n="settings.tabThickness.desc">用于拼接边粘接的舌片厚度，${limits.tabThickness.min}-${limits.tabThickness.max}，默认${defaultSettings.tabThickness}，单位mm</span>
+                <span class="setting-desc" data-i18n="settings.tabThickness.desc">用于拼接边粘接的舌片厚度，${limits.tabThickness.min}-${limits.tabThickness.max}，单位mm</span>
               </div>
               <div class="setting-field">
                 <input id="setting-tab-thickness" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
@@ -528,7 +508,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-tab-clip-gap" class="setting-label" data-i18n="settings.tabClipGap.label">夹子配合间隙</label>
-                <span class="setting-desc" data-i18n="settings.tabClipGap.desc">连接舌片的夹子松紧程度，值越大越容易安装，${limits.tabClipGap.min}-${limits.tabClipGap.max}，默认${defaultSettings.tabClipGap}</span>
+                <span class="setting-desc" data-i18n="settings.tabClipGap.desc">连接舌片的夹子松紧程度，值越大越容易安装，${limits.tabClipGap.min}-${limits.tabClipGap.max}</span>
               </div>
               <div class="setting-field">
                 <input id="setting-tab-clip-gap" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
@@ -538,7 +518,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.clipGapAdjusts.label">夹子厚度</span>
-                <span class="setting-desc" data-i18n="settings.clipGapAdjusts.desc">夹子模型的配合间隙自动根据舌片厚度反比补偿，默认${defaultSettings.clipGapAdjust === "off" ? "关闭" : "开启"}</span>
+                <span class="setting-desc" data-i18n="settings.clipGapAdjusts.desc">夹子模型的配合间隙自动根据舌片厚度反比补偿</span>
               </div>
               <div class="setting-field">
                 <div class="settings-toggle-group">
@@ -553,7 +533,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.hollow.label">镂空风格</span>
-                <span class="setting-desc" data-i18n="settings.hollow.desc">去除三角面的中间部分，默认${defaultSettings.hollowStyle ? "开启" : "关闭"}</span>
+                <span class="setting-desc" data-i18n="settings.hollow.desc">去除三角面的中间部分</span>
               </div>
               <div class="setting-field">
                 <div class="settings-toggle-group">
@@ -566,7 +546,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-wireframe-thickness" class="setting-label" data-i18n="settings.wireframeThickness.label">线框粗细</label>
-                <span class="setting-desc" data-i18n="settings.wireframeThickness.desc">镂空风格下线框的粗细，${limits.wireframeThickness.min}-${limits.wireframeThickness.max}，默认${defaultSettings.wireframeThickness}，单位mm</span>
+                <span class="setting-desc" data-i18n="settings.wireframeThickness.desc">镂空风格下线框的粗细，${limits.wireframeThickness.min}-${limits.wireframeThickness.max}，单位mm</span>
               </div>
               <div class="setting-field">
                 <input id="setting-wireframe-thickness" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
