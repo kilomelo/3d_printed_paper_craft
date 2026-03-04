@@ -245,6 +245,11 @@ export function createRenderer3D(
   }
 
   let pointerLocked = false;
+  // 记录“上一次 pointer lock 是否属于左视图自身”。
+  // 这是为了区分两种完全不同的场景：
+  // 1. 左视图自己退出 pointer lock：需要恢复 hover 检查；
+  // 2. 右视图或其它元素拿到/失去 pointer lock：不应影响左视图 hover。
+  let wasPointerLockedBySelf = false;
   let lockedButton: number | null = null;
   let leftPointerActive = false;
   let leftRotateTriggeredDuringPointerCycle = false;
@@ -490,15 +495,20 @@ export function createRenderer3D(
     }
   };
   const onPointerLockChange = () => {
-    pointerLocked = document.pointerLockElement === el;
+    const pointerLockedBySelf = document.pointerLockElement === el;
+    pointerLocked = pointerLockedBySelf;
     if (pointerLocked) {
       interactionController.hideHoverLines();
     }
-    if (!pointerLocked) {
+    // 只有“左视图自己刚刚失去 pointer lock”时，才重新做一次 hover 检查。
+    // 若是右视图拿到/释放了 pointer lock，这里不应触发左视图的 hover 重算，
+    // 否则会把已经隐藏的左视图悬停边线错误地重新显示出来。
+    if (!pointerLockedBySelf && wasPointerLockedBySelf) {
       lockedButton = null;
       leftRotateTriggeredDuringPointerCycle = false;
       interactionController?.forceHoverCheck();
     }
+    wasPointerLockedBySelf = pointerLockedBySelf;
   };
   const onWindowPointerMove = (event: PointerEvent) => {
     if (
