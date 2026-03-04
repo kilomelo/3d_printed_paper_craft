@@ -34,11 +34,20 @@ type ModelState = {
   // 它是当前模型会话内的“源数据”，prepareGeometryData 重建 EdgeRecord 时会从这里回填，
   // 避免几何索引重建导致边属性丢失。
   edgeJoinTypeByKey: Map<string, EdgeJoinType>;
+  // 当前所有仍在使用中的 EdgeRecord 引用。
+  // 这层注册表用于解决一个关键问题：
+  // - history / 导入操作会批量修改 edgeJoinTypeByKey；
+  // - 但渲染与建模模块手里拿着的是已经构建好的 EdgeRecord 对象；
+  // - 如果不把新值同步回这些活动对象，撤销重做后界面和建模仍会读到旧 joinType。
+  //
+  // 因此这里按 edge key 维护“所有活动 EdgeRecord 实例”的集合，供批量同步使用。
+  liveEdgeRecordsByKey: Map<string, Set<EdgeRecord>>;
 };
 
 const state: ModelState = {
   current: null,
   edgeJoinTypeByKey: new Map<string, EdgeJoinType>(),
+  liveEdgeRecordsByKey: new Map<string, Set<EdgeRecord>>(),
 };
 
 const EDGE_JOIN_TYPE_VALUES: EdgeJoinType[] = ["default", "clip", "interlocking"];
@@ -54,8 +63,9 @@ export function getDefaultEdgeJoinType(): EdgeJoinType {
 export function setModel(root: Group | null) {
   state.current = root;
   // 当前模型切换时，边 key 集合会整体变化。
-  // 这里直接清空边属性表，后续如需从 3dppc 恢复，会在模型加载完成后重新导入。
+  // 这里直接清空边属性表和活动 EdgeRecord 注册表，后续如需从 3dppc 恢复，会在模型加载完成后重新导入。
   state.edgeJoinTypeByKey.clear();
+  state.liveEdgeRecordsByKey.clear();
 }
 
 export function getModel(): Group | null {
@@ -76,6 +86,7 @@ export function setEdgeJoinTypeByKey(edgeKey: string, joinType: EdgeJoinType): b
   } else {
     state.edgeJoinTypeByKey.set(edgeKey, joinType);
   }
+  syncLiveEdgeRecordsByKey(edgeKey);
   return true;
 }
 
@@ -104,6 +115,46 @@ export function importEdgeJoinTypes(entries: Iterable<[string, unknown]> | null 
     if (rawJoinType === "default") continue;
     state.edgeJoinTypeByKey.set(edgeKey, rawJoinType);
   }
+  syncAllLiveEdgeRecords();
+}
+
+// 注册一批当前处于活动状态的 EdgeRecord。
+// GeometryIndex 在重建完索引后会调用它；后续 import/history 才能把 joinType 推回这些对象。
+export function registerLiveEdgeRecords(edges: Iterable<EdgeRecord>) {
+  for (const edge of edges) {
+    const list = state.liveEdgeRecordsByKey.get(edge.key) ?? new Set<EdgeRecord>();
+    list.add(edge);
+    state.liveEdgeRecordsByKey.set(edge.key, list);
+    // 注册时顺手把当前源数据同步到实例，保证新建索引与状态表一致。
+    edge.joinType = getEdgeJoinTypeByKey(edge.key);
+  }
+}
+
+// 注销一批不再使用的 EdgeRecord，避免多次 rebuild 后把废弃引用留在注册表里。
+export function unregisterLiveEdgeRecords(edges: Iterable<EdgeRecord>) {
+  for (const edge of edges) {
+    const list = state.liveEdgeRecordsByKey.get(edge.key);
+    if (!list) continue;
+    list.delete(edge);
+    if (list.size === 0) {
+      state.liveEdgeRecordsByKey.delete(edge.key);
+    }
+  }
+}
+
+function syncLiveEdgeRecordsByKey(edgeKey: string) {
+  const list = state.liveEdgeRecordsByKey.get(edgeKey);
+  if (!list) return;
+  const joinType = getEdgeJoinTypeByKey(edgeKey);
+  list.forEach((edge) => {
+    edge.joinType = joinType;
+  });
+}
+
+function syncAllLiveEdgeRecords() {
+  state.liveEdgeRecordsByKey.forEach((_, edgeKey) => {
+    syncLiveEdgeRecordsByKey(edgeKey);
+  });
 }
 
 // ---- 几何预处理与索引 ----

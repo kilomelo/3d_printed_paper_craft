@@ -17,6 +17,7 @@ const ACTION_I18N_KEYS: Record<string, string> = {
   faceRemove: "history.face.remove.description",
   groupRotate: "history.group.rotate.description",
   settingsChange: "history.settings.change.description",
+  seamJoinTypeChange: "history.seam.joinTypeChange.description",
 };
 
 const buildActionParams = (action: MetaAction): Record<string, string | number> => {
@@ -34,6 +35,8 @@ const buildActionParams = (action: MetaAction): Record<string, string | number> 
         angle: typeof payload.angle === "number" ? payload.angle.toFixed(1) : (payload.angle as string | number) ?? "",
       };
     case "settingsChange":
+      return { count: (payload.count as number) ?? 0 };
+    case "seamJoinTypeChange":
       return { count: (payload.count as number) ?? 0 };
     default:
       return payload as Record<string, string | number>;

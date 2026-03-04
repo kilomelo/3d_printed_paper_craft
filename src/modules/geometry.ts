@@ -1,6 +1,6 @@
 // 几何工具：计算面-边索引、顶点键、邻接关系等基础几何数据，供索引/业务层使用。
 import { Vector3, type Object3D, type Mesh, BufferAttribute } from "three";
-import { EdgeRecord, prepareGeometryData, getFaceVertexIndices } from "./model";
+import { EdgeRecord, prepareGeometryData, getFaceVertexIndices, registerLiveEdgeRecords, unregisterLiveEdgeRecords } from "./model";
 import { triangleArea } from "./mathUtils";
 import { Point3D } from "@/types/geometryTypes";
 
@@ -289,6 +289,9 @@ export class GeometryIndex {
   private triangleCount = 0;
 
   reset() {
+    // 先注销旧的 EdgeRecord 引用，再清空索引。
+    // 这样模型层的 liveEdgeRecordsByKey 不会残留已经失效的对象。
+    unregisterLiveEdgeRecords(this.edges);
     this.faceAdjacency = new Map();
     this.faceIndexMap = new Map();
     this.meshFaceIdMap = new Map();
@@ -309,6 +312,9 @@ export class GeometryIndex {
     this.edgeKeyToId = prep.edgeKeyToId;
     this.vertexKeyToPos = prep.vertexKeyToPos;
     this.triangleCount = prep.triangleCount;
+    // 新索引构建完成后，将活动 EdgeRecord 注册给模型层。
+    // 这样 history / 导入恢复边级属性时，能把值同步回这些对象。
+    registerLiveEdgeRecords(this.edges);
   }
 
   getFaceId(mesh: Mesh, localFace: number | undefined): number | null {

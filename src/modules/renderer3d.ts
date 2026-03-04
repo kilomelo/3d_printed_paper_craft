@@ -303,8 +303,22 @@ export function createRenderer3D(
     const previous = edge.joinType;
     const next = previous === "default" ? "clip" : previous === "clip" ? "interlocking" : "default";
     if (!setEdgeJoinType(edge, next)) return;
+    const affectedGroupIds = Array.from(
+      new Set(
+        Array.from(edge.faces)
+          .map((faceId) => groupApi.getFaceGroupMap().get(faceId) ?? null)
+          .filter((groupId): groupId is number => groupId !== null),
+      ),
+    );
     seamManager.refreshEdgeAppearance(edgeId);
     appEventBus.emit("userOperation", { side: "left", op: "seam-change", highlightDuration: 500 })
+    appEventBus.emit("seamJoinTypeChanged", {
+      edgeId,
+      edgeKey: edge.key,
+      previous,
+      current: next,
+      affectedGroupIds,
+    });
     log(t("log.group.seamChanged", {
       previous: getJoinTypeLabel(previous),
       current: getJoinTypeLabel(next),
@@ -573,7 +587,7 @@ export function createRenderer3D(
       const faded = baseColor.clone();
       const hsl = { h: 0, s: 0, l: 0 };
       faded.getHSL(hsl);
-      faded.setHSL(hsl.h, hsl.s * 0.8, hsl.l * 1.5);
+      faded.setHSL(hsl.h, hsl.s * 0.6, hsl.l * 0.1);
       faceColorService.setFaceColor(mapping.mesh, mapping.localFace, faded, visible ? 1 : 0);
     });
   };

@@ -120,6 +120,7 @@
   "history.face.remove.description": "从 {group} 移除 {count} 个面",
   "history.group.rotate.description": "旋转展开组 {angle}°",
   "history.settings.change.description": "修改了 {count} 个设置项",
+  "history.seam.joinTypeChange.description": "修改了 {count} 条拼接边的类型",
 
   "log.demo.loadFail": "加载示例项目失败，请稍后重试。",
   "log.progress.bar": "工作进度: |{bar}| {pct}%",

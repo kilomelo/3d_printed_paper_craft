@@ -12,9 +12,9 @@ const UNFOLD_COPLANAR_EDGE_COLOR = new THREE.Color(0xffffff);
 const HOVERLINE_DEFAULT_COLOR = new THREE.Color(0xffa500);
 const SEAM_CONNECT_LINE_COLOR = new THREE.Color(0x00ff88);
 const SEAM_LINE_EDIT_COLORS: Record<EdgeJoinType, { idle: number; hover: number }> = {
-  default: { idle: 0x222222, hover: 0xeeeeee },
+  default: { idle: 0x888888, hover: 0xeeeeee },
   clip: { idle: 0x55a4fb, hover: 0x8ac0fc },
-  interlocking: { idle: 0x3be95d, hover: 0x76e78c },
+  interlocking: { idle: 0x3be95d, hover: 0x9dedad },
 };
 
 export function createFrontMaterial(baseColor?: THREE.Color) {

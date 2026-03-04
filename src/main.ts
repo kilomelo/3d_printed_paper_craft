@@ -15,7 +15,7 @@ import { createGeometryContext, snapGeometryPositions } from "./modules/geometry
 import { build3dppcData, download3dppc, type PPCFile } from "./modules/ppc";
 import { createSettingsUI } from "./modules/settingsUI";
 import { getDefaultSettings, SETTINGS_LIMITS } from "./modules/settings";
-import { getModel } from "./modules/model";
+import { exportEdgeJoinTypes, getModel, importEdgeJoinTypes } from "./modules/model";
 import {
   onWorkerBusyChange,
 } from "./modules/replicad/replicadWorkerClient";
@@ -55,6 +55,20 @@ let workerBusy = false;
 let viewerModeControl: ReturnType<typeof createSegmentedControl> | null = null;
 let edgesEnabledBeforeEditingSeam: boolean | null = null;
 let seamsEnabledBeforeEditingSeam: boolean | null = null;
+
+// 右侧展开组预览区的缓存有效性指示器。
+// 规则很简单：
+// - 当前预览组在当前历史时间点上存在有效 mesh 缓存：显示 "✓"
+// - 否则显示 "*"
+//
+// 它不区分“缓存来自 STL 导出”还是“缓存来自预览建模”，因为两者底层复用的是同一套预览 mesh 缓存。
+const refreshPreviewMeshCacheIndicator = () => {
+  if (!groupPreviewCacheIndicator) return;
+  const groupId = groupController.getPreviewGroupId();
+  const currentHistoryUid = historyManager.getCurrentSnapshotUid() ?? -1;
+  const hasActiveCache = previewMeshCacheManager.hasActiveCachedPreviewMesh(groupId, currentHistoryUid);
+  groupPreviewCacheIndicator.textContent = hasActiveCache ? "✓ " : "-";
+};
 
 const setProjectNameLabel = (name: string) => {
   if (projectNameLabel) {
@@ -236,6 +250,7 @@ const captureProjectState = (): ProjectState => ({
   previewGroupId: groupController.getPreviewGroupId(),
   settings: getSettings(),
   groupVisibility: groupController.getGroupVisibilityEntries(),
+  edgeJoinTypes: exportEdgeJoinTypes(),
 });
 
 const applyProjectState = (snap: Snapshot) => {
@@ -254,6 +269,7 @@ const applyProjectState = (snap: Snapshot) => {
     groupController.applyGroupVisibility(state.groupVisibility);
   }
   importSettings(state.settings);
+  importEdgeJoinTypes(state.edgeJoinTypes);
   groupUI.render(buildGroupUIState());
 };
 
@@ -332,6 +348,7 @@ app.innerHTML = `
               </button>
               <span class="overlay-label group-faces-count" id="group-faces-count">面数量：0</span>
             </div>
+            <div class="overlay-cache-indicator" id="group-preview-cache-indicator" aria-hidden="true">*</div>
             <div class="tab-delete-slot" id="group-delete-slot"></div>
             <div id="group-preview-empty" class="preview-2d-empty hidden" data-i18n="preview.right.placeholder">
               点击【编辑展开组】按钮进行编辑
@@ -611,6 +628,7 @@ const groupAddBtn = document.querySelector<HTMLButtonElement>("#group-add");
 const groupPreview = document.querySelector<HTMLDivElement>("#group-preview");
 const groupPreviewEmpty = document.querySelector<HTMLDivElement>("#group-preview-empty");
 const groupPreviewMask = document.querySelector<HTMLDivElement>("#group-preview-mask");
+const groupPreviewCacheIndicator = document.querySelector<HTMLDivElement>("#group-preview-cache-indicator");
 const groupVisibilityToggle = document.querySelector<HTMLButtonElement>("#group-visibility-toggle");
 const settingsOverlay = document.querySelector<HTMLDivElement>("#settings-overlay");
 const settingsContent = settingsOverlay?.querySelector<HTMLDivElement>(".settings-content") || null;
@@ -720,6 +738,7 @@ if (
   !groupPreview ||
   !groupPreviewEmpty ||
   !groupPreviewMask ||
+  !groupPreviewCacheIndicator ||
   !groupFacesCountLabel ||
   !groupColorBtn ||
   !groupColorInput ||
@@ -967,6 +986,7 @@ const clearAppStates = () => {
   document.querySelector(".version-badge-global")?.classList.add("hidden-global");
   document.querySelector(".version-lang-toggle")?.classList.add("hidden-global");
   previewMeshCacheManager.clear();
+  refreshPreviewMeshCacheIndicator();
   historyManager.reset();
   appEventBus.emit("clearAppStates", undefined);
   operationHints?.resetHighlights();
@@ -1189,6 +1209,7 @@ const projectLoaded = () => {
   historyManager.reset();
   historyManager.push(captureProjectState(), { name: "loadModel", timestamp: Date.now(), payload: {}});
   historyPanelUI?.render();
+  refreshPreviewMeshCacheIndicator();
 };
 
 const allowedExtensions = ["obj", "fbx", "stl", "3dppc"];
@@ -1441,6 +1462,7 @@ const groupUI = createGroupUI(
 
 appEventBus.on("groupCurrentChanged", (groupId: number) => {
   groupUI.render(buildGroupUIState());
+  refreshPreviewMeshCacheIndicator();
 });
 appEventBus.on("groupColorChanged", ({ groupId, color }) => {
   groupUI.render(buildGroupUIState());
@@ -1474,9 +1496,11 @@ historyPanelUI = bindHistorySystem({
   changeWorkspaceState,
   applyProjectState,
   updateMenuState,
+  onPreviewMeshCacheMutated: refreshPreviewMeshCacheIndicator,
   log,
   t,
 });
+refreshPreviewMeshCacheIndicator();
 if (viewer && groupPreview) {
   operationHints = createOperationHints({
     leftMount: viewer,
@@ -1546,6 +1570,7 @@ bindGroupPreviewActions({
   previewMeshCacheManager,
   loadPreviewModel: (mesh, angle) => renderer3d.loadPreviewModel(mesh, angle),
   changeWorkspaceState,
+  onPreviewMeshCacheMutated: refreshPreviewMeshCacheIndicator,
   log,
   t,
 });

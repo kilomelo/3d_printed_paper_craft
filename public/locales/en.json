@@ -119,7 +119,8 @@
   "history.face.add.description": "Added {count} faces to {group}",
   "history.face.remove.description": "Removed {count} faces from {group}",
   "history.group.rotate.description": "Rotated group {angle}°",
-  "history.settings.change.description": "Changed {count} settings",
+  "history.settings.change.description": "Updated {count} settings",
+  "history.seam.joinTypeChange.description": "Updated {count} seam joins",
 
   "log.demo.loadFail": "Failed to load the demo project. Please try again later.",
   "log.progress.bar": "Progress: |{bar}| {pct}%",

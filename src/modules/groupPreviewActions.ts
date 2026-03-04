@@ -25,6 +25,7 @@ type BindGroupPreviewActionsOptions = {
   previewMeshCacheManager: ReturnType<typeof createPreviewMeshCacheManager>;
   loadPreviewModel: (mesh: Mesh, angle: number) => void;
   changeWorkspaceState: (state: WorkspaceState) => void;
+  onPreviewMeshCacheMutated?: () => void;
   log: (msg: string, tone?: "info" | "success" | "error" | "progress") => void;
   t: (key: string, params?: Record<string, unknown>) => string;
 };
@@ -91,6 +92,7 @@ export const bindGroupPreviewActions = (opts: BindGroupPreviewActionsOptions) =>
         const mesh = new Mesh(geometry);
         mesh.name = "Replicad Mesh";
         opts.previewMeshCacheManager.addCachedPreviewMesh(targetGroupId, mesh, opts.getCurrentHistoryUid());
+        opts.onPreviewMeshCacheMutated?.();
         const refreshedCached = getCachedPreviewMesh(targetGroupId);
         if (refreshedCached) downloadMesh(groupName, refreshedCached.mesh);
       } else {
@@ -129,6 +131,7 @@ export const bindGroupPreviewActions = (opts: BindGroupPreviewActionsOptions) =>
         );
         snapGeometryPositions(mesh.geometry);
         opts.previewMeshCacheManager.addCachedPreviewMesh(targetGroupId, mesh, opts.getCurrentHistoryUid());
+        opts.onPreviewMeshCacheMutated?.();
         const refreshedCached = getCachedPreviewMesh(targetGroupId);
         if (refreshedCached) opts.loadPreviewModel(refreshedCached.mesh, refreshedCached.angle);
       }

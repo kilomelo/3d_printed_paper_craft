@@ -509,6 +509,21 @@ textarea {
   pointer-events: auto;
 }
 
+.overlay-cache-indicator {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  z-index: 5;
+  min-width: 14px;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 16px;
+  line-height: 1;
+  font-weight: 700;
+  /* text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85); */
+  pointer-events: none;
+  user-select: none;
+}
+
 .viewer-mode-slot {
   position: absolute;
   top: 4px;
