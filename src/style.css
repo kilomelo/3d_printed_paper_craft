@@ -499,6 +499,29 @@ textarea {
   z-index: 0;
 }
 
+.viewer-mode-slot {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  right: 6px;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.viewer-mode-control {
+  pointer-events: auto;
+  --seg-bg: rgba(9, 14, 24, 0.74);
+  --seg-border: rgba(255, 255, 255, 0.08);
+  --seg-item-hover: rgba(255, 255, 255, 0.06);
+  --seg-item-active-bg: rgba(255, 255, 255, 0.14);
+  --seg-item-font-size: 10px;
+  --seg-item-pad-y: 7px;
+  --seg-item-pad-x: 10px;
+  backdrop-filter: blur(12px);
+}
+
 #operation-hints-left,
 #operation-hints-right {
   pointer-events: none;

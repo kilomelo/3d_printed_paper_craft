@@ -601,6 +601,34 @@ export function trapezoid(
   ];
   return [a, b, f, e];
 }
+
+/**
+ * 求点 p 到线段 ab 所在线的垂点（落在“无限直线”上）
+ * - 若 a、b 重合（线段退化为点），返回 undefined
+ */
+export function footOfPerpendicularToSegmentLine(
+  p: Point2D,
+  a: Point2D,
+  b: Point2D,
+  eps = 1e-12
+): Point2D | undefined {
+  const abx = b[0] - a[0];
+  const aby = b[1] - a[1];
+  const len2 = abx * abx + aby * aby;
+  if (len2 < eps) return undefined;
+
+  const apx = p[0] - a[0];
+  const apy = p[1] - a[1];
+
+  const t = (apx * abx + apy * aby) / len2;
+
+  return [
+    a[0] + t * abx,
+    a[1] + t * aby,
+  ];
+}
+
+
 /** 求由三角形 ABC 与 ABD（共享边 AB）构成的二面角的角平分面。
  * 返回的 Plane3D 以 point = a，normal 给出平分面的法向 
  */

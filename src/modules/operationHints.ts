@@ -8,6 +8,10 @@ type HintItem = { key: string; i18n: string };
 type HintConfig = { left: HintItem[]; right: HintItem[] };
 
 const hintTable: Record<WorkspaceState, HintConfig> = {
+  mainPage: {
+    left: [],
+    right: [],
+  },
   loading: {
     left: [],
     right: [],
@@ -34,6 +38,19 @@ const hintTable: Record<WorkspaceState, HintConfig> = {
     ],
     right: [
       { key: "group-rotate", i18n: "op.group.rotate" },
+      { key: "view-zoom", i18n: "op.view.zoom" },
+      { key: "view-pan", i18n: "op.view.pan" },
+      { key: "rename-group", i18n: "op.group.rename" },
+    ],
+  },
+  editingSeam: {
+    left: [
+      { key: "seam-change", i18n: "op.seam.change" },
+      { key: "view-rotate", i18n: "op.view.rotate" },
+      { key: "view-zoom", i18n: "op.view.zoom" },
+      { key: "view-pan", i18n: "op.view.pan" },
+    ],
+    right: [
       { key: "view-zoom", i18n: "op.view.zoom" },
       { key: "view-pan", i18n: "op.view.pan" },
       { key: "rename-group", i18n: "op.group.rename" },

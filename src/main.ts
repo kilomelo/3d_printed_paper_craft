@@ -35,7 +35,9 @@ import { exportGroupsData, getGroupColorCursor } from "./modules/groups";
 import { importSettings, getSettings, resetSettings } from "./modules/settings";
 import { createOperationHints } from "./modules/operationHints";
 import { createHoldButton } from "./components/createHoldButton";
+import { createSegmentedControl } from "./components/createSegmentedControl";
 import "./components/holdButton.css";
+import "./components/segmentedControl.css";
 import "./styles/home.css";
 import { renderHomeSection } from "./templates/homeMarkup";
 import { initI18n, t, getCurrentLang, setLanguage, onLanguageChanged } from "./modules/i18n";
@@ -57,6 +59,8 @@ if (!app) {
 let langToggleBtn: HTMLButtonElement | null = null;
 let langToggleGlobalBtn: HTMLButtonElement | null = null;
 let refreshToggleTextLabels: (() => void) | null = null;
+let workerBusy = false;
+let viewerModeControl: ReturnType<typeof createSegmentedControl> | null = null;
 
 const setProjectNameLabel = (name: string) => {
   if (projectNameLabel) {
@@ -209,6 +213,13 @@ const applyI18nTexts = () => {
     });
   }
   refreshToggleTextLabels?.();
+  const viewerModeAriaLabel = t("viewer.mode.ariaLabel");
+  if (viewerModeControl) {
+    viewerModeControl.el.setAttribute("aria-label", viewerModeAriaLabel);
+    viewerModeControl.setItemLabel("view", t("workspace.mode.normal"));
+    viewerModeControl.setItemLabel("group-edit", t("workspace.mode.editingGroup"));
+    viewerModeControl.setItemLabel("seam-edit", t("workspace.mode.editingSeam"));
+  }
   groupUI.render(buildGroupUIState());
   // 语言切换时刷新历史面板条目文本
   historyPanelUI?.render();
@@ -297,6 +308,7 @@ app.innerHTML = `
         <span class="toolbar-stat" id="tri-counter">渲染负载：0</span>
       </div>
       <div class="preview-area" id="viewer">
+        <div class="viewer-mode-slot" id="viewer-mode-slot"></div>
         <div id="history-panel" class="history-panel hidden">
           <div id="history-list" class="history-list"></div>
         </div>
@@ -304,7 +316,6 @@ app.innerHTML = `
     </div>
     <div class="preview-panel">
           <div class="preview-toolbar">
-            <button class="btn sm toggle" id="group-edit-toggle">编辑展开组</button>
             <div class="group-tabs" id="group-tabs"></div>
             <div class="toolbar-spacer"></div>
             <button class="btn tab-add" id="group-add" data-i18n-title="toolbar.right.groupAdd.tooltip" title="添加展开组">+</button>
@@ -577,6 +588,7 @@ app.innerHTML = `
 `;
 
 const viewer = document.querySelector<HTMLDivElement>("#viewer");
+const viewerModeSlot = document.querySelector<HTMLDivElement>("#viewer-mode-slot");
 const projectNameLabel = document.getElementById("project-name-label");
 const logListEl = document.querySelector<HTMLDivElement>("#log-list");
 const logPanelEl = document.querySelector<HTMLDivElement>("#log-panel");
@@ -681,7 +693,6 @@ const groupPreviewPanel = groupPreview?.closest(".preview-panel") as HTMLDivElem
 const groupFacesCountLabel = document.querySelector<HTMLSpanElement>("#group-faces-count");
 const groupColorBtn = document.querySelector<HTMLButtonElement>("#group-color-btn");
 const groupColorInput = document.querySelector<HTMLInputElement>("#group-color-input");
-const groupEditToggle = document.querySelector<HTMLButtonElement>("#group-edit-toggle");
 const layoutEmpty = document.querySelector<HTMLElement>("#layout-empty");
 const layoutWorkspace = document.querySelector<HTMLElement>("#layout-workspace");
 const versionBadgeGlobal = document.querySelector<HTMLDivElement>(".version-badge-global");
@@ -689,6 +700,7 @@ const groupDeleteSlot = document.querySelector<HTMLDivElement>("#group-delete-sl
 
 if (
   !viewer ||
+  !viewerModeSlot ||
   !logListEl ||
   !fileInput ||
   !homeStartBtn ||
@@ -715,7 +727,6 @@ if (
   !groupColorBtn ||
   !groupColorInput ||
   !groupDeleteSlot ||
-  !groupEditToggle ||
   !layoutEmpty ||
   !layoutWorkspace ||
   !settingsOverlay ||
@@ -731,6 +742,8 @@ if (
   !settingJoinTypeResetBtn ||
   !settingScaleInput ||
   !settingScaleResetBtn ||
+  !settingMinFoldAngleThresholdInput ||
+  !settingMinFoldAngleThresholdResetBtn ||
   !settingClawInterlockingAngleInput ||
   !settingClawInterlockingAngleResetBtn ||
   !settingClawTargetRadiusInput ||
@@ -790,6 +803,111 @@ const { log } = createLog(logListEl);
 })();
 onLanguageChanged(applyI18nTexts);
 
+const viewerModeIconSvg = `
+<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
+<!-- License: Apache. Made by UXAspects: https://github.com/UXAspects/UXAspects -->
+<svg fill="#000000" height="800px" width="800px" version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
+	 viewBox="0 0 24 24" enable-background="new 0 0 24 24" xml:space="preserve">
+<g id="view">
+	<g>
+		<path d="M12,21c-5,0-8.8-2.8-11.8-8.5L0,12l0.2-0.5C3.2,5.8,7,3,12,3s8.8,2.8,11.8,8.5L24,12l-0.2,0.5C20.8,18.2,17,21,12,21z
+			 M2.3,12c2.5,4.7,5.7,7,9.7,7s7.2-2.3,9.7-7C19.2,7.3,16,5,12,5S4.8,7.3,2.3,12z"/>
+	</g>
+	<g>
+		<path d="M12,17c-2.8,0-5-2.2-5-5s2.2-5,5-5s5,2.2,5,5S14.8,17,12,17z M12,9c-1.7,0-3,1.3-3,3s1.3,3,3,3s3-1.3,3-3S13.7,9,12,9z"/>
+	</g>
+</g>
+</svg>
+`;
+
+const groupEditModeIconSvg = `
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- License: Apache. Made by vaadin: https://github.com/vaadin/vaadin-icons -->
+<svg width="800px" height="800px" viewBox="0 0 16 16" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <g transform="matrix(0.9 0 0 0.9 1.8 1.8)">
+    <path d="M8 0l-8 2v10l8 4 8-4v-10l-8-2zM14.4 2.6l-5.9 2.2-6.6-2.2 6.1-1.6 6.4 1.6zM1 11.4v-8.1l7 2.4v9.2l-7-3.5z"></path>
+  </g>
+</svg>
+`;
+
+const seamEditModeIconSvg = `
+<?xml version="1.0" encoding="utf-8"?>
+<!-- License: MIT. Made by phosphor: https://github.com/phosphor-icons/phosphor-icons -->
+<svg fill="#000000" width="800px" height="800px" viewBox="0 0 256 256" id="Flat" xmlns="http://www.w3.org/2000/svg">
+  <g transform="matrix(1.1 0 0 1.1 2.2 2.2)">
+    <path d="M217.45557,38.544a35.9967,35.9967,0,0,0-57.937,40.96679L79.5105,159.51855a36.05906,36.05906,0,0,0-40.96607,7.0254H38.544a36.00029,36.00029,0,1,0,57.93737,9.94531L176.4895,96.48145A35.99663,35.99663,0,0,0,217.45557,38.544ZM72.48584,200.48535a12.00027,12.00027,0,0,1-16.97119-16.9707h-.00049a12.00044,12.00044,0,0,1,16.97168,16.9707Zm128-128a12.01673,12.01673,0,0,1-16.969.00244l-.0022-.00244a12.0001,12.0001,0,1,1,16.97119,0Z"/>
+  </g>
+</svg>
+`;
+
+const segmentedItemValueToWorkspaceState = (value: string): WorkspaceState => {
+  if (value === "group-edit") return "editingGroup";
+  if (value === "seam-edit") return "editingSeam";
+  return "normal";
+};
+
+const workspaceStateToSegmentedItemValue = (state: WorkspaceState): string => {
+  if (state === "editingGroup") return "group-edit";
+  if (state === "editingSeam") return "seam-edit";
+  return "view";
+};
+
+const getWorkspaceStateDisplayName = (state: WorkspaceState): string => {
+  if (state === "editingGroup") return t("workspace.mode.editingGroup");
+  if (state === "editingSeam") return t("workspace.mode.editingSeam");
+  return t("workspace.mode.normal");
+};
+
+const isViewerModeControlDisabled = (state: WorkspaceState): boolean => {
+  return workerBusy || state === "previewGroupModel" || state === "loading";
+};
+
+viewerModeControl = createSegmentedControl({
+  ariaLabel: t("viewer.mode.ariaLabel"),
+  value: "view",
+  equalWidth: true,
+  items: [
+    {
+      value: "view",
+      label: t("workspace.mode.normal"),
+      iconSvg: viewerModeIconSvg,
+      hoverBg: "rgba(245, 158, 11, 0.18)",
+      activeBg: "rgba(245, 158, 61, 0.68)",
+      textColor: "#dddddd",
+      activeTextColor: "#ffffff",
+    },
+    {
+      value: "group-edit",
+      label: t("workspace.mode.editingGroup"),
+      iconSvg: groupEditModeIconSvg,
+      hoverBg: "rgba(37, 99, 235, 0.18)",
+      activeBg: "rgba(67, 129, 235, 0.68)",
+      textColor: "#dddddd",
+      activeTextColor: "#ffffff",
+    },
+    {
+      value: "seam-edit",
+      label: t("workspace.mode.editingSeam"),
+      iconSvg: seamEditModeIconSvg,
+      hoverBg: "rgba(20, 184, 166, 0.18)",
+      activeBg: "rgba(80, 184, 166, 0.68)",
+      textColor: "#dddddd",
+      activeTextColor: "#ffffff",
+    },
+  ],
+  onChange(value) {
+    const nextState = segmentedItemValueToWorkspaceState(value);
+    console.log("[ViewerModeControl] mode changed:", value, "->", nextState);
+    changeWorkspaceState(nextState);
+  },
+});
+viewerModeControl.el.classList.add("viewer-mode-control");
+viewerModeSlot.appendChild(viewerModeControl.el);
+viewerModeControl.setValue(workspaceStateToSegmentedItemValue(getWorkspaceState()), false);
+viewerModeControl.setDisabled(isViewerModeControlDisabled(getWorkspaceState()));
+
 // Initialize Vercel Web Analytics
 inject();
 const changeWorkspaceState = (state: WorkspaceState) => {
@@ -801,12 +919,18 @@ const changeWorkspaceState = (state: WorkspaceState) => {
   } else {
     hideLoadingOverlay();
   }
-  if (previousState === "editingGroup") log(t("log.workspace.edit.exit"), "info");
-  if (state === "editingGroup") log(t("log.workspace.edit.enter"), "info");
+  if (state === "normal" || state === "editingGroup" || state === "editingSeam") {
+    log(t("log.workspace.current", { state: getWorkspaceStateDisplayName(state) }), "info");
+  }
   if (previousState === "previewGroupModel") log(t("log.preview.exit"), "info");
   if (state === "previewGroupModel") log(t("log.preview.loaded"), "info");
   appEventBus.emit("workspaceStateChanged", { previous: previousState, current: state });
 };
+
+appEventBus.on("workspaceStateChanged", ({ current }) => {
+  viewerModeControl.setValue(workspaceStateToSegmentedItemValue(current), false);
+  viewerModeControl.setDisabled(isViewerModeControlDisabled(current));
+});
 
 aboutBackBtn?.addEventListener("click", () => {
   aboutOverlay?.classList.add("hidden");
@@ -1053,7 +1177,6 @@ refreshToggleTextLabels = () => {
     { btn: seamsToggle, keyOn: "toolbar.left.seam.on", keyOff: "toolbar.left.seam.off", isOn: () => renderer3d.isSeamsEnabled() },
     { btn: facesToggle, keyOn: "toolbar.left.surface.on", keyOff: "toolbar.left.surface.off", isOn: () => renderer3d.isFacesEnabled() },
     { btn: bboxToggle, keyOn: "toolbar.left.bbox.on", keyOff: "toolbar.left.bbox.off", isOn: () => renderer3d.getBBoxVisible() },
-    { btn: groupEditToggle, keyOn: "toolbar.right.groupEdit.on", keyOff: "toolbar.right.groupEdit.off", isOn: () => getWorkspaceState() === "editingGroup" },
   ]);
 };
 refreshToggleTextLabels?.();
@@ -1101,7 +1224,6 @@ appEventBus.on("historyApplySnapshot", ({ current, direction, snapPassed} ) => {
 
 appEventBus.on("historyApplied", (action) => {
   groupUI.render(buildGroupUIState());
-  updateGroupEditToggle();
   updateMenuState();
   historyPanelUI?.render();
 });
@@ -1391,10 +1513,6 @@ const groupUI = createGroupUI(
   },
 );
 
-const updateGroupEditToggle = () => {
-  groupEditToggle.classList.toggle("active", getWorkspaceState() === "editingGroup");
-};
-
 appEventBus.on("groupAdded", ({ groupId, groupName }) => {
   groupUI.render(buildGroupUIState());
   historyManager.push(captureProjectState(), { name: "groupCreate", timestamp: Date.now(), payload: { name: groupName } });
@@ -1475,7 +1593,6 @@ appEventBus.on("groupPlaceAngleRotateDone", ({ deltaAngle }) => {
 });
 appEventBus.on("workspaceStateChanged", ({ previous, current }) =>  {
   if (current !== "loading") groupUI.render(buildGroupUIState());
-  updateGroupEditToggle();
   updateMenuState();
 });
 appEventBus.on("settingsChanged", (changedItemCnt) => {
@@ -1492,7 +1609,6 @@ appEventBus.on("settingsChanged", (changedItemCnt) => {
 });
 
 groupUI.render(buildGroupUIState());
-updateGroupEditToggle();
 updateMenuState();
 historyPanelUI = createHistoryPanel(
   {
@@ -1514,13 +1630,12 @@ if (viewer && groupPreview) {
   });
 }
 onWorkerBusyChange((busy) => {
+  workerBusy = busy;
   appEventBus.emit("workerBusyChange", busy);
   if (menuBlocker) {
     menuBlocker.classList.toggle("active", busy);
   }
-  if (groupEditToggle) {
-    groupEditToggle.disabled = busy;
-  }
+  viewerModeControl.setDisabled(isViewerModeControlDisabled(getWorkspaceState()));
   if (busy && getWorkspaceState() === "editingGroup") {
     changeWorkspaceState("normal");
   }
@@ -1529,17 +1644,6 @@ onWorkerBusyChange((busy) => {
 groupAddBtn.addEventListener("click", () => {
   groupController.addGroup();
   if (getWorkspaceState() !== "editingGroup") {
-    changeWorkspaceState("editingGroup");
-  }
-});
-groupEditToggle.addEventListener("click", () => {
-  if (getWorkspaceState() === "editingGroup") {
-    changeWorkspaceState("normal");
-  } else {
-    // if (isWorkerBusy()) {
-    //   log("正在生成展开组模型，请稍后再编辑", "info");
-    //   return;
-    // }
     changeWorkspaceState("editingGroup");
   }
 });

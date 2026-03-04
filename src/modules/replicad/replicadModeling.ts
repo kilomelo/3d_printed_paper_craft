@@ -9,7 +9,8 @@ import {
   pointKey, degToRad,
   pointLineDistance2D, trapezoid, polygons2Outer, solveE, offsetTriangleSafe, OffsetFailReason, calculateIsoscelesRightTriangle,
   buildTriangleByEdgeAndAngles,
-  angleDegFromRadiusAndArcLength
+  angleDegFromRadiusAndArcLength,
+  footOfPerpendicularToSegmentLine
 } from "../mathUtils";
 import {
   makeVerticalPlaneNormalAB,
@@ -150,7 +151,7 @@ const buildSeamTab = (edge: {
   // 先创建挖槽工具
   const tabActualWidth = pointLineDistance2D(tabMiddlePoint, pointA, pointB);
   const grooveDepth = tabActualWidth - tabExtraWidth + tabClipWingExtrWidth;
-  // 舌片宽度因为内心限制达不到挖槽要求则不挖槽
+  // 舌片宽度达不到挖槽要求则不挖槽
   if (grooveDepth < 1e-1) {
     onLog?.(t("log.replicad.tabGroove.tooNarrow"));
     console.warn('[ReplicadModeling] tab width is too narrow due to geometry constraint, skip this edge', edge);
@@ -421,32 +422,65 @@ const buildSolidFromPolygonsWithAngles = async (
         else if (joinType === "interlocking") {
           if (edge.isSeam) {
             const dirAB = [(pointA[0] - pointB[0]) / distAB, (pointA[1] - pointB[1]) / distAB];
+            // 计算可用于放置爪的宽度和位置
+            // 这里复用舌片计算逻辑，根据两端防干涉角度算出三角形->梯形->宽度和位置
+            const tabAngleA = edge.tabAngle[0];
+            const tabAngleB = edge.tabAngle[1];
+            // 这里还需要考虑“窄缝”类型的外轮廓，这种情况需要把爪往外推
+            const pointAKey = pointKey(pointA);
+            const pointBKey = pointKey(pointB);
+            const pointAAngle = outerResult.outerPointAngleMap.get(pointAKey)??360-2*tabAngleA;
+            const pointBAngle = outerResult.outerPointAngleMap.get(pointBKey)??360-2*tabAngleB;
+            const calcA = degToRad(Math.min(tabAngleA, 180-pointAAngle / 2));
+            const calcB = degToRad(Math.min(tabAngleB, 180-pointBAngle / 2));
+            console.log('[ReplicadModeling] edge info for tab', { pointAAngle, pointBAngle }, 'calc result', {calcA, calcB})
+            // console.log('[ReplicadModeling] edge info for tab', { pointAAngle, pointBAngle });
+            const tabPointByAngle = buildTriangleByEdgeAndAngles(
+              pointA, pointB,
+              degToRad(Math.min(tabAngleA, 180-pointAAngle / 2)),
+              degToRad(Math.min(tabAngleB, 180-pointBAngle / 2)));
+            if (!tabPointByAngle) {
+              onLog?.(t("log.replicad.tabPoint.fallback"));
+            }
+            const tabPoint = tabPointByAngle ?? calculateIsoscelesRightTriangle(pointA, pointB)[0];
+            const foot = footOfPerpendicularToSegmentLine(tabPoint, pointA, pointB)??[(pointA[0] + pointB[0]) / 2, (pointA[1] + pointB[1]) / 2];
+            const triHeight = Math.hypot(foot[0] - tabPoint[0], foot[1] - tabPoint[1]);
+            console.log('[ReplicadModeling] triHeight', { triHeight });
             // 爪的伸出角度最大为90度，所以对于大于90度的拼接边，需要补一个基座，并且回退爪的位置
             const clawIntersectionAngle =
-              edge.angle < 90 ? edge.angle : 
-              edge.angle < 180 ? 90 :
-              edge.angle < 225+1e-3 ? 270 - edge.angle :
-              360 - edge.angle;
+            edge.angle < 90 ? edge.angle : 
+            edge.angle < 180 ? 90 :
+            edge.angle < 225+1e-3 ? 270 - edge.angle :
+            360 - edge.angle;
             const baseOffsetAngle = (edge.angle - clawIntersectionAngle) / 2
             // 根据爪的伸出角度，计算爪的实际半径和互锁角度，以平衡各种角度拼接的限位力度
             // 伸出角度越小，半径越大（提供更高的限位力度）
-            const actualClawRadius =
+            const idealClawRadius = 
               clawRadiusAdaptive === "on"
-                ? (clawIntersectionAngle > 90 ? clawTargetRadius : clawTargetRadius * Math.sqrt(90 / clawIntersectionAngle))
-                : clawTargetRadius;
+              ? (clawIntersectionAngle > 90 ? clawTargetRadius : clawTargetRadius * Math.sqrt(90 / clawIntersectionAngle))
+              : clawTargetRadius;
+            const actualClawRadius = triHeight < clawTargetRadius ? clawTargetRadius : Math.min(idealClawRadius, triHeight);
             // 半径越大，互锁角度越小（使安装难度一致）
-            const actualClawInterlockAngle =
-              clawRadiusAdaptive === "on"
-                ? (clawIntersectionAngle > 90 ? clawInterlockingAngle : clawInterlockingAngle / Math.sqrt(90 / clawIntersectionAngle))
-                : clawInterlockingAngle;
-
+            // 另外，如果拼接角度大于225，则爪会紧贴打印板打印，需要减少互锁角度，不然安装会十分困难
+            const actualClawInterlockAngle = (edge.angle > 225 ? 0.8 : 1) * 
+            (clawRadiusAdaptive === "on"
+              ? (clawIntersectionAngle > 90 ? clawInterlockingAngle : clawInterlockingAngle / Math.sqrt(90 / clawIntersectionAngle))
+              : clawInterlockingAngle);
             console.log('[ReplicadModeling] edge.angle', edge.angle, 'baseOffsetAngle', baseOffsetAngle, 'clawIntersectionAngle', clawIntersectionAngle);
+              
+            // 根据爪半径裁剪三角形求出梯形
+            const tabTrapezoid = trapezoid(pointA, pointB, tabPoint, actualClawRadius);
+            const isTriangleTab = tabTrapezoid.length === 3;
+            const tabLength = isTriangleTab ? 0 : Math.hypot(tabTrapezoid[2][0] - tabTrapezoid[3][0], tabTrapezoid[2][1] - tabTrapezoid[3][1]);
+            
+            const distBFoot = Math.hypot(foot[0] - pointB[0], foot[1] - pointB[1]);
+            console.log('[ReplicadModeling] tabLength', tabLength, 'distBFoot', distBFoot, 'distBFoot / distAB', distBFoot / distAB);
             const clawExtrudePlane = transformPlaneLocal(edgePerpendicularPlane, { offset: 
               edge.angle < 225+1e-3 ? [
                 (edge.angle < 180 ? bodyThickness : (bodyThickness + connectionThickness)) * -Math.tan(degToRad(90 - edge.angle / 2)),
-                connectionThickness + bodyThickness, (distAB - clawWidth) / 2
+                connectionThickness + bodyThickness, distBFoot - clawWidth / 2
               ] :
-              [0, 0, (distAB - clawWidth) / 2]
+              [0, 0, distBFoot - clawWidth / 2]
             });
             const clawShapeSketcher = new Sketcher(clawExtrudePlane.clone());
             clawShapeSketcher.movePointerTo([0, 0]);

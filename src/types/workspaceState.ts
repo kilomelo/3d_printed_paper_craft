@@ -1,4 +1,4 @@
-export type WorkspaceState = "mainPage" | "normal" | "editingGroup" | "previewGroupModel" | "loading";
+export type WorkspaceState = "mainPage" | "normal" | "editingGroup" | "editingSeam" | "previewGroupModel" | "loading";
 
 let currentWorkspaceState: WorkspaceState = "mainPage";
 
