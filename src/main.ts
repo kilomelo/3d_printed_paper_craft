@@ -2,9 +2,7 @@
 import "./style.css";
 import packageJson from "../package.json";
 import { inject } from "@vercel/analytics";
-import { Color, Mesh, Matrix4 } from "three";
-import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
-import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { Color } from "three";
 import { type WorkspaceState, getWorkspaceState, setWorkspaceState } from "./types/workspaceState.js";
 import { createLog } from "./modules/log";
 import { createRenderer3D } from "./modules/renderer3d";
@@ -19,21 +17,19 @@ import { createSettingsUI } from "./modules/settingsUI";
 import { getDefaultSettings, SETTINGS_LIMITS } from "./modules/settings";
 import { getModel } from "./modules/model";
 import {
-  buildStepInWorker,
-  buildStlInWorker,
-  buildMeshInWorker,
   onWorkerBusyChange,
 } from "./modules/replicad/replicadWorkerClient";
 import { buildTabClip } from "./modules/replicad/replicadModeling";
 import { startNewProject, getCurrentProject } from "./modules/project";
 import { historyManager } from "./modules/history";
-import type { MetaAction } from "./types/historyTypes.js";
 import { loadRawObject } from "./modules/fileLoader";
-import { createHistoryPanel, formatHistoryAction } from "./modules/historyPanel";
 import type { Snapshot, ProjectState } from "./types/historyTypes.js";
 import { exportGroupsData, getGroupColorCursor } from "./modules/groups";
 import { importSettings, getSettings, resetSettings } from "./modules/settings";
 import { createOperationHints } from "./modules/operationHints";
+import { createPreviewMeshCacheManager } from "./modules/previewMeshCache";
+import { bindHistorySystem } from "./modules/historyBindings";
+import { bindGroupPreviewActions } from "./modules/groupPreviewActions";
 import { createHoldButton } from "./components/createHoldButton";
 import { createSegmentedControl } from "./components/createSegmentedControl";
 import "./components/holdButton.css";
@@ -44,11 +40,7 @@ import { initI18n, t, getCurrentLang, setLanguage, onLanguageChanged } from "./m
 
 const VERSION = packageJson.version ?? "0.0.0.0";
 
-type PreviewMeshCacheItem = { mesh: Mesh, groupId: number, historyUidCreated: number, historyUidAbandoned: number };
-// 预览模型缓存，带有效期 
-const previewMeshCache: PreviewMeshCacheItem[] = [];
-const MAX_PREVIEW_MESH_CACHE_SIZE = 30;
-const stlLoader = new STLLoader();
+const previewMeshCacheManager = createPreviewMeshCacheManager();
 const defaultSettings = getDefaultSettings();
 const limits = SETTINGS_LIMITS;
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -235,7 +227,7 @@ const setFileSaved = (value: boolean) => {
   setProjectNameLabel(getCurrentProject().name ?? "未命名工程");
 };
 
-let historyPanelUI: ReturnType<typeof createHistoryPanel> | null = null;
+let historyPanelUI: ReturnType<typeof bindHistorySystem> | null = null;
 let operationHints: ReturnType<typeof createOperationHints> | null = null;
 let deleteHold: ReturnType<typeof createHoldButton> | null = null;
 const captureProjectState = (): ProjectState => ({
@@ -974,8 +966,7 @@ const clearAppStates = () => {
   changeWorkspaceState("loading");
   document.querySelector(".version-badge-global")?.classList.add("hidden-global");
   document.querySelector(".version-lang-toggle")?.classList.add("hidden-global");
-  previewMeshCache.length = 0;
-  historyAbandonJudgeMethods.clear();
+  previewMeshCacheManager.clear();
   historyManager.reset();
   appEventBus.emit("clearAppStates", undefined);
   operationHints?.resetHighlights();
@@ -1061,52 +1052,6 @@ if (groupDeleteSlot) {
   });
   groupDeleteSlot.appendChild(deleteHold.el);
 }
-
-const getCachedPreviewMesh = (groupId: number): { mesh: Mesh, angle: number } | null => {
-  const currentHistoryUid = historyManager.getCurrentSnapshotUid()?? -1;
-  const cached = previewMeshCache.find((c) => c.groupId === groupId && c.historyUidCreated <= currentHistoryUid && c.historyUidAbandoned > currentHistoryUid);
-  if (!cached) return null;
-  const mesh = cached.mesh.clone();
-  const angle = groupController.getGroupPlaceAngle(groupId) ?? 0;
-  if (Math.abs(angle) > 1e-8) {
-    mesh.applyMatrix4(new Matrix4().makeRotationZ(-angle));
-  }
-  mesh.updateMatrixWorld(true);
-  mesh.geometry?.computeBoundingBox?.();
-  mesh.geometry?.computeBoundingSphere?.();
-  return { mesh, angle };
-};
-
-const addCachedPreviewMesh = (groupId: number, mesh: Mesh) => {
-  const currentHistoryUid = historyManager.getCurrentSnapshotUid()?? -1;
-  previewMeshCache.push({
-    mesh,
-    groupId,
-    historyUidCreated: currentHistoryUid,
-    historyUidAbandoned: Infinity,
-  });
-  if (previewMeshCache.length > MAX_PREVIEW_MESH_CACHE_SIZE) {
-    previewMeshCache.splice(0, previewMeshCache.length - MAX_PREVIEW_MESH_CACHE_SIZE);
-  }
-  // console.log("addCachedPreviewMesh", groupId, currentHistoryUid, previewMeshCache.length);
-};
-
-const abandonCachedPreviewMesh = (judgeMethod: AbandonCachedPreviewMeshJudgeMethod) => {
-  // console.log("abandonCachedPreviewMesh called");
-  abandonHistoryCachedPreviewMesh(judgeMethod, historyManager.getCurrentSnapshotUid()?? -1);
-};
-const abandonHistoryCachedPreviewMesh = (judgeMethod: AbandonCachedPreviewMeshJudgeMethod, historyUid: number) => {
-  // console.log("abandonHistoryCachedPreviewMesh", historyUid);
-  for (const cache of previewMeshCache) {
-    if (cache.historyUidCreated < historyUid && judgeMethod(cache)) {
-      // console.log("  abandoned", cache.groupId, cache.historyUidCreated, cache.historyUidAbandoned);
-      cache.historyUidAbandoned = historyUid;
-    }
-  }
-};
-
-type AbandonCachedPreviewMeshJudgeMethod = (cache: PreviewMeshCacheItem) => boolean;
-const historyAbandonJudgeMethods: Map<number, AbandonCachedPreviewMeshJudgeMethod> = new Map();
 
 const openRenameDialog = () => {
   if (!renameOverlay || !renameModal || !renameInput) return;
@@ -1230,56 +1175,6 @@ appEventBus.on("workspaceStateChanged", ({ current, previous }) => {
   if (historyPanelUI) {
     const panel = document.getElementById("history-panel");
     panel?.classList.toggle("hidden", isPreview);
-  }
-});
-
-appEventBus.on("historyApplySnapshot", ({ current, direction, snapPassed} ) => {
-  // console.log("historyApplySnapshot", current, direction, snapPassed);
-  changeWorkspaceState("normal");
-  applyProjectState(current);
-  // redo时，需要根据时间线索废弃一些缓存
-  if (direction === "redo") {
-    for (const uid of snapPassed) {
-      const judgeMethod = historyAbandonJudgeMethods.get(uid);
-      if (judgeMethod) {
-        abandonHistoryCachedPreviewMesh(judgeMethod, uid);
-      }
-    }
-  }
-  historyManager.markApplied(current.action);
-  const desc = formatHistoryAction(current.action);
-  const minutesAgo = Math.floor((Date.now() - current.action.timestamp) / 60000);
-  log(t("log.history.rewind", { desc, minutes: minutesAgo }), "info", false);
-  setFileSaved(false);
-});
-
-appEventBus.on("historyApplied", (action) => {
-  groupUI.render(buildGroupUIState());
-  updateMenuState();
-  historyPanelUI?.render();
-});
-
-appEventBus.on("historyErased", (erasedHistoryUid) => {
-  // 清理 previewMeshCache 中对应的记录
-  for (let i = previewMeshCache.length - 1; i >= 0; i--) {
-    if (previewMeshCache[i].historyUidAbandoned >= erasedHistoryUid[0]) {
-      // console.log(" reopen cached mesh", previewMeshCache[i].groupId, previewMeshCache[i].historyUidCreated, previewMeshCache[i].historyUidAbandoned);
-      previewMeshCache[i].historyUidAbandoned = Infinity;
-    }
-    // 这里是您的删除条件判断
-    if (previewMeshCache[i].historyUidCreated >= erasedHistoryUid[0]) {
-      // 满足条件，则删除当前元素 (i, 1)
-      // console.log(" delete cached mesh", previewMeshCache[i].groupId, previewMeshCache[i].historyUidCreated, previewMeshCache[i].historyUidAbandoned);
-      previewMeshCache.splice(i, 1);
-    }
-  }
-  // 清理 abandonJudgeMethods 中对应的记录
-  const keysToDelete: number[] = [];
-  for (const [historyUid, judgeMethod] of historyAbandonJudgeMethods) {
-    if (historyUid >= erasedHistoryUid[0]) keysToDelete.push(historyUid);
-  }
-  for (const key of keysToDelete) {
-    historyAbandonJudgeMethods.delete(key);
   }
 });
 
@@ -1544,38 +1439,11 @@ const groupUI = createGroupUI(
   },
 );
 
-appEventBus.on("groupAdded", ({ groupId, groupName }) => {
-  groupUI.render(buildGroupUIState());
-  historyManager.push(captureProjectState(), { name: "groupCreate", timestamp: Date.now(), payload: { name: groupName } });
-  historyPanelUI?.render();
-  setFileSaved(false);
-});
-appEventBus.on("groupRemoved", ({ groupId, groupName, faces }) => {
-  groupUI.render(buildGroupUIState());
-  const pushResult = historyManager.push(captureProjectState(), { name: "groupDelete", timestamp: Date.now(), payload: { name: groupName } });
-  if (pushResult > 0) {
-    const judgeMethod = (cache: PreviewMeshCacheItem) => {
-      return cache.historyUidAbandoned === Infinity;
-    };
-    abandonCachedPreviewMesh(judgeMethod);
-    historyAbandonJudgeMethods.set(pushResult, judgeMethod);
-    historyPanelUI?.render();
-  }
-  setFileSaved(false);
-});
 appEventBus.on("groupCurrentChanged", (groupId: number) => {
   groupUI.render(buildGroupUIState());
 });
 appEventBus.on("groupColorChanged", ({ groupId, color }) => {
   groupUI.render(buildGroupUIState());
-  setFileSaved(false);
-});
-appEventBus.on("groupNameChanged", ({ groupId, name }) => {
-  groupUI.render(buildGroupUIState());
-  const pushResult = historyManager.push(captureProjectState(), { name: "groupRename", timestamp: Date.now(), payload: { name } });
-  if (pushResult > 0) {
-    historyPanelUI?.render();
-  }
   setFileSaved(false);
 });
 appEventBus.on("groupFaceAdded", ({ groupId }) => {
@@ -1586,73 +1454,29 @@ appEventBus.on("groupFaceRemoved", ({ groupId }) => {
   groupUI.render(buildGroupUIState());
   setFileSaved(false);
 });
-appEventBus.on("brushOperationDone", ({ facePaintedCnt }) => {
-  if (facePaintedCnt === 0) return;
-  const currentGroupName = groupController.getGroupName(groupController.getPreviewGroupId()) ?? "???";
-  let pushResult = -1;
-  if (facePaintedCnt > 0) {
-    pushResult = historyManager.push(captureProjectState(), { name: "faceAdd", timestamp: Date.now(), payload: { count: facePaintedCnt, group: currentGroupName } });
-  } else if (facePaintedCnt < 0) {
-    pushResult = historyManager.push(captureProjectState(), { name: "faceRemove", timestamp: Date.now(), payload: { count: -facePaintedCnt, group: currentGroupName } });
-  }
-  // 一个组的拓扑变化可能会影响到其他组拼接边的舌片角度，所以需要全部清理
-  if (pushResult > 0) {
-    const judgeMethod = (cache: PreviewMeshCacheItem) => {
-      return cache.historyUidAbandoned === Infinity;
-    }
-    abandonCachedPreviewMesh(judgeMethod);
-    historyAbandonJudgeMethods.set(pushResult, judgeMethod);
-    historyPanelUI?.render();
-  }
-});
 appEventBus.on("groupPlaceAngleChanged", () => { setFileSaved(false); });
-
-appEventBus.on("groupPlaceAngleRotateDone", ({ deltaAngle }) => {
-  historyManager.push(captureProjectState(), { name: "groupRotate", timestamp: Date.now(), payload: {
-    groupId: groupController.getPreviewGroupId(),
-    angle: deltaAngle,
-    stack: (actionA: MetaAction, actionB: MetaAction) => {
-      if (!actionA.payload || !actionB.payload) return undefined;
-      if (actionA.payload.groupId !== actionB.payload.groupId) return undefined;
-      const angle = (actionA.payload.angle as number) + (actionB.payload.angle as number);
-      return {name: actionB.name, timestamp: actionB.timestamp,
-        payload: { groupId: actionB.payload.groupId, angle, stack: actionA.payload.stack }};
-    }
-  }});
-  historyPanelUI?.render();
-
-});
 appEventBus.on("workspaceStateChanged", ({ previous, current }) =>  {
   if (current !== "loading") groupUI.render(buildGroupUIState());
   updateMenuState();
 });
-appEventBus.on("settingsChanged", (changedItemCnt) => {
-  const pushResult = historyManager.push(captureProjectState(), { name: "settingsChange", timestamp: Date.now(), payload: { count: changedItemCnt } });
-  if (pushResult > 0) {
-    const judgeMethod = (cache: PreviewMeshCacheItem) => {
-      return cache.historyUidAbandoned === Infinity;
-    }
-    abandonCachedPreviewMesh(judgeMethod);
-    historyAbandonJudgeMethods.set(pushResult, judgeMethod);
-    historyPanelUI?.render();
-  }
-  setFileSaved(false);
-});
 
 groupUI.render(buildGroupUIState());
 updateMenuState();
-historyPanelUI = createHistoryPanel(
-  {
-    panel: document.getElementById("history-panel"),
-    list: document.getElementById("history-list"),
-  },
-  () => historyManager.getSnapshots(),
-  () => historyManager.getUndoSteps(),
-  (snapUid) => {
-    historyManager.applySnapshot(snapUid);
-  },
-);
-historyPanelUI.render();
+historyPanelUI = bindHistorySystem({
+  panel: document.getElementById("history-panel"),
+  list: document.getElementById("history-list"),
+  renderGroupUI: () => groupUI.render(buildGroupUIState()),
+  captureProjectState,
+  setFileSaved,
+  previewMeshCacheManager,
+  getPreviewGroupId: () => groupController.getPreviewGroupId(),
+  getPreviewGroupName: () => groupController.getGroupName(groupController.getPreviewGroupId()) ?? "???",
+  changeWorkspaceState,
+  applyProjectState,
+  updateMenuState,
+  log,
+  t,
+});
 if (viewer && groupPreview) {
   operationHints = createOperationHints({
     leftMount: viewer,
@@ -1708,143 +1532,22 @@ document.addEventListener("keydown", (e) => {
     }
   }
 });
-exportGroupStepBtn.addEventListener("click", async () => {
-  exportGroupStepBtn.disabled = true;
-  try {
-    const targetGroupId = groupController.getPreviewGroupId();
-    if (unfold2d.hasGroupIntersection(targetGroupId)) {
-      log(t("log.export.selfIntersect"), "error");
-      return;
-    }
-    const groupName = groupController.getGroupName(targetGroupId) ?? `group-${targetGroupId}`;
-    const projectName = getCurrentProject().name || "未命名工程";
-    const polygonsWithAngles = unfold2d.getGroupPolygonsData(targetGroupId);
-    if (!polygonsWithAngles.length) {
-      log(t("log.export.noFaces"), "error");
-      return;
-    }
-    log(t("log.export.step.start"), "info");
-    const { blob } = await buildStepInWorker(
-      polygonsWithAngles,
-      (progress) => log(progress, "progress"),
-      (msg, tone) => log(msg, (tone as any) ?? "error"),
-    );
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${projectName}-${groupName}.step`;
-    a.style.display = "none";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    log(t("log.export.step.success", { fileName: `${projectName}-${groupName}.step` }), "success");
-  } catch (error) {
-    console.error("展开组 STEP 导出失败", error);
-    log(t("log.export.step.fail"), "error");
-  } finally {
-    exportGroupStepBtn.disabled = false;
-  }
-});
-exportGroupStlBtn.addEventListener("click", async () => {
-  exportGroupStlBtn.disabled = true;
-  const downloadMesh = (groupName: string, mesh: Mesh) => {
-    const projectName = getCurrentProject().name || "未命名工程";
-    const exporter = new STLExporter();
-    const stlResult = exporter.parse(mesh, { binary: true });
-    const stlArray =
-      stlResult instanceof ArrayBuffer
-        ? new Uint8Array(stlResult)
-        : stlResult instanceof DataView
-          ? new Uint8Array(stlResult.buffer)
-          : new Uint8Array();
-    const stlCopy = new Uint8Array(stlArray); // force into ArrayBuffer-backed copy
-    const url = URL.createObjectURL(new Blob([stlCopy.buffer], { type: "model/stl" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${projectName}-${groupName}.stl`;
-    a.style.display = "none";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    log(t("log.export.stl.success", { fileName: `${projectName}-${groupName}.stl` }), "success");
-    };
-  try {
-    const targetGroupId = groupController.getPreviewGroupId();
-    if (unfold2d.hasGroupIntersection(targetGroupId)) {
-      log(t("log.export.selfIntersect"), "error");
-      return;
-    }
-    const groupName = groupController.getGroupName(targetGroupId) ?? `group-${targetGroupId}`;
-    const cached = getCachedPreviewMesh(targetGroupId);
-    if (!cached) {
-      const polygonsWithAngles = unfold2d.getGroupPolygonsData(targetGroupId);
-      if (!polygonsWithAngles.length) {
-        log(t("log.export.noFaces"), "error");
-        return;
-      }
-      log(t("log.export.stl.start"), "info");
-      const { blob } = await buildStlInWorker(
-        polygonsWithAngles,
-        (progress) => log(progress, "progress"),
-        (msg, tone) => log(msg, (tone as any) ?? "error"),
-      );
-      const buffer = await blob.arrayBuffer();
-      const geometry = stlLoader.parse(buffer);
-      snapGeometryPositions(geometry);
-      const mesh = new Mesh(geometry);
-      mesh.name = "Replicad Mesh";
-      addCachedPreviewMesh(targetGroupId, mesh);
-      const cached = getCachedPreviewMesh(targetGroupId);
-      if (cached) downloadMesh(groupName, cached.mesh);
-    } else {
-      log(t("log.export.stl.cached"), "info");
-      downloadMesh(groupName, cached.mesh);
-    }
-  } catch (error) {
-    console.error("展开组 STL 导出失败", error);
-    log(t("log.export.stl.fail"), "error");
-  } finally {
-    exportGroupStlBtn.disabled = false;
-  }
-});
-
-previewGroupModelBtn.addEventListener("click", async () => {
-  previewGroupModelBtn.disabled = true;
-  try {
-    const targetGroupId = groupController.getPreviewGroupId();
-    if (unfold2d.hasGroupIntersection(targetGroupId)) {
-      log(t("log.export.selfIntersect"), "error");
-      return;
-    }
-    const cached = getCachedPreviewMesh(targetGroupId);
-    if (cached) {
-      renderer3d.loadPreviewModel(cached.mesh, cached.angle);
-    } else {
-      const polygonsWithAngles = unfold2d.getGroupPolygonsData(targetGroupId);
-      if (!polygonsWithAngles.length) {
-        log(t("log.export.noFaces"), "error");
-        return;
-      }
-      // log("正在用 Replicad 生成 mesh...", "info");
-      const { mesh } = await buildMeshInWorker(
-        polygonsWithAngles,
-        (progress) => log(progress, "progress"),
-        (msg, tone) => log(msg, (tone as any) ?? "error"),
-      );
-      snapGeometryPositions(mesh.geometry);
-      addCachedPreviewMesh(targetGroupId, mesh);
-      const cached = getCachedPreviewMesh(targetGroupId);
-      if (cached) renderer3d.loadPreviewModel(cached.mesh, cached.angle);
-    }
-    changeWorkspaceState("previewGroupModel");
-  } catch (error) {
-    console.error("Replicad mesh 生成失败", error);
-    log(t("log.replicad.mesh.fail"), "error");
-  } finally {
-    previewGroupModelBtn.disabled = false;
-  }
+bindGroupPreviewActions({
+  exportGroupStepBtn,
+  exportGroupStlBtn,
+  previewGroupModelBtn,
+  getPreviewGroupId: () => groupController.getPreviewGroupId(),
+  getPreviewGroupName: (groupId) => groupController.getGroupName(groupId),
+  getProjectName: () => getCurrentProject().name || "未命名工程",
+  getCurrentHistoryUid: () => historyManager.getCurrentSnapshotUid() ?? -1,
+  getGroupPlaceAngle: (groupId) => groupController.getGroupPlaceAngle(groupId) ?? 0,
+  hasGroupIntersection: (groupId) => unfold2d.hasGroupIntersection(groupId),
+  getGroupPolygonsData: (groupId) => unfold2d.getGroupPolygonsData(groupId),
+  previewMeshCacheManager,
+  loadPreviewModel: (mesh, angle) => renderer3d.loadPreviewModel(mesh, angle),
+  changeWorkspaceState,
+  log,
+  t,
 });
 
 exportTabClipBtn?.addEventListener("click", async () => {
