@@ -1,10 +1,10 @@
 // 拼缝管理器：管理模型中的拼缝线的创建、更新和显示
-import { Vector3, Group } from "three";
+import { Camera, Vector3, Group } from "three";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { type EdgeRecord } from "./model";
 import { appEventBus } from "./eventBus";
-import { createSeamLineMaterial } from "./materials";
+import { applySeamLineColor, createSeamLineMaterial } from "./materials";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 
 export function createSeamManager(
@@ -19,6 +19,24 @@ export function createSeamManager(
   isSeamsVisible: () => boolean,
 ) {
   const seamLines = new Map<number, LineSegments2>();
+  let editingSeamMode = false;
+  let hoveredEdgeId: number | null = null;
+
+  const syncSeamLineAppearance = (edgeId: number) => {
+    const line = seamLines.get(edgeId);
+    const edge = getEdges()[edgeId];
+    if (!line || !edge) return;
+    const material = line.material as LineMaterial;
+    applySeamLineColor(material, {
+      joinType: edge.joinType,
+      editing: editingSeamMode,
+      hovered: hoveredEdgeId === edgeId,
+    });
+  };
+
+  const syncAllSeamLineAppearances = () => {
+    seamLines.forEach((_, edgeId) => syncSeamLineAppearance(edgeId));
+  };
 
   const rebuildFull = () => {
     const edges = getEdges();
@@ -26,6 +44,7 @@ export function createSeamManager(
       const visible = isVisibleSeam(edgeId);
       updateSeamLine(edgeId, edges, visible, isSeamsVisible());
     });
+    syncAllSeamLineAppearances();
   };
 
   const rebuildFullWithSingleGroupVisible = (groupId: number) => {
@@ -34,6 +53,7 @@ export function createSeamManager(
       const visible = isVisibleSeam(edgeId, groupId);
       updateSeamLine(edgeId, edges, visible, isSeamsVisible());
     });
+    syncAllSeamLineAppearances();
   };
 
   function setVisibility(visible: boolean) {
@@ -123,6 +143,7 @@ export function createSeamManager(
     line.computeLineDistances();
     line.visible = visible && isSeam;
     line.userData.isSeam = isSeam;
+    syncSeamLineAppearance(edgeId);
   }
 
   function createSeamLine(edgeId: number) {
@@ -146,10 +167,110 @@ export function createSeamManager(
       material.resolution.set(width, height);
     });
   }
+
+  const setEditingSeamMode = (active: boolean) => {
+    if (editingSeamMode === active) return;
+    editingSeamMode = active;
+    if (!active) {
+      hoveredEdgeId = null;
+    }
+    syncAllSeamLineAppearances();
+  };
+
+  const setHoveredEdge = (edgeId: number | null) => {
+    if (hoveredEdgeId === edgeId) return;
+    const prev = hoveredEdgeId;
+    hoveredEdgeId = edgeId;
+    if (prev !== null) syncSeamLineAppearance(prev);
+    if (edgeId !== null) syncSeamLineAppearance(edgeId);
+  };
+
+  const refreshEdgeAppearance = (edgeId: number) => {
+    syncSeamLineAppearance(edgeId);
+  };
+
+  // 使用现有 seam 线段数据做屏幕空间拾取，不额外构造长条碰撞体。
+  // 原因：
+  // 1. seam 线段本身已经是当前“可见 seam”的唯一来源；
+  // 2. editingSeam 只需要针对当前可见 seam 做 hover/click，屏幕空间最近线段判定足够稳定；
+  // 3. 避免再维护一套碰撞体几何与显示线段的同步。
+  const pickVisibleSeamEdgeAtClientPoint = (
+    clientX: number,
+    clientY: number,
+    camera: Camera,
+    viewportRect: DOMRect,
+    maxDistancePx = 8,
+  ): number | null => {
+    const toScreen = (point: Vector3): { x: number; y: number } | null => {
+      const projected = point.clone().project(camera);
+      if (!Number.isFinite(projected.x) || !Number.isFinite(projected.y) || !Number.isFinite(projected.z)) {
+        return null;
+      }
+      if (projected.z < -1 || projected.z > 1) return null;
+      return {
+        x: viewportRect.left + (projected.x * 0.5 + 0.5) * viewportRect.width,
+        y: viewportRect.top + (-projected.y * 0.5 + 0.5) * viewportRect.height,
+      };
+    };
+    const pointToSegmentDistanceSq = (
+      px: number,
+      py: number,
+      ax: number,
+      ay: number,
+      bx: number,
+      by: number,
+    ): number => {
+      const abx = bx - ax;
+      const aby = by - ay;
+      const apx = px - ax;
+      const apy = py - ay;
+      const abLenSq = abx * abx + aby * aby;
+      if (abLenSq < 1e-8) {
+        const dx = px - ax;
+        const dy = py - ay;
+        return dx * dx + dy * dy;
+      }
+      const t = Math.max(0, Math.min(1, (apx * abx + apy * aby) / abLenSq));
+      const qx = ax + abx * t;
+      const qy = ay + aby * t;
+      const dx = px - qx;
+      const dy = py - qy;
+      return dx * dx + dy * dy;
+    };
+
+    let bestEdgeId: number | null = null;
+    let bestDistanceSq = maxDistancePx * maxDistancePx;
+    seamLines.forEach((line, edgeId) => {
+      if (!line.visible || !line.userData.isSeam) return;
+      const edgePositions = getEdgeWorldPositions(edgeId);
+      if (!edgePositions) return;
+      const [worldA, worldB] = edgePositions;
+      const screenA = toScreen(worldA);
+      const screenB = toScreen(worldB);
+      if (!screenA || !screenB) return;
+      const distSq = pointToSegmentDistanceSq(
+        clientX,
+        clientY,
+        screenA.x,
+        screenA.y,
+        screenB.x,
+        screenB.y,
+      );
+      if (distSq <= bestDistanceSq) {
+        bestDistanceSq = distSq;
+        bestEdgeId = edgeId;
+      }
+    });
+    return bestEdgeId;
+  };
   
   return {
     setVisibility,
     updateSeamResolution,
+    setEditingSeamMode,
+    setHoveredEdge,
+    refreshEdgeAppearance,
+    pickVisibleSeamEdgeAtClientPoint,
     dispose: () => {
       seamLines.forEach((line) => {
         if (line.removeFromParent) line.removeFromParent();

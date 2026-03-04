@@ -283,6 +283,7 @@ textarea {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 
 .loading-overlay {
@@ -375,17 +376,18 @@ textarea {
   overflow: hidden;
 }
 
-#group-edit-toggle {
-  min-width: 90px;
-  margin-right: 10px;
-  justify-content: center;
-}
-#group-edit-toggle:disabled {
+.btn:disabled {
   color: var(--muted);
   border-color: var(--border);
   cursor: not-allowed;
   pointer-events: none;
   background: rgba(255, 255, 255, 0.04);
+}
+.btn.toggle:disabled.active {
+  color: var(--muted);
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: none;
 }
 
 .toolbar-spacer {
@@ -497,6 +499,14 @@ textarea {
   position: absolute;
   inset: 0;
   z-index: 0;
+}
+
+.group-preview-mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 8;
+  pointer-events: auto;
 }
 
 .viewer-mode-slot {
@@ -977,6 +987,11 @@ textarea {
 .color-swatch.overlay-btn:hover {
   transition: border-color 0.2s ease;
   border-color: var(--hoverHighLigt);
+}
+
+#group-color-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 .overlay-visibility.overlay-btn {

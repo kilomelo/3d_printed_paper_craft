@@ -139,24 +139,6 @@ export function createSegmentedControl(opts: SegmentedControlOptions): Segmented
     if (emit) emitChange();
   };
 
-  const moveByOffset = (offset: number) => {
-    const available = enabledItems();
-    if (!available.length) return;
-    const currentIdx = available.findIndex((item) => item.value === currentValue);
-    const safeCurrentIdx = currentIdx >= 0 ? currentIdx : 0;
-    const nextIdx = (safeCurrentIdx + offset + available.length) % available.length;
-    setValue(available[nextIdx].value);
-    focusValue(available[nextIdx].value);
-  };
-
-  const moveToEdge = (edge: "start" | "end") => {
-    const available = enabledItems();
-    if (!available.length) return;
-    const next = edge === "start" ? available[0] : available[available.length - 1];
-    setValue(next.value);
-    focusValue(next.value);
-  };
-
   for (const item of opts.items) {
     if (itemsByValue.has(item.value)) {
       throw new Error(`Duplicated segmented control value: ${item.value}`);
@@ -203,34 +185,6 @@ export function createSegmentedControl(opts: SegmentedControlOptions): Segmented
     button.addEventListener("click", () => {
       if (button.disabled) return;
       setValue(item.value);
-    });
-
-    button.addEventListener("keydown", (event) => {
-      if (button.disabled) return;
-      if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-        event.preventDefault();
-        moveByOffset(1);
-        return;
-      }
-      if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-        event.preventDefault();
-        moveByOffset(-1);
-        return;
-      }
-      if (event.key === "Home") {
-        event.preventDefault();
-        moveToEdge("start");
-        return;
-      }
-      if (event.key === "End") {
-        event.preventDefault();
-        moveToEdge("end");
-        return;
-      }
-      if (event.key === " " || event.key === "Enter") {
-        event.preventDefault();
-        setValue(item.value);
-      }
     });
 
     buttonsByValue.set(item.value, button);

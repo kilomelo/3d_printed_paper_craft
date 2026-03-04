@@ -61,8 +61,9 @@
   "settings.resetDefault.btn": "Reset",
   "settings.scale.label": "Scale",
   "settings.scale.desc": "Overall model scale. If it’s too small, generating the print file may fail.",
-  "settings.joinType.label": "Join Type",
+  "settings.joinType.label": "Default Join Type",
   "settings.joinType.desc": "Connection mode for seam edges. Default {def}.",
+  "settings.joinType.default": "Default",
   "settings.joinType.interlocking": "Interlocking",
   "settings.joinType.clip": "Clip",
   "settings.clawInterlockingAngle.label": "Interlock Angle",
@@ -70,7 +71,7 @@
   "settings.clawTargetRadius.label": "Target Claw Radius",
   "settings.clawTargetRadius.desc": "Desired claw size. Min {min}, max {max}, default {def}, in mm.",
   "settings.clawRadiusAdaptive.label": "Adaptive Claw Radius",
-  "settings.clawRadiusAdaptive.desc": "Adjust claw radius according to seam angle to improve locking strength. Default {def}.",
+  "settings.clawRadiusAdaptive.desc": "Adjust claw radius by seam angle for stronger locking.",
   "settings.clawRadiusAdaptive.off": "OFF",
   "settings.clawRadiusAdaptive.on": "ON",
   "settings.clawWidth.label": "Claw Width",
@@ -154,6 +155,7 @@
   "log.group.removeWillDisconnect": "Removing this face would disconnect its group. Not added to the current group",
   "log.group.noSharedEdge": "This face shares no edge with the current group. Not added",
   "log.group.faceAdded": "Added to {group}",
+  "log.group.seamChanged": "Seam type changed: {previous} -> {current}",
   "log.group.deleteKeepOne": "At least one group must remain. Deletion canceled",
   "log.group.deleted": "Deleted {group}",
   "log.group.created": "Created {group}",
@@ -186,6 +188,6 @@
   "log.replicad.invalid.afterTab": "Solid is not a valid OCCT shape after tab generation",
   "log.replicad.invalid.afterSlope": "Solid is not a valid OCCT shape after applying slope tool",
   "log.replicad.invalid.final": "Final solid is not a valid OCCT shape",
-  "log.replicad.noTriangles": "No unfolded triangles available for modeling"
-
+  "log.replicad.noTriangles": "No unfolded triangles available for modeling",
+  "log.replicad.claw.fail": "Interlock generation failed for one edge; fell back to clip."
 }

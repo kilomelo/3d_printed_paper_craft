@@ -23,7 +23,7 @@ import {
 } from "three";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
-import { getModel, setModel } from "./model";
+import { getModel, setModel, setEdgeJoinType } from "./model";
 import { getSettings } from "./settings";
 import { createScene, fitCameraToObject } from "./scene";
 import { FACE_DEFAULT_COLOR, createPreviewMaterial, createEdgeMaterial, createHoverLineMaterial } from "./materials";
@@ -70,6 +70,7 @@ export function createRenderer3D(
   let vertexKeyToPos = geometryIndex.getVertexKeyToPos();
   let gizmosVisible = true;
   let gizmosVisibleBeforePreview = false;
+  let seamEditModeActive = false;
   
   const { scene, camera, renderer, controls, ambient, dir, modelGroup, previewModelGroup, gizmosGroup } = createScene((getViewport().width), getViewport().height);
   mountRenderer(renderer.domElement);
@@ -83,6 +84,7 @@ export function createRenderer3D(
   const hoverEdgeLine = new LineSegments2(hoverEdgeGeom, hoverEdgeMat);
   hoverEdgeLine.visible = false;
   scene.add(hoverEdgeLine);
+  let hoveredSeamEdgeId: number | null = null;
 
   const interactionController = initInteractionController({
     viewportSizeProvider: getViewport,
@@ -244,6 +246,9 @@ export function createRenderer3D(
 
   let pointerLocked = false;
   let lockedButton: number | null = null;
+  let leftPointerActive = false;
+  let leftRotateTriggeredDuringPointerCycle = false;
+  let pendingSeamToggleEdgeId: number | null = null;
   const yAxisUp = new Vector3(0, 1, 0);
   const offset = new Vector3();
   const spherical = new Spherical();
@@ -255,7 +260,61 @@ export function createRenderer3D(
     if (!isPrimaryButton) return false;
     // 编辑展开组时，若当前 hover 到可刷的面，优先进入刷子逻辑，避免误触发相机控制
     if (getWorkspaceState() === "editingGroup" && interactionController.getHoveredFaceId() !== null) return false;
+    // 编辑拼接边时，若左键正悬停在 seam edge 上，优先进入切换拼接方式逻辑。
+    if (getWorkspaceState() === "editingSeam" && event.button === 0 && hoveredSeamEdgeId !== null) return false;
     return true;
+  };
+  const clearHoveredSeamEdge = () => {
+    hoveredSeamEdgeId = null;
+    seamManager.setHoveredEdge(null);
+    hoverEdgeLine.visible = false;
+  };
+  const updateHoveredSeamEdge = (edgeId: number | null) => {
+    if (edgeId === hoveredSeamEdgeId) return;
+    hoveredSeamEdgeId = edgeId;
+    seamManager.setHoveredEdge(edgeId);
+    if (edgeId === null) {
+      hoverEdgeLine.visible = false;
+      return;
+    }
+    hoverEdgeLine.visible = false;
+  };
+  const updateSeamHoverFromPointer = (event: PointerEvent) => {
+    if (pointerLocked || getWorkspaceState() !== "editingSeam" || getWorkspaceState() === "previewGroupModel") {
+      clearHoveredSeamEdge();
+      return;
+    }
+    const edgeId = seamManager.pickVisibleSeamEdgeAtClientPoint(
+      event.clientX,
+      event.clientY,
+      camera,
+      renderer.domElement.getBoundingClientRect(),
+      10,
+    );
+    updateHoveredSeamEdge(edgeId);
+  };
+  const getJoinTypeLabel = (joinType: "default" | "clip" | "interlocking") => {
+    if (joinType === "default") return t("settings.joinType.default");
+    return t(`settings.joinType.${joinType}`);
+  };
+  const cycleSeamEdgeJoinType = (edgeId: number) => {
+    const edge = edges[edgeId];
+    if (!edge) return;
+    const previous = edge.joinType;
+    const next = previous === "default" ? "clip" : previous === "clip" ? "interlocking" : "default";
+    if (!setEdgeJoinType(edge, next)) return;
+    seamManager.refreshEdgeAppearance(edgeId);
+    appEventBus.emit("userOperation", { side: "left", op: "seam-change", highlightDuration: 500 })
+    log(t("log.group.seamChanged", {
+      previous: getJoinTypeLabel(previous),
+      current: getJoinTypeLabel(next),
+    }));
+    console.log("[SeamEdit] seam edge join type changed", {
+      edgeId,
+      edgeKey: edge.key,
+      previous,
+      current: next,
+    });
   };
   const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
   const orbitRotate = (dTheta: number, dPhi: number) => {
@@ -365,16 +424,28 @@ export function createRenderer3D(
   };
   const onCanvasPointerDown = (event: PointerEvent) => {
     // console.debug("[pointer] down", { id: event.pointerId, button: event.button });
+    if (event.button === 0) {
+      leftPointerActive = true;
+      leftRotateTriggeredDuringPointerCycle = false;
+      pendingSeamToggleEdgeId = getWorkspaceState() === "editingSeam" ? hoveredSeamEdgeId : null;
+      if (getWorkspaceState() === "editingSeam" && pendingSeamToggleEdgeId !== null) {
+        return;
+      }
+    }
     if (!shouldLockPointer(event)) return;
-    lockedButton = event.button;
-    if (lockedButton == 0) {
-      appEventBus.emit("userOperation", { side: "left", op: "view-rotate", highlightDuration: 0 });
-    } else if (lockedButton == 2) {
-      appEventBus.emit("userOperation", { side: "left", op: "view-pan", highlightDuration: 0 });
-    }
-    if (document.pointerLockElement !== el && !isSafari()) {
-      el.requestPointerLock();
-    }
+    const beginPointerLockedInteraction = (button: number) => {
+      lockedButton = button;
+      if (lockedButton == 0) {
+        leftRotateTriggeredDuringPointerCycle = true;
+        appEventBus.emit("userOperation", { side: "left", op: "view-rotate", highlightDuration: 0 });
+      } else if (lockedButton == 2) {
+        appEventBus.emit("userOperation", { side: "left", op: "view-pan", highlightDuration: 0 });
+      }
+      if (document.pointerLockElement !== el && !isSafari()) {
+        el.requestPointerLock();
+      }
+    };
+    beginPointerLockedInteraction(event.button);
   };
   const exitPointerLockIfNeeded = () => {
     if (document.pointerLockElement === el) {
@@ -382,6 +453,15 @@ export function createRenderer3D(
     }
   };
   const onWindowPointerUp = (event: PointerEvent) => {
+    if (
+      event.button === 0 &&
+      leftPointerActive &&
+      pendingSeamToggleEdgeId !== null &&
+      !leftRotateTriggeredDuringPointerCycle &&
+      getWorkspaceState() === "editingSeam"
+    ) {
+      cycleSeamEdgeJoinType(pendingSeamToggleEdgeId);
+    }
     exitPointerLockIfNeeded();
     if (lockedButton == 0) {
       appEventBus.emit("userOperationDone", { side: "left", op: "view-rotate" });
@@ -389,6 +469,11 @@ export function createRenderer3D(
       appEventBus.emit("userOperationDone", { side: "left", op: "view-pan" });
     }
     lockedButton = null;
+    if (event.button === 0) {
+      leftPointerActive = false;
+      leftRotateTriggeredDuringPointerCycle = false;
+      pendingSeamToggleEdgeId = null;
+    }
   };
   const onPointerLockChange = () => {
     pointerLocked = document.pointerLockElement === el;
@@ -397,10 +482,27 @@ export function createRenderer3D(
     }
     if (!pointerLocked) {
       lockedButton = null;
+      leftRotateTriggeredDuringPointerCycle = false;
       interactionController?.forceHoverCheck();
     }
   };
   const onWindowPointerMove = (event: PointerEvent) => {
+    if (
+      !pointerLocked &&
+      leftPointerActive &&
+      pendingSeamToggleEdgeId !== null &&
+      getWorkspaceState() === "editingSeam" &&
+      (event.buttons & 1) === 1
+    ) {
+      pendingSeamToggleEdgeId = null;
+      lockedButton = 0;
+      leftRotateTriggeredDuringPointerCycle = true;
+      appEventBus.emit("userOperation", { side: "left", op: "view-rotate", highlightDuration: 0 });
+      if (document.pointerLockElement !== el && !isSafari()) {
+        el.requestPointerLock();
+      }
+      return;
+    }
     if (!pointerLocked) return;
     const anglePerPixel = (2 * Math.PI / el.clientHeight) * controls.rotateSpeed;
     if (lockedButton === 0) {
@@ -413,6 +515,8 @@ export function createRenderer3D(
     }
   };
   renderer.domElement.addEventListener("pointerdown", onCanvasPointerDown);
+  renderer.domElement.addEventListener("pointermove", updateSeamHoverFromPointer);
+  renderer.domElement.addEventListener("pointerleave", clearHoveredSeamEdge);
   renderer.domElement.addEventListener("pointerup", onWindowPointerUp);
   renderer.domElement.addEventListener("pointercancel", onWindowPointerUp);
   renderer.domElement.addEventListener("pointermove", onWindowPointerMove);
@@ -438,9 +542,11 @@ export function createRenderer3D(
     edges = geometryIndex.getEdgesArray();
     edgeKeyToId = geometryIndex.getEdgeKeyToId();
     vertexKeyToPos = geometryIndex.getVertexKeyToPos();
+    applySeamEditVisualMode(false);
     seamManager?.dispose();
     specialEdgeManager?.dispose();
     interactionController.hideHoverLines();
+    clearHoveredSeamEdge();
   }
 
   function applyFaceVisibility() {
@@ -455,6 +561,35 @@ export function createRenderer3D(
       }
     });
   }
+  const repaintFacesForCurrentMode = () => {
+    if (!seamEditModeActive) {
+      faceColorService.repaintAllFaces();
+      return;
+    }
+    faceIndexMap.forEach((mapping, faceId) => {
+      const gid = groupApi.getFaceGroupMap().get(faceId) ?? null;
+      const baseColor = gid !== null ? (groupApi.getGroupColor(gid) ?? FACE_DEFAULT_COLOR) : FACE_DEFAULT_COLOR;
+      const visible = gid !== null ? groupApi.getGroupVisibility(gid) : true;
+      const faded = baseColor.clone();
+      const hsl = { h: 0, s: 0, l: 0 };
+      faded.getHSL(hsl);
+      faded.setHSL(hsl.h, hsl.s * 0.8, hsl.l * 1.5);
+      faceColorService.setFaceColor(mapping.mesh, mapping.localFace, faded, visible ? 1 : 0);
+    });
+  };
+  const applySeamEditVisualMode = (active: boolean) => {
+    seamEditModeActive = active;
+    seamManager.setEditingSeamMode(active);
+    specialEdgeManager.setForceHidden(active);
+    if (!active) {
+      specialEdgeManager.updateVisibility(
+        () => edges,
+        groupApi.getFaceGroupMap,
+        groupApi.getGroupVisibility,
+      );
+    }
+    repaintFacesForCurrentMode();
+  };
   function resizeRenderer3D() {
     const { width, height } = getViewport();
     const w = Math.max(1, width);
@@ -521,6 +656,11 @@ export function createRenderer3D(
     return edgesVisible;
   };
   const isEdgesEnabled = () => edgesVisible;
+  const setEdgesEnabled = (enabled: boolean) => {
+    edgesVisible = enabled;
+    applyEdgeVisibility();
+    return edgesVisible;
+  };
 
   const toggleSeams = () => {
     seamsVisible = !seamsVisible;
@@ -528,6 +668,11 @@ export function createRenderer3D(
     return seamsVisible;
   };
   const isSeamsEnabled = () => seamsVisible;
+  const setSeamsEnabled = (enabled: boolean) => {
+    seamsVisible = enabled;
+    setSeamsVisibility(seamsVisible);
+    return seamsVisible;
+  };
 
   const toggleFaces = () => {
     facesVisible = !facesVisible;
@@ -585,6 +730,13 @@ export function createRenderer3D(
   }
 
   appEventBus.on("workspaceStateChanged", ({previous, current}) => {
+    applySeamEditVisualMode(current === "editingSeam");
+    if (current !== "editingSeam") {
+      clearHoveredSeamEdge();
+    }
+    if (current === "editingSeam") {
+      hoverEdgeLine.visible = false;
+    }
     if (current === "normal" && previous === "previewGroupModel") {
       gizmosVisible = gizmosVisibleBeforePreview;
       gizmosGroup.visible = gizmosVisible;
@@ -610,7 +762,26 @@ export function createRenderer3D(
   });
   appEventBus.on("settingsChanged", updateBBox);
   appEventBus.on("historyApplied", updateBBox);
+  appEventBus.on("groupColorChanged", () => {
+    if (seamEditModeActive) repaintFacesForCurrentMode();
+  });
+  appEventBus.on("groupVisibilityChanged", () => {
+    if (seamEditModeActive) repaintFacesForCurrentMode();
+  });
+  appEventBus.on("groupFaceAdded", () => {
+    if (seamEditModeActive) repaintFacesForCurrentMode();
+  });
+  appEventBus.on("groupFaceRemoved", () => {
+    if (seamEditModeActive) repaintFacesForCurrentMode();
+  });
+  appEventBus.on("groupRemoved", () => {
+    if (seamEditModeActive) repaintFacesForCurrentMode();
+  });
   appEventBus.on("edgeHover2D", ({ p1, p2 }) => {
+    if (getWorkspaceState() === "editingSeam") {
+      hoverEdgeLine.visible = false;
+      return;
+    }
     (hoverEdgeLine.geometry as LineSegmentsGeometry).setPositions(
       new Float32Array([p1[0], p1[1], p1[2], p2[0], p2[1], p2[2]]),
     );
@@ -759,8 +930,10 @@ export function createRenderer3D(
     toggleLight,
     isLightEnabled,
     toggleEdges,
+    setEdgesEnabled,
     isEdgesEnabled,
     toggleSeams,
+    setSeamsEnabled,
     isSeamsEnabled,
     toggleFaces,
     isFacesEnabled,
@@ -771,6 +944,8 @@ export function createRenderer3D(
     dispose: () => {
       interactionController?.dispose();
       el.removeEventListener("pointerdown", onCanvasPointerDown);
+      el.removeEventListener("pointermove", updateSeamHoverFromPointer);
+      el.removeEventListener("pointerleave", clearHoveredSeamEdge);
       window.removeEventListener("pointerup", onWindowPointerUp);
       window.removeEventListener("pointercancel", onWindowPointerUp);
       window.removeEventListener("pointermove", onWindowPointerMove);

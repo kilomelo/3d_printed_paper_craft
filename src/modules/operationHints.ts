@@ -50,11 +50,7 @@ const hintTable: Record<WorkspaceState, HintConfig> = {
       { key: "view-zoom", i18n: "op.view.zoom" },
       { key: "view-pan", i18n: "op.view.pan" },
     ],
-    right: [
-      { key: "view-zoom", i18n: "op.view.zoom" },
-      { key: "view-pan", i18n: "op.view.pan" },
-      { key: "rename-group", i18n: "op.group.rename" },
-    ],
+    right: [],
   },
   previewGroupModel: {
     left: [

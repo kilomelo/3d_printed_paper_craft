@@ -1,6 +1,7 @@
 // 材质工厂：提供前/背面、线框、hover 等 Three.js 材质实例生成，集中管理颜色与透明度。
 import * as THREE from "three";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
+import type { EdgeJoinType } from "../types/geometryTypes";
 
 export const FACE_DEFAULT_COLOR = new THREE.Color(0xffffff);
 const BACK_DEFAULT_COLOR = new THREE.Color(0x666666);
@@ -10,6 +11,11 @@ const SEAMEDGE_DEFAULT_COLOR = new THREE.Color(0x222222);
 const UNFOLD_COPLANAR_EDGE_COLOR = new THREE.Color(0xffffff);
 const HOVERLINE_DEFAULT_COLOR = new THREE.Color(0xffa500);
 const SEAM_CONNECT_LINE_COLOR = new THREE.Color(0x00ff88);
+const SEAM_LINE_EDIT_COLORS: Record<EdgeJoinType, { idle: number; hover: number }> = {
+  default: { idle: 0x222222, hover: 0xeeeeee },
+  clip: { idle: 0x55a4fb, hover: 0x8ac0fc },
+  interlocking: { idle: 0x3be95d, hover: 0x76e78c },
+};
 
 export function createFrontMaterial(baseColor?: THREE.Color) {
   return new THREE.MeshStandardMaterial({
@@ -143,6 +149,20 @@ export function createSeamLineMaterial(resolution: { width: number; height: numb
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -2,
   });
+}
+
+// seam 线在不同编辑态下只改颜色，不重建几何。
+// normal 模式统一使用默认 seam 颜色；editingSeam 模式按边的 joinType + hover 状态切换颜色。
+export function applySeamLineColor(
+  material: LineMaterial,
+  options: { joinType: EdgeJoinType; editing: boolean; hovered: boolean },
+) {
+  const { joinType, editing, hovered } = options;
+  const nextColor = editing
+    ? (hovered ? SEAM_LINE_EDIT_COLORS[joinType].hover : SEAM_LINE_EDIT_COLORS[joinType].idle)
+    : SEAMEDGE_DEFAULT_COLOR.getHex();
+  material.color.setHex(nextColor);
+  material.needsUpdate = true;
 }
 
 // 特殊边材质

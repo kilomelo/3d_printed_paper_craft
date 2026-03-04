@@ -22,6 +22,7 @@ import {
   arcByCenterStartAngleSafe,
 } from "./replicadUtils";
 import { t, initI18n, setLanguage } from "../i18n";
+import { log } from "three/examples/jsm/nodes/Nodes.js";
 
 let i18nReady: Promise<void> | null = null;
 let desiredLang: string | null = null;
@@ -75,174 +76,6 @@ const tabClipGemometry = () => {
   return { tabClipKeelThickness, tabClipWingThickness, tabClipWingLength, tabClipMinSpacing, tabClipMaxSpacing, clipGap };
 };
 
-// 构建卡口类型的拼接边舌片
-const buildSeamTab = (edge: {
-    isOuter: boolean;
-    angle: number;
-    isSeam?: boolean;
-    tabAngle: number[];
-    joinSide?: "mp" | "fp";
-    stableOrder?: "ab" | "ba";
-  }, pointA: Point2D, pointB: Point2D, distAB: number,
-  connectionThickness: number, bodyThickness: number, layerHeight: number, tabWidth: number, tabThickness: number,
-  tabClipKeelThickness: number, tabClipWingThickness: number, tabClipWingLength: number, tabClipMinSpacing: number, tabClipMaxSpacing: number,
-  tabChamferSize: number, tabExtendMargin: number, cutToolMargin: number, minDistance: number,
-  outerPointAngleMap: Map<string, number>,
-  edgePerpendicularPlane: Plane, adjEdgeCutToolL: Shape3D, adjEdgeCutToolR: Shape3D,
-  onLog?: (msg: string) => void
-): Shape3D | null => {
-  const tabClipGrooveClearance = 0.1;
-  // 设置的舌片宽度过小时不创建舌片
-  if (!edge.isSeam || tabWidth < bodyThickness + connectionThickness) return null;
-  // 第三步：生成舌片
-  const tabAngleA = edge.tabAngle[0];
-  const tabAngleB = edge.tabAngle[1];
-  const tabPointByAngle = buildTriangleByEdgeAndAngles(pointA, pointB, degToRad(tabAngleA), degToRad(tabAngleB));
-  if (!tabPointByAngle) {
-    onLog?.(t("log.replicad.tabPoint.fallback"));
-  }
-  const tabPoint = tabPointByAngle ?? calculateIsoscelesRightTriangle(pointA, pointB)[0];
-  const distAP = Math.hypot(tabPoint[0] - pointA[0], tabPoint[1] - pointA[1]);
-  const distBP = Math.hypot(tabPoint[0] - pointB[0], tabPoint[1] - pointB[1]);
-
-  // 根据舌片宽度裁剪舌片三角形求出梯形
-  // 首先求得实际舌片宽度，因为实际宽度需要根据二面角做调整，以保证连接槽的高度一致
-  const tabAngle = 180 - edge.angle / 2;
-  const tabClipWingExtrWidth = tabAngle < 90 ? 0 : tabClipWingThickness * Math.tan(degToRad(tabAngle - 90));
-  const tabExtraWidth = tabAngle < 90 ? (bodyThickness + connectionThickness - layerHeight) * Math.sin(degToRad(tabAngle))
-    : (bodyThickness + connectionThickness - layerHeight) / Math.cos(degToRad(tabAngle - 90))
-    + tabThickness * Math.tan(degToRad(tabAngle - 90)) + tabClipWingExtrWidth;
-  const tabTrapezoid = trapezoid(pointA, pointB, tabPoint, tabWidth + tabExtraWidth);
-  const isTriangleTab = tabTrapezoid.length === 3;
-  const tabLength = isTriangleTab ? 0 : Math.hypot(tabTrapezoid[2][0] - tabTrapezoid[3][0], tabTrapezoid[2][1] - tabTrapezoid[3][1]);
-  const tabClipNum = 
-    isTriangleTab || tabLength < 4 * tabClipMinSpacing  ? 1
-    : tabLength < 7 * tabClipMinSpacing ? 2 
-    : tabLength < 10 * tabClipMinSpacing ? 3
-    : tabLength < 14 * tabClipMinSpacing ? 4
-    : Math.max(5, Math.floor(tabLength / tabClipMaxSpacing));
-  // console.log(`[ReplicadModeling] tab clip num for edge`, { tabLength, tabClipNum });
-  const tabClipSpacing = tabClipNum === 1 ? 0 : (tabLength - tabClipWingLength * 3) / (tabClipNum - 1);
-  const tabMiddlePoint = isTriangleTab ? tabPoint : [
-    (tabTrapezoid[2][0] + tabTrapezoid[3][0]) / 2,
-    (tabTrapezoid[2][1] + tabTrapezoid[3][1]) / 2,
-  ] as Point2D;
-
-  // 向下延伸一点点以确保舌片和主体连接良好
-  if (edge.angle > 180) {
-    const pointA_Incenter_extend: Point2D = [
-      tabPoint[0] + (pointA[0] - tabPoint[0]) * (tabExtendMargin + distAP) / distAP,
-      tabPoint[1] + (pointA[1] - tabPoint[1]) * (tabExtendMargin + distAP) / distAP];
-    const pointB_Incenter_extend: Point2D = [
-      tabPoint[0] + (pointB[0] - tabPoint[0]) * (tabExtendMargin + distBP) / distBP,
-      tabPoint[1] + (pointB[1] - tabPoint[1]) * (tabExtendMargin + distBP) / distBP];
-    tabTrapezoid[0] = pointA_Incenter_extend;
-    tabTrapezoid[1] = pointB_Incenter_extend;
-  }
-  // 舌片从layerHeight处开始挤出，因为需要确保超小角度时的首层面积符合三角形面积
-  const tabSolidBase = extrudeFromContourPoints(tabTrapezoid, "XY", layerHeight, tabThickness);
-  if (!tabSolidBase) {
-    onLog?.(t("log.replicad.tabSketch.fail"));
-    console.warn('[ReplicadModeling] failed to create tab sketch for edge, skip this edge', edge);
-    return null;
-  }
-  let tabSolid = tabSolidBase;
-  // 为舌片卡子切割连接槽
-  // 先创建挖槽工具
-  const tabActualWidth = pointLineDistance2D(tabMiddlePoint, pointA, pointB);
-  const grooveDepth = tabActualWidth - tabExtraWidth + tabClipWingExtrWidth;
-  // 舌片宽度达不到挖槽要求则不挖槽
-  if (grooveDepth < 1e-1) {
-    onLog?.(t("log.replicad.tabGroove.tooNarrow"));
-    console.warn('[ReplicadModeling] tab width is too narrow due to geometry constraint, skip this edge', edge);
-  }
-  else {
-    const tabClipGroovingPlane = new Plane(tabMiddlePoint, [(pointA[0]-pointB[0]) / distAB, (pointA[1]-pointB[1]) / distAB, 0], [0, 0, 1]);
-    const tabClipGroovingSketch = new Sketcher(tabClipGroovingPlane)
-      .movePointerTo([-1.5 * tabClipKeelThickness / 2 - tabClipGrooveClearance, 0])
-      .lineTo([-tabClipKeelThickness / 2 - tabClipGrooveClearance, -1.5 * tabClipKeelThickness / 2])
-      .lineTo([-tabClipKeelThickness / 2 - tabClipGrooveClearance, -grooveDepth + 1e-4])
-      .lineTo([tabClipKeelThickness / 2 + tabClipGrooveClearance, -grooveDepth + 1e-4])
-      .lineTo([tabClipKeelThickness / 2 + tabClipGrooveClearance, -1.5 * tabClipKeelThickness / 2])
-      .lineTo([1.5 * tabClipKeelThickness / 2 + tabClipGrooveClearance, 0])
-      .close();
-    if (!tabClipGroovingSketch) {
-      onLog?.(t("log.replicad.tabGrooveSketch.fail"));
-      console.warn('[ReplicadModeling] failed to create tab clip grooving sketch for edge, skip this edge', edge);
-    }
-    else {
-      if (grooveDepth < tabWidth + tabClipWingExtrWidth - 1e-6) {
-        onLog?.(t("log.replicad.tabGroove.mayLoose"));
-      }
-      const tabClipGroovingTool = tabClipGroovingSketch.extrude(tabThickness + 2 * layerHeight);
-      const dirAB = [(pointA[0] - pointB[0]) / distAB, (pointA[1] - pointB[1]) / distAB];
-      for (let clipIdx = 0; clipIdx < tabClipNum; clipIdx++) {
-        const distance2MiddlePoint = (-0.5 * tabClipNum +clipIdx + 0.5) * tabClipSpacing;
-        tabSolid = tabSolid.cut(tabClipGroovingTool.clone().translate(dirAB[0] * distance2MiddlePoint, dirAB[1] * distance2MiddlePoint, 0)).simplify();
-      }
-      tabClipGroovingTool.delete();
-    }
-  }
-
-  // 舌片外侧上沿做一个倒角方便卡子安装
-  const tabChamferTool = extrudeFromContourPoints([
-    [tabActualWidth + 1e-4, tabThickness + layerHeight - tabChamferSize],
-    [tabActualWidth + 1e-4, tabThickness + layerHeight + 1e-4],
-    [tabActualWidth - tabChamferSize * Math.tan(Math.PI / 4), tabThickness + layerHeight + 1e-4],
-  ], edgePerpendicularPlane, -1, distAB);
-
-  // 舌片两端也做倒角防止从一个顶点触发的拼接边舌片之间的干涉
-  const tabEndChamferSolid = extrudeFromContourPoints([
-    [ 0, tabThickness + layerHeight - tabChamferSize],
-    [ 0, tabThickness + layerHeight + 1e-1],
-    [ -tabThickness, tabThickness + layerHeight + 1e-1],
-  ], edgePerpendicularPlane, -tabExtendMargin, distAB + 2 * tabExtendMargin);
-  if (!tabChamferTool || !tabEndChamferSolid) {
-    onLog?.(t("log.replicad.tabChamfer.fail"));
-    console.warn('[ReplicadModeling] failed to create tab chamfer sketch for edge, skip chamfer', edge);
-  } else {
-    tabSolid = tabSolid.cut(tabChamferTool).simplify();
-    tabSolid = tabSolid.cut(tabEndChamferSolid.clone().rotate(-tabAngleA, [pointA[0], pointA[1], 0], [0,0,1])).simplify();
-    tabSolid = tabSolid.cut(tabEndChamferSolid.rotate(tabAngleB, [pointB[0], pointB[1], 0], [0,0,1])).simplify();
-  }
-  tabSolid = tabSolid.rotate(tabAngle, [pointA[0], pointA[1], layerHeight], [pointA[0] - pointB[0], pointA[1] - pointB[1], 0]);
-
-  const tabCutTools: Shape3D[] = [adjEdgeCutToolL.clone(), adjEdgeCutToolR.clone()];
-  // 向外翻的舌片可能需要根据外轮廓顶点角度进行相邻外轮廓舌片防干涉的裁剪
-  if (edge.angle > 180) {
-    const pointAKey = pointKey(pointA);
-    const pointBKey = pointKey(pointB);
-    const pointAAngle = outerPointAngleMap.get(pointAKey);
-    const pointBAngle = outerPointAngleMap.get(pointBKey);
-    // console.log('[ReplicadModeling] edge info for tab', { pointAAngle, pointBAngle });
-    // 只有拼接边与拼接边相邻，且拼接边与拼接边相邻的顶点角度小于180度（阴角）时才需要进行防干涉
-    if (pointAAngle && pointAAngle > 180) {
-      // console.log('[ReplicadModeling] edge info for tab anti-interference', { pointAAngle });
-      const tabAntiInterferenceTool = extrudeFromContourPoints(
-        [[0,-cutToolMargin], [0,cutToolMargin], [cutToolMargin,cutToolMargin], [cutToolMargin,-cutToolMargin]],
-        edgePerpendicularPlane.clone(), distAB + cutToolMargin, -(minDistance / 2 + cutToolMargin));
-      if (tabAntiInterferenceTool) {
-        tabCutTools.push(tabAntiInterferenceTool
-          .rotate((pointAAngle - 180) / 2, [pointA[0], pointA[1], 0], [0,0,1]));
-      }
-    }
-    if (pointBAngle && pointBAngle > 180) {
-      // console.log('[ReplicadModeling] edge info for tab anti-interference', { pointBAngle });
-      const tabAntiInterferenceTool = extrudeFromContourPoints(
-        [[0,-cutToolMargin], [0,cutToolMargin], [cutToolMargin,cutToolMargin], [cutToolMargin,-cutToolMargin]],
-        edgePerpendicularPlane.clone(), -cutToolMargin, minDistance / 2 + cutToolMargin);
-      if (tabAntiInterferenceTool) {
-        tabCutTools.push(tabAntiInterferenceTool
-          .rotate(-(pointBAngle - 180) / 2, [pointB[0], pointB[1], 0], [0,0,1]));
-      }
-    }
-  }
-  tabCutTools.forEach((tool) => {
-    if (tool) tabSolid = tabSolid.cut(tool).simplify();
-  });
-
-  return tabSolid;
-};
 // 实际实行参数化建模的方法【核心逻辑】
 // 这里已经从“按三角形输入”改为“按多边形输入”。
 // 多边形的边按 points[i] -> points[(i + 1) % n] 解释。
@@ -409,18 +242,162 @@ const buildSolidFromPolygonsWithAngles = async (
           }
           slopeTools.push(slopeTool);
         }
-        if (joinType === "clip") {
-          const seamTabSolid = buildSeamTab(edge, pointA, pointB, distAB,
-            connectionThickness, bodyThickness, layerHeight, tabWidth, tabThickness,
-            tabClipKeelThickness, tabClipWingThickness, tabClipWingLength, tabClipMinSpacing, tabClipMaxSpacing,
-            tabChamferSize, tabExtendMargin, cutToolMargin, minDistance,
-            outerResult.outerPointAngleMap, edgePerpendicularPlane, adjEdgeCutToolL, adjEdgeCutToolR,
-            onLog,
-          );
-          if (seamTabSolid) connectionSolid = connectionSolid.fuse(seamTabSolid).simplify();
-        }
-        else if (joinType === "interlocking") {
-          if (edge.isSeam) {
+        if (edge.isSeam) {
+          // 构建卡扣类型的拼接边舌片
+          const buildSeamTab = (): Shape3D | null => {
+            const tabClipGrooveClearance = 0.1;
+            // 设置的舌片宽度过小时不创建舌片
+            if (tabWidth < bodyThickness + connectionThickness) return null;
+            // 第三步：生成舌片
+            const tabAngleA = edge.tabAngle[0];
+            const tabAngleB = edge.tabAngle[1];
+            const tabPointByAngle = buildTriangleByEdgeAndAngles(pointA, pointB, degToRad(tabAngleA), degToRad(tabAngleB));
+            if (!tabPointByAngle) {
+              onLog?.(t("log.replicad.tabPoint.fallback"));
+            }
+            const tabPoint = tabPointByAngle ?? calculateIsoscelesRightTriangle(pointA, pointB)[0];
+            const distAP = Math.hypot(tabPoint[0] - pointA[0], tabPoint[1] - pointA[1]);
+            const distBP = Math.hypot(tabPoint[0] - pointB[0], tabPoint[1] - pointB[1]);
+
+            // 根据舌片宽度裁剪舌片三角形求出梯形
+            // 首先求得实际舌片宽度，因为实际宽度需要根据二面角做调整，以保证连接槽的高度一致
+            const tabAngle = 180 - edge.angle / 2;
+            const tabClipWingExtrWidth = tabAngle < 90 ? 0 : tabClipWingThickness * Math.tan(degToRad(tabAngle - 90));
+            const tabExtraWidth = tabAngle < 90 ? (bodyThickness + connectionThickness - layerHeight) * Math.sin(degToRad(tabAngle))
+              : (bodyThickness + connectionThickness - layerHeight) / Math.cos(degToRad(tabAngle - 90))
+              + tabThickness * Math.tan(degToRad(tabAngle - 90)) + tabClipWingExtrWidth;
+            const tabTrapezoid = trapezoid(pointA, pointB, tabPoint, tabWidth + tabExtraWidth);
+            const isTriangleTab = tabTrapezoid.length === 3;
+            const tabLength = isTriangleTab ? 0 : Math.hypot(tabTrapezoid[2][0] - tabTrapezoid[3][0], tabTrapezoid[2][1] - tabTrapezoid[3][1]);
+            const tabClipNum = 
+              isTriangleTab || tabLength < 4 * tabClipMinSpacing  ? 1
+              : tabLength < 7 * tabClipMinSpacing ? 2 
+              : tabLength < 10 * tabClipMinSpacing ? 3
+              : tabLength < 14 * tabClipMinSpacing ? 4
+              : Math.max(5, Math.floor(tabLength / tabClipMaxSpacing));
+            // console.log(`[ReplicadModeling] tab clip num for edge`, { tabLength, tabClipNum });
+            const tabClipSpacing = tabClipNum === 1 ? 0 : (tabLength - tabClipWingLength * 3) / (tabClipNum - 1);
+            const tabMiddlePoint = isTriangleTab ? tabPoint : [
+              (tabTrapezoid[2][0] + tabTrapezoid[3][0]) / 2,
+              (tabTrapezoid[2][1] + tabTrapezoid[3][1]) / 2,
+            ] as Point2D;
+
+            // 向下延伸一点点以确保舌片和主体连接良好
+            if (edge.angle > 180) {
+              const pointA_Incenter_extend: Point2D = [
+                tabPoint[0] + (pointA[0] - tabPoint[0]) * (tabExtendMargin + distAP) / distAP,
+                tabPoint[1] + (pointA[1] - tabPoint[1]) * (tabExtendMargin + distAP) / distAP];
+              const pointB_Incenter_extend: Point2D = [
+                tabPoint[0] + (pointB[0] - tabPoint[0]) * (tabExtendMargin + distBP) / distBP,
+                tabPoint[1] + (pointB[1] - tabPoint[1]) * (tabExtendMargin + distBP) / distBP];
+              tabTrapezoid[0] = pointA_Incenter_extend;
+              tabTrapezoid[1] = pointB_Incenter_extend;
+            }
+            // 舌片从layerHeight处开始挤出，因为需要确保超小角度时的首层面积符合三角形面积
+            const tabSolidBase = extrudeFromContourPoints(tabTrapezoid, "XY", layerHeight, tabThickness);
+            if (!tabSolidBase) {
+              onLog?.(t("log.replicad.tabSketch.fail"));
+              console.warn('[ReplicadModeling] failed to create tab sketch for edge, skip this edge', edge);
+              return null;
+            }
+            let tabSolid = tabSolidBase;
+            // 为舌片卡子切割连接槽
+            // 先创建挖槽工具
+            const tabActualWidth = pointLineDistance2D(tabMiddlePoint, pointA, pointB);
+            const grooveDepth = tabActualWidth - tabExtraWidth + tabClipWingExtrWidth;
+            // 舌片宽度达不到挖槽要求则不挖槽
+            if (grooveDepth < 1e-1) {
+              onLog?.(t("log.replicad.tabGroove.tooNarrow"));
+              console.warn('[ReplicadModeling] tab width is too narrow due to geometry constraint, skip this edge', edge);
+            }
+            else {
+              const tabClipGroovingPlane = new Plane(tabMiddlePoint, [(pointA[0]-pointB[0]) / distAB, (pointA[1]-pointB[1]) / distAB, 0], [0, 0, 1]);
+              const tabClipGroovingSketch = new Sketcher(tabClipGroovingPlane)
+                .movePointerTo([-1.5 * tabClipKeelThickness / 2 - tabClipGrooveClearance, 0])
+                .lineTo([-tabClipKeelThickness / 2 - tabClipGrooveClearance, -1.5 * tabClipKeelThickness / 2])
+                .lineTo([-tabClipKeelThickness / 2 - tabClipGrooveClearance, -grooveDepth + 1e-4])
+                .lineTo([tabClipKeelThickness / 2 + tabClipGrooveClearance, -grooveDepth + 1e-4])
+                .lineTo([tabClipKeelThickness / 2 + tabClipGrooveClearance, -1.5 * tabClipKeelThickness / 2])
+                .lineTo([1.5 * tabClipKeelThickness / 2 + tabClipGrooveClearance, 0])
+                .close();
+              if (!tabClipGroovingSketch) {
+                onLog?.(t("log.replicad.tabGrooveSketch.fail"));
+                console.warn('[ReplicadModeling] failed to create tab clip grooving sketch for edge, skip this edge', edge);
+              }
+              else {
+                if (grooveDepth < tabWidth + tabClipWingExtrWidth - 1e-6) {
+                  onLog?.(t("log.replicad.tabGroove.mayLoose"));
+                }
+                const tabClipGroovingTool = tabClipGroovingSketch.extrude(tabThickness + 2 * layerHeight);
+                const dirAB = [(pointA[0] - pointB[0]) / distAB, (pointA[1] - pointB[1]) / distAB];
+                for (let clipIdx = 0; clipIdx < tabClipNum; clipIdx++) {
+                  const distance2MiddlePoint = (-0.5 * tabClipNum +clipIdx + 0.5) * tabClipSpacing;
+                  tabSolid = tabSolid.cut(tabClipGroovingTool.clone().translate(dirAB[0] * distance2MiddlePoint, dirAB[1] * distance2MiddlePoint, 0)).simplify();
+                }
+                tabClipGroovingTool.delete();
+              }
+            }
+
+            // 舌片外侧上沿做一个倒角方便卡子安装
+            const tabChamferTool = extrudeFromContourPoints([
+              [tabActualWidth + 1e-4, tabThickness + layerHeight - tabChamferSize],
+              [tabActualWidth + 1e-4, tabThickness + layerHeight + 1e-4],
+              [tabActualWidth - tabChamferSize * Math.tan(Math.PI / 4), tabThickness + layerHeight + 1e-4],
+            ], edgePerpendicularPlane, -1, distAB);
+
+            // 舌片两端也做倒角防止从一个顶点触发的拼接边舌片之间的干涉
+            const tabEndChamferSolid = extrudeFromContourPoints([
+              [ 0, tabThickness + layerHeight - tabChamferSize],
+              [ 0, tabThickness + layerHeight + 1e-1],
+              [ -tabThickness, tabThickness + layerHeight + 1e-1],
+            ], edgePerpendicularPlane, -tabExtendMargin, distAB + 2 * tabExtendMargin);
+            if (!tabChamferTool || !tabEndChamferSolid) {
+              onLog?.(t("log.replicad.tabChamfer.fail"));
+              console.warn('[ReplicadModeling] failed to create tab chamfer sketch for edge, skip chamfer', edge);
+            } else {
+              tabSolid = tabSolid.cut(tabChamferTool).simplify();
+              tabSolid = tabSolid.cut(tabEndChamferSolid.clone().rotate(-tabAngleA, [pointA[0], pointA[1], 0], [0,0,1])).simplify();
+              tabSolid = tabSolid.cut(tabEndChamferSolid.rotate(tabAngleB, [pointB[0], pointB[1], 0], [0,0,1])).simplify();
+            }
+            tabSolid = tabSolid.rotate(tabAngle, [pointA[0], pointA[1], layerHeight], [pointA[0] - pointB[0], pointA[1] - pointB[1], 0]);
+
+            const tabCutTools: Shape3D[] = [adjEdgeCutToolL.clone(), adjEdgeCutToolR.clone()];
+            // 向外翻的舌片可能需要根据外轮廓顶点角度进行相邻外轮廓舌片防干涉的裁剪
+            if (edge.angle > 180) {
+              const pointAKey = pointKey(pointA);
+              const pointBKey = pointKey(pointB);
+              const pointAAngle = outerResult.outerPointAngleMap.get(pointAKey);
+              const pointBAngle = outerResult.outerPointAngleMap.get(pointBKey);
+              // console.log('[ReplicadModeling] edge info for tab', { pointAAngle, pointBAngle });
+              // 只有拼接边与拼接边相邻，且拼接边与拼接边相邻的顶点角度小于180度（阴角）时才需要进行防干涉
+              if (pointAAngle && pointAAngle > 180) {
+                // console.log('[ReplicadModeling] edge info for tab anti-interference', { pointAAngle });
+                const tabAntiInterferenceTool = extrudeFromContourPoints(
+                  [[0,-cutToolMargin], [0,cutToolMargin], [cutToolMargin,cutToolMargin], [cutToolMargin,-cutToolMargin]],
+                  edgePerpendicularPlane.clone(), distAB + cutToolMargin, -(minDistance / 2 + cutToolMargin));
+                if (tabAntiInterferenceTool) {
+                  tabCutTools.push(tabAntiInterferenceTool
+                    .rotate((pointAAngle - 180) / 2, [pointA[0], pointA[1], 0], [0,0,1]));
+                }
+              }
+              if (pointBAngle && pointBAngle > 180) {
+                // console.log('[ReplicadModeling] edge info for tab anti-interference', { pointBAngle });
+                const tabAntiInterferenceTool = extrudeFromContourPoints(
+                  [[0,-cutToolMargin], [0,cutToolMargin], [cutToolMargin,cutToolMargin], [cutToolMargin,-cutToolMargin]],
+                  edgePerpendicularPlane.clone(), -cutToolMargin, minDistance / 2 + cutToolMargin);
+                if (tabAntiInterferenceTool) {
+                  tabCutTools.push(tabAntiInterferenceTool
+                    .rotate(-(pointBAngle - 180) / 2, [pointB[0], pointB[1], 0], [0,0,1]));
+                }
+              }
+            }
+            tabCutTools.forEach((tool) => {
+              if (tool) tabSolid = tabSolid.cut(tool).simplify();
+            });
+            return tabSolid;
+          };
+          // 构建互锁类型的拼接结构
+          const buildInterlockingClaw = (): boolean => {
             const dirAB = [(pointA[0] - pointB[0]) / distAB, (pointA[1] - pointB[1]) / distAB];
             // 计算可用于放置爪的宽度和位置
             // 这里复用舌片计算逻辑，根据两端防干涉角度算出三角形->梯形->宽度和位置
@@ -446,6 +423,12 @@ const buildSolidFromPolygonsWithAngles = async (
             const foot = footOfPerpendicularToSegmentLine(tabPoint, pointA, pointB)??[(pointA[0] + pointB[0]) / 2, (pointA[1] + pointB[1]) / 2];
             const triHeight = Math.hypot(foot[0] - tabPoint[0], foot[1] - tabPoint[1]);
             console.log('[ReplicadModeling] triHeight', { triHeight });
+            // 没有足够的位置生成爪子
+            if (triHeight < clawTargetRadius) {
+              onLog?.(t("log.replicad.claw.fail"));
+              console.log(t("log.replicad.claw.fail"), 'triHeight, clawTargetRadius', { triHeight, clawTargetRadius });
+              return false;
+            }
             // 爪的伸出角度最大为90度，所以对于大于90度的拼接边，需要补一个基座，并且回退爪的位置
             const clawIntersectionAngle =
             edge.angle < 90 ? edge.angle : 
@@ -459,7 +442,8 @@ const buildSolidFromPolygonsWithAngles = async (
               clawRadiusAdaptive === "on"
               ? (clawIntersectionAngle > 90 ? clawTargetRadius : clawTargetRadius * Math.sqrt(90 / clawIntersectionAngle))
               : clawTargetRadius;
-            const actualClawRadius = triHeight < clawTargetRadius ? clawTargetRadius : Math.min(idealClawRadius, triHeight);
+            // 如果没有空间放置自适应后更大的爪子，就尝试放目标尺寸的爪子
+            const actualClawRadius = Math.min(idealClawRadius, triHeight);
             // 半径越大，互锁角度越小（使安装难度一致）
             // 另外，如果拼接角度大于225，则爪会紧贴打印板打印，需要减少互锁角度，不然安装会十分困难
             const actualClawInterlockAngle = (edge.angle > 225 ? 0.8 : 1) * 
@@ -470,9 +454,19 @@ const buildSolidFromPolygonsWithAngles = async (
               
             // 根据爪半径裁剪三角形求出梯形
             const tabTrapezoid = trapezoid(pointA, pointB, tabPoint, actualClawRadius);
-            const isTriangleTab = tabTrapezoid.length === 3;
-            const tabLength = isTriangleTab ? 0 : Math.hypot(tabTrapezoid[2][0] - tabTrapezoid[3][0], tabTrapezoid[2][1] - tabTrapezoid[3][1]);
-            
+            // 没有足够的位置生成爪子
+            if (tabTrapezoid.length === 3) {
+              onLog?.(t("log.replicad.claw.fail"));
+              console.log(t("log.replicad.claw.fail"), tabTrapezoid);
+              return false;
+            }
+            const tabLength = Math.hypot(tabTrapezoid[2][0] - tabTrapezoid[3][0], tabTrapezoid[2][1] - tabTrapezoid[3][1]);
+            // 没有足够的位置生成爪子
+            if (tabLength < clawWidth) {
+              onLog?.(t("log.replicad.claw.fail"));
+              console.log(t("log.replicad.claw.fail"), 'tabLength, clawWidth', { tabLength, clawWidth });
+              return false;
+            }
             const distBFoot = Math.hypot(foot[0] - pointB[0], foot[1] - pointB[1]);
             console.log('[ReplicadModeling] tabLength', tabLength, 'distBFoot', distBFoot, 'distBFoot / distAB', distBFoot / distAB);
             const clawExtrudePlane = transformPlaneLocal(edgePerpendicularPlane, { offset: 
@@ -561,6 +555,14 @@ const buildSolidFromPolygonsWithAngles = async (
             claws.forEach(p => p.delete());
             splitPlanes.forEach(p => p.delete());
             clawExtrudePlane.delete();
+            return true;
+          };
+          // 如果边有连接类型数据，则采用边的连接类型，否则使用设置中的默认类型
+          const targetJointType = edge.joinType === "default" ? joinType : edge.joinType;
+          // 如果连接类型是clip或者连接类型是interlocking但生成爪子失败，则回退为生成卡扣用的连接舌片
+          if (targetJointType === "clip" || !buildInterlockingClaw()) {
+            const seamTabSolid = buildSeamTab();
+            if (seamTabSolid) connectionSolid = connectionSolid.fuse(seamTabSolid).simplify();
           }
         }
       });

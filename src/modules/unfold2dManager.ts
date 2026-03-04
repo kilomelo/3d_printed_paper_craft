@@ -684,6 +684,9 @@ export function createUnfold2dManager(
   // 深拷贝边信息，避免合并/反转时直接修改单面缓存。
   const clonePolygonEdgeInfo = (edge: PolygonEdgeInfo): PolygonEdgeInfo => ({
     ...edge,
+    // joinType 是值语义的枚举字段，直接透传即可；
+    // 这里显式保留该字段，避免后续扩展 clone 逻辑时误以为它可被省略。
+    joinType: edge.joinType,
     tabAngle: [...edge.tabAngle],
   });
 
@@ -1075,6 +1078,9 @@ export function createUnfold2dManager(
         }
         return {
           isOuter: isOuter,
+          // 直接透传去重边上的 joinType。
+          // 该值对所有边都定义；后续消费端只在边实际成为 seam 时再决定它是否生效。
+          joinType: edgeRec?.joinType ?? "default",
           // PolygonEdgeInfo 约定使用角度制；内部几何索引仍保留弧度，
           // 因此只在最终构造输出数据时做一次转换，避免影响依赖原始坐标/拓扑的中间计算。
           angle: radToDeg(angleIndex.getAngle(eid)),

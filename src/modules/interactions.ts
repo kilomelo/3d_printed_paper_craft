@@ -175,6 +175,13 @@ export function initInteractionController(opts: InteractionOptions) {
       hideHoverLines();
       return;
     }
+    // 面 hover 线只服务于“展开组编辑”刷子逻辑。
+    // 进入其它状态（尤其 editingSeam）后，必须完全关闭这套三条橘色边线，
+    // 否则会和 seam 编辑态的颜色反馈互相干扰。
+    if (!opts.canEdit()) {
+      hideHoverLines();
+      return;
+    }
     const hit = pickFaceAtEvent(event);
     if (!hit) {
       if (brushMode !== -1) lastBrushedFace = null;

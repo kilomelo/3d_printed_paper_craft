@@ -61,6 +61,8 @@ let langToggleGlobalBtn: HTMLButtonElement | null = null;
 let refreshToggleTextLabels: (() => void) | null = null;
 let workerBusy = false;
 let viewerModeControl: ReturnType<typeof createSegmentedControl> | null = null;
+let edgesEnabledBeforeEditingSeam: boolean | null = null;
+let seamsEnabledBeforeEditingSeam: boolean | null = null;
 
 const setProjectNameLabel = (name: string) => {
   if (projectNameLabel) {
@@ -344,6 +346,7 @@ app.innerHTML = `
             </div>
             <input type="color" id="group-color-input" class="color-input" autocomplete="off" />
           </div>
+          <div id="group-preview-mask" class="group-preview-mask hidden" aria-hidden="true"></div>
         </div>
       </section>
   </section>
@@ -615,6 +618,7 @@ const groupTabsEl = document.querySelector<HTMLDivElement>("#group-tabs");
 const groupAddBtn = document.querySelector<HTMLButtonElement>("#group-add");
 const groupPreview = document.querySelector<HTMLDivElement>("#group-preview");
 const groupPreviewEmpty = document.querySelector<HTMLDivElement>("#group-preview-empty");
+const groupPreviewMask = document.querySelector<HTMLDivElement>("#group-preview-mask");
 const groupVisibilityToggle = document.querySelector<HTMLButtonElement>("#group-visibility-toggle");
 const settingsOverlay = document.querySelector<HTMLDivElement>("#settings-overlay");
 const settingsContent = settingsOverlay?.querySelector<HTMLDivElement>(".settings-content") || null;
@@ -723,6 +727,7 @@ if (
   !groupPreviewPanel ||
   !groupPreview ||
   !groupPreviewEmpty ||
+  !groupPreviewMask ||
   !groupFacesCountLabel ||
   !groupColorBtn ||
   !groupColorInput ||
@@ -905,6 +910,7 @@ viewerModeControl = createSegmentedControl({
 });
 viewerModeControl.el.classList.add("viewer-mode-control");
 viewerModeSlot.appendChild(viewerModeControl.el);
+viewerModeControl.el.classList.toggle("hidden", getWorkspaceState() === "previewGroupModel");
 viewerModeControl.setValue(workspaceStateToSegmentedItemValue(getWorkspaceState()), false);
 viewerModeControl.setDisabled(isViewerModeControlDisabled(getWorkspaceState()));
 
@@ -928,6 +934,7 @@ const changeWorkspaceState = (state: WorkspaceState) => {
 };
 
 appEventBus.on("workspaceStateChanged", ({ current }) => {
+  viewerModeControl.el.classList.toggle("hidden", current === "previewGroupModel");
   viewerModeControl.setValue(workspaceStateToSegmentedItemValue(current), false);
   viewerModeControl.setDisabled(isViewerModeControlDisabled(current));
 });
@@ -1187,6 +1194,30 @@ bboxToggle.addEventListener("click", () => {
 });
 appEventBus.on("workspaceStateChanged", ({ current, previous }) => {
   const isPreview = current === "previewGroupModel";
+  const enteringEditingSeam = current === "editingSeam" && previous !== "editingSeam";
+  const leavingEditingSeam = previous === "editingSeam" && current !== "editingSeam";
+  if (enteringEditingSeam) {
+    edgesEnabledBeforeEditingSeam = renderer3d.isEdgesEnabled();
+    seamsEnabledBeforeEditingSeam = renderer3d.isSeamsEnabled();
+    renderer3d.setEdgesEnabled(false);
+    renderer3d.setSeamsEnabled(true);
+  }
+  if (leavingEditingSeam) {
+    if (edgesEnabledBeforeEditingSeam !== null) {
+      renderer3d.setEdgesEnabled(edgesEnabledBeforeEditingSeam);
+    }
+    if (seamsEnabledBeforeEditingSeam !== null) {
+      renderer3d.setSeamsEnabled(seamsEnabledBeforeEditingSeam);
+    }
+    edgesEnabledBeforeEditingSeam = null;
+    seamsEnabledBeforeEditingSeam = null;
+  }
+  const disableEdgeControls = current === "editingSeam";
+  edgesToggle.classList.toggle("active", renderer3d.isEdgesEnabled());
+  seamsToggle.classList.toggle("active", renderer3d.isSeamsEnabled());
+  edgesToggle.disabled = disableEdgeControls;
+  seamsToggle.disabled = disableEdgeControls;
+  groupPreviewMask.classList.toggle("hidden", !disableEdgeControls);
   bboxToggle.classList.toggle("hidden", isPreview);
   if (isPreview) {
     bboxToggle.classList.remove("active");
