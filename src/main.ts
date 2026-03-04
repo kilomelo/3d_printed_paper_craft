@@ -1233,7 +1233,7 @@ const handleFileSelectedFromFile = async (file: File) => {
   try {
     clearAppStates();
     await new Promise((resolve) => setTimeout(resolve, 200));
-    const { object, importedGroups, importedColorCursor, importedSeting } = await loadRawObject(file, ext);
+    const { object, importedGroups, importedColorCursor, importedSeting, importedEdgeJoinTypes } = await loadRawObject(file, ext);
     const projectInfo = startNewProject(getProjectNameFromFile(file.name));
     if (importedSeting) {
       importSettings(importedSeting);
@@ -1243,6 +1243,12 @@ const handleFileSelectedFromFile = async (file: File) => {
     await renderer3d.applyObject(object, file.name);
     if (importedGroups && importedGroups.length) {
       groupController.applyImportedGroups(importedGroups, importedColorCursor);
+    }
+    // 边级拼接方式依赖于当前模型已完成几何索引构建。
+    // 因此必须放在 applyObject 之后恢复；同时又要早于 projectChanged，
+    // 这样 seamManager 首次根据 projectChanged 重建 seam 线时，就能拿到正确的 joinType 颜色。
+    if (importedEdgeJoinTypes) {
+      importEdgeJoinTypes(importedEdgeJoinTypes);
     }
     appEventBus.emit("projectChanged", projectInfo);
     projectLoaded();

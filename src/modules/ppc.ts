@@ -4,6 +4,7 @@ import { collectGeometry } from "./geometry";
 import { getCurrentProject } from "./project";
 import { getGroupColorCursor, exportGroupsData } from "./groups";
 import { getSettings } from "./settings";
+import { exportEdgeJoinTypes } from "./model";
 
 export type PPCFile = {
   version: string;
@@ -28,7 +29,13 @@ export type PPCFile = {
     placeAngle?: number;
   }[];
   groupColorCursor?: number;
-  annotations?: Record<string, unknown>;
+  annotations?: {
+    settings?: Record<string, unknown>;
+    // 边级拼接方式覆盖表，仅保存非 default 的显式覆盖。
+    // 采用 [edgeKey, joinType][] 的数组格式，便于 JSON / 二进制 meta 直接序列化。
+    edgeJoinTypes?: [string, string][];
+    [key: string]: unknown;
+  };
 };
 
 const FORMAT_VERSION = "1.0";
@@ -92,6 +99,7 @@ export async function build3dppcData(object: Group): Promise<PPCFile> {
     groups: groupsData,
     annotations: {
       settings: getSettings(),
+      edgeJoinTypes: exportEdgeJoinTypes(),
     },
   };
 }
