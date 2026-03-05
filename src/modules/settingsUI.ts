@@ -24,6 +24,8 @@ type SettingsUIRefs = {
   clawRadiusAdaptiveResetBtn: HTMLButtonElement;
   clawWidthInput: HTMLInputElement;
   clawWidthResetBtn: HTMLButtonElement;
+  clawFitGapInput: HTMLInputElement;
+  clawFitGapResetBtn: HTMLButtonElement;
   tabWidthInput: HTMLInputElement;
   tabWidthResetBtn: HTMLButtonElement;
   tabThicknessInput: HTMLInputElement;
@@ -124,6 +126,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     setRowModified(refs.clawTargetRadiusInput, settingsDraft.clawTargetRadius !== defaults.clawTargetRadius);
     setRowModified(refs.clawRadiusAdaptiveOffBtn, settingsDraft.clawRadiusAdaptive !== defaults.clawRadiusAdaptive);
     setRowModified(refs.clawWidthInput, settingsDraft.clawWidth !== defaults.clawWidth);
+    setRowModified(refs.clawFitGapInput, settingsDraft.clawFitGap !== defaults.clawFitGap);
     setRowModified(refs.layerHeightInput, settingsDraft.layerHeight !== defaults.layerHeight);
     setRowModified(refs.connectionLayersValue, settingsDraft.connectionLayers !== defaults.connectionLayers);
     setRowModified(refs.bodyLayersValue, settingsDraft.bodyLayers !== defaults.bodyLayers);
@@ -211,6 +214,10 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
       !Number.isNaN(val) &&
       val >= SETTINGS_LIMITS.clawWidth.min &&
       val <= SETTINGS_LIMITS.clawWidth.max,
+    clawFitGap: (val: number) =>
+      !Number.isNaN(val) &&
+      val >= SETTINGS_LIMITS.clawFitGap.min &&
+      val <= SETTINGS_LIMITS.clawFitGap.max,
     tabThickness: (val: number) =>
       !Number.isNaN(val) && val >= SETTINGS_LIMITS.tabThickness.min && val <= SETTINGS_LIMITS.tabThickness.max,
     layerHeight: (val: number) =>
@@ -252,6 +259,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.clawTargetRadiusInput.value = String(settingsDraft.clawTargetRadius);
     updateClawRadiusAdaptiveButtons();
     refs.clawWidthInput.value = String(settingsDraft.clawWidth);
+    refs.clawFitGapInput.value = String(settingsDraft.clawFitGap);
     refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
     refs.layerHeightInput.value = String(settingsDraft.layerHeight);
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
@@ -263,7 +271,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateClipGapAdjustButtons();
     updateHollowButtons();
     updateWireframeEnabled();
-    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterlockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
+    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterlockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.clawFitGapInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
       updateInputColor(el, true),
     );
     updateModifiedIndicators();
@@ -446,6 +454,15 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     () => getDefaultSettings().clawWidth,
   );
   bindNumericInput(
+    refs.clawFitGapInput,
+    refs.clawFitGapResetBtn,
+    (raw) => parseFloat(raw),
+    () => settingsDraft.clawFitGap,
+    (v) => (settingsDraft.clawFitGap = v),
+    validators.clawFitGap,
+    () => getDefaultSettings().clawFitGap,
+  );
+  bindNumericInput(
     refs.layerHeightInput,
     refs.layerHeightResetBtn,
     (raw) => parseFloat(raw),
@@ -523,6 +540,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.clawTargetRadiusInput.value = String(settingsDraft.clawTargetRadius);
     updateClawRadiusAdaptiveButtons();
     refs.clawWidthInput.value = String(settingsDraft.clawWidth);
+    refs.clawFitGapInput.value = String(settingsDraft.clawFitGap);
     refs.layerHeightInput.value = String(settingsDraft.layerHeight);
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
     refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
@@ -533,7 +551,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateJoinTypeButtons();
     updateClipGapAdjustButtons();
     updateHollowButtons();
-    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterlockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
+    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterlockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.clawFitGapInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
       updateInputColor(el, true),
     );
     updateModifiedIndicators();
@@ -571,6 +589,9 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     }
     if (settingsDraft.clawWidth !== settingsSnapshot.clawWidth) {
       changes.push(t("log.settings.changed", { label: t("settings.clawWidth.label"), value: settingsDraft.clawWidth }));
+    }
+    if (settingsDraft.clawFitGap !== settingsSnapshot.clawFitGap) {
+      changes.push(t("log.settings.changed", { label: t("settings.clawFitGap.label"), value: settingsDraft.clawFitGap }));
     }
     if (settingsDraft.tabWidth !== settingsSnapshot.tabWidth) {
       changes.push(t("log.settings.changed", { label: t("settings.tabWidth.label"), value: settingsDraft.tabWidth }));

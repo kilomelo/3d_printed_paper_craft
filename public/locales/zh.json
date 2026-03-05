@@ -76,6 +76,8 @@
   "settings.clawRadiusAdaptive.on": "开启",
   "settings.clawWidth.label": "抱爪宽度",
   "settings.clawWidth.desc": "单个抱爪的宽度，最小{min}，最大{max}，单位mm",
+  "settings.clawFitGap.label": "抱爪配合间隙",
+  "settings.clawFitGap.desc": "抱爪的松紧程度，越大越容易安装，{min}-{max}",
   "settings.minFoldAngleThreshold.label": "折痕最小角度阈值",
   "settings.minFoldAngleThreshold.desc": "角度小于该数值的三角面之间不会生成折痕",
   "settings.layerHeight.label": "打印层高",

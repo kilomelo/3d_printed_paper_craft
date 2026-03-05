@@ -11,6 +11,7 @@ export type Settings = {
   clawTargetRadius: number;
   clawRadiusAdaptive: "off" | "on";
   clawWidth: number;
+  clawFitGap: number;
   tabWidth: number;
   tabThickness: number;
   minFoldAngleThreshold: number;
@@ -30,6 +31,7 @@ export const SETTINGS_LIMITS = {
   clawTargetRadius: { min: 2, max: 6 },
   clawRadiusAdaptive: { allowed: ["off", "on"] as const },
   clawWidth: { min: 5, max: 10 },
+  clawFitGap: { min: 0.02, max: 0.2 },
   tabWidth: { min: 0, max: 20 },
   tabThickness: { min: 0.8, max: 2 },
   minFoldAngleThreshold: { min: 0.1, max: 5 },
@@ -48,6 +50,7 @@ const defaultSettings: Settings = {
   clawTargetRadius: 3,
   clawRadiusAdaptive: "on",
   clawWidth: 7,
+  clawFitGap: 0.05,
   tabWidth: 4,
   tabThickness: 1,
   minFoldAngleThreshold: 1,
@@ -113,6 +116,15 @@ export function setClawWidth(val: number) {
     val > SETTINGS_LIMITS.clawWidth.max
   ) return;
   current = { ...current, clawWidth: val };
+}
+
+export function setClawFitGap(val: number) {
+  if (
+    Number.isNaN(val) ||
+    val < SETTINGS_LIMITS.clawFitGap.min ||
+    val > SETTINGS_LIMITS.clawFitGap.max
+  ) return;
+  current = { ...current, clawFitGap: val };
 }
 
 export function setConnectionLayers(val: number) {
@@ -211,14 +223,23 @@ const readBoolean = (value: unknown): boolean | null => {
 const sanitizeImportedSettings = (imported: Partial<Record<keyof Settings, unknown>>): Settings => {
   const next: Settings = { ...defaultSettings };
 
-  if (typeof imported.joinType === "string" && SETTINGS_LIMITS.joinType.allowed.includes(imported.joinType)) {
-    next.joinType = imported.joinType;
+  if (typeof imported.joinType === "string") {
+    const joinType = imported.joinType as Settings["joinType"];
+    if (SETTINGS_LIMITS.joinType.allowed.includes(joinType)) {
+      next.joinType = joinType;
+    }
   }
-  if (typeof imported.clawRadiusAdaptive === "string" && SETTINGS_LIMITS.clawRadiusAdaptive.allowed.includes(imported.clawRadiusAdaptive)) {
-    next.clawRadiusAdaptive = imported.clawRadiusAdaptive;
+  if (typeof imported.clawRadiusAdaptive === "string") {
+    const clawRadiusAdaptive = imported.clawRadiusAdaptive as Settings["clawRadiusAdaptive"];
+    if (SETTINGS_LIMITS.clawRadiusAdaptive.allowed.includes(clawRadiusAdaptive)) {
+      next.clawRadiusAdaptive = clawRadiusAdaptive;
+    }
   }
-  if (typeof imported.clipGapAdjust === "string" && SETTINGS_LIMITS.clipGapAdjust.allowed.includes(imported.clipGapAdjust)) {
-    next.clipGapAdjust = imported.clipGapAdjust;
+  if (typeof imported.clipGapAdjust === "string") {
+    const clipGapAdjust = imported.clipGapAdjust as Settings["clipGapAdjust"];
+    if (SETTINGS_LIMITS.clipGapAdjust.allowed.includes(clipGapAdjust)) {
+      next.clipGapAdjust = clipGapAdjust;
+    }
   }
   const hollowStyle = readBoolean(imported.hollowStyle);
   if (hollowStyle != null) {
@@ -268,6 +289,10 @@ const sanitizeImportedSettings = (imported: Partial<Record<keyof Settings, unkno
   const clawWidth = readFiniteNumber(imported.clawWidth);
   if (clawWidth != null) {
     next.clawWidth = clamp(clawWidth, SETTINGS_LIMITS.clawWidth.min, SETTINGS_LIMITS.clawWidth.max);
+  }
+  const clawFitGap = readFiniteNumber(imported.clawFitGap);
+  if (clawFitGap != null) {
+    next.clawFitGap = clamp(clawFitGap, SETTINGS_LIMITS.clawFitGap.min, SETTINGS_LIMITS.clawFitGap.max);
   }
   const tabWidth = readFiniteNumber(imported.tabWidth);
   if (tabWidth != null) {

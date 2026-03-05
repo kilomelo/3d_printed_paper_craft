@@ -76,6 +76,8 @@
   "settings.clawRadiusAdaptive.on": "ON",
   "settings.clawWidth.label": "Claw Width",
   "settings.clawWidth.desc": "Width of a single claw. Min {min}, max {max}, in mm.",
+  "settings.clawFitGap.label": "Claw Fit Gap",
+  "settings.clawFitGap.desc": "Claw tightness: larger values are easier to assemble, {min}-{max}",
   "settings.minFoldAngleThreshold.label": "Min Fold Angle",
   "settings.minFoldAngleThreshold.desc": "No fold is generated when the angle is below this value.",
   "settings.layerHeight.label": "Layer Height",

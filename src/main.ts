@@ -160,6 +160,13 @@ const applyI18nTexts = () => {
       max: limits.clawWidth.max,
     });
   }
+  const clawFitGapDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clawFitGap.desc"]');
+  if (clawFitGapDesc) {
+    clawFitGapDesc.textContent = t("settings.clawFitGap.desc", {
+      min: limits.clawFitGap.min,
+      max: limits.clawFitGap.max,
+    });
+  }
   const tabWidthDesc = document.querySelector<HTMLElement>('[data-i18n="settings.tabWidth.desc"]');
   if (tabWidthDesc) {
     tabWidthDesc.textContent = t("settings.tabWidth.desc", {
@@ -483,6 +490,16 @@ app.innerHTML = `
                 <button id="setting-claw-width-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <label for="setting-claw-fit-gap" class="setting-label" data-i18n="settings.clawFitGap.label">抱爪配合间隙</label>
+                <span class="setting-desc" data-i18n="settings.clawFitGap.desc">抱爪的松紧程度，越大越容易安装，${limits.clawFitGap.min}-${limits.clawFitGap.max}</span>
+              </div>
+              <div class="setting-field">
+                <input id="setting-claw-fit-gap" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-claw-fit-gap-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
           </div>
           <div class="settings-panel" id="settings-panel-clip">
             <div class="setting-row">
@@ -650,6 +667,8 @@ const settingClawRadiusAdaptiveOnBtn = document.querySelector<HTMLButtonElement>
 const settingClawRadiusAdaptiveResetBtn = document.querySelector<HTMLButtonElement>("#setting-claw-radius-adaptive-reset");
 const settingClawWidthInput = document.querySelector<HTMLInputElement>("#setting-claw-width");
 const settingClawWidthResetBtn = document.querySelector<HTMLButtonElement>("#setting-claw-width-reset");
+const settingClawFitGapInput = document.querySelector<HTMLInputElement>("#setting-claw-fit-gap");
+const settingClawFitGapResetBtn = document.querySelector<HTMLButtonElement>("#setting-claw-fit-gap-reset");
 const settingLayerHeightInput = document.querySelector<HTMLInputElement>("#setting-layer-height");
 const settingLayerHeightResetBtn = document.querySelector<HTMLButtonElement>("#setting-layer-height-reset");
 const settingConnectionLayersDecBtn = document.querySelector<HTMLButtonElement>("#setting-connection-layers-dec");
@@ -749,6 +768,8 @@ if (
   !settingClawRadiusAdaptiveResetBtn ||
   !settingClawWidthInput ||
   !settingClawWidthResetBtn ||
+  !settingClawFitGapInput ||
+  !settingClawFitGapResetBtn ||
   !settingTabWidthInput ||
   !settingTabWidthResetBtn ||
   !settingLayerHeightInput ||
@@ -996,6 +1017,8 @@ const settingsUI = createSettingsUI(
     clawRadiusAdaptiveResetBtn: settingClawRadiusAdaptiveResetBtn,
     clawWidthInput: settingClawWidthInput,
     clawWidthResetBtn: settingClawWidthResetBtn,
+    clawFitGapInput: settingClawFitGapInput,
+    clawFitGapResetBtn: settingClawFitGapResetBtn,
     tabWidthInput: settingTabWidthInput,
     tabWidthResetBtn: settingTabWidthResetBtn,
     tabThicknessInput: settingTabThicknessInput,
