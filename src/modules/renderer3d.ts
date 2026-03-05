@@ -100,6 +100,10 @@ export function createRenderer3D(
     },
     facesVisible: () => facesVisible,
     canEdit: () => getWorkspaceState() === "editingGroup",
+    canHoverFace: () => {
+      const state = getWorkspaceState();
+      return state === "normal" || state === "editingGroup";
+    },
     isPointerLocked: () => pointerLocked,
     mapFaceId: (mesh, faceIndex) => geometryIndex.getFaceId(mesh, faceIndex ?? -1),
     onAddFace: (faceId: number) => groupApi.handleAddFace(faceId),
