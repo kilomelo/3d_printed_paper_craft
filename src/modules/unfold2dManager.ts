@@ -621,11 +621,16 @@ export function createUnfold2dManager(
       });
     });
     if (hollowStyle) {
-      return Array.from(faceSeeds.values()).map((seed) => ({
-        // 镂空模式下按你的约束，不做共面合并，退回到“三角形即 polygon”。
-        points: seed.points.map(([x, y]) => [x * scale, y * scale] as Point2D),
-        edges: seed.edges.map(clonePolygonEdgeInfo),
-      }));
+      return Array.from(faceSeeds.values()).map((seed) =>
+        finalizePolygonForExport(
+          {
+            // 镂空模式下按你的约束，不做共面合并，退回到“三角形即 polygon”。
+            points: seed.points.map((pt) => [...pt] as Point2D),
+            edges: seed.edges.map(clonePolygonEdgeInfo),
+          },
+          scale,
+        ),
+      );
     }
 
     const faceIds = new Set(faceSeeds.keys());
@@ -675,10 +680,62 @@ export function createUnfold2dManager(
     });
 
     // 统一在最终返回时应用 scale，避免中间步骤的任何 key / 拓扑判断受缩放影响。
-    return polygons.map((polygon) => ({
+    return polygons.map((polygon) => finalizePolygonForExport(polygon, scale));
+  };
+
+  // 最终导出给建模侧前，统一做两件事：
+  // 1. 应用 scale（保持与旧逻辑一致：只在最后一步缩放）；
+  // 2. 计算“当前 polygon 自身边界顶点角度”。
+  //
+  // 这层角度数据是为后续建模修复准备的：
+  // - 它描述的是 polygon 语境下的相邻边夹角；
+  // - 不依赖整个展开组总外轮廓；
+  // - 因此可覆盖那些“在局部 polygon 上是边界点，但并非全局外轮廓点”的情况。
+  const finalizePolygonForExport = (polygon: PolygonData, scale: number): PolygonData => {
+    const scaledPoints = polygon.points.map(([x, y]) => [x * scale, y * scale] as Point2D);
+    return {
       ...polygon,
-      points: polygon.points.map(([x, y]) => [x * scale, y * scale] as Point2D),
-    }));
+      points: scaledPoints,
+      boundaryPointAngleData: buildPolygonBoundaryPointAngleData(scaledPoints),
+    };
+  };
+
+  const buildPolygonBoundaryPointAngleData = (points: Point2D[]) => {
+    if (points.length < 3) return [];
+    const signedArea = polygonSignedArea(points);
+    const polyOrientation = Math.sign(signedArea) || 1; // 1:CCW, -1:CW
+    const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+    return points.map((curr, idx) => {
+      const prev = points[(idx - 1 + points.length) % points.length];
+      const next = points[(idx + 1) % points.length];
+      const ax = prev[0] - curr[0];
+      const ay = prev[1] - curr[1];
+      const bx = next[0] - curr[0];
+      const by = next[1] - curr[1];
+      const la = Math.hypot(ax, ay);
+      const lb = Math.hypot(bx, by);
+      if (la < 1e-9 || lb < 1e-9) {
+        return { point: curr, angle: 0 };
+      }
+      const cos = clamp((ax * bx + ay * by) / (la * lb), -1, 1);
+      const baseDeg = radToDeg(Math.acos(cos));
+      const cross = ax * by - ay * bx;
+      const isReflex = polyOrientation > 0 ? cross > 0 : cross < 0;
+      return {
+        point: curr,
+        angle: isReflex ? 360 - baseDeg : baseDeg,
+      };
+    });
+  };
+
+  const polygonSignedArea = (points: Point2D[]) => {
+    let area = 0;
+    for (let i = 0; i < points.length; i += 1) {
+      const [x1, y1] = points[i];
+      const [x2, y2] = points[(i + 1) % points.length];
+      area += x1 * y2 - x2 * y1;
+    }
+    return area * 0.5;
   };
 
   // 深拷贝边信息，避免合并/反转时直接修改单面缓存。

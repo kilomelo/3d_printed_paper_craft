@@ -159,13 +159,30 @@ const buildSolidFromPolygonsWithAngles = async (
         console.warn("[ReplicadModeling] invalid polygon input, skip this polygon", polyData);
         return;
       }
+      // polygon 自身边界顶点角度（优先使用数据生产层新增的数据）。
+      // 这层角度用于判断当前边在相邻顶点处是否为阴角（>180），
+      // 以决定相邻边裁剪刀具是否需要翻转方向。
+      const polygonPointAngleMap = new Map<string, number>();
+      polyData.boundaryPointAngleData?.forEach((item) => {
+        polygonPointAngleMap.set(pointKey(item.point), item.angle);
+      });
+      const getPolygonPointAngle = (pt: Point2D): number | undefined => {
+        return polygonPointAngleMap.get(pointKey(pt)) ?? outerResult.outerPointAngleMap.get(pointKey(pt));
+      };
       // 为每条边构造一个垂直切割平面。
       // 这里沿用旧三角形版本的约定：以边的反向向量作为平面法向。
       const planes = points.map((pointA, edgeIdx) => {
         const pointB = points[(edgeIdx + 1) % points.length];
         return makeVerticalPlaneNormalAB(pointB, pointA);
       });
-      if (!planes.every(isDefined)) {
+      // 额外准备“反向法向”的平面，用于构造相邻边裁剪刀具的反向版本。
+      // 多边形出现阴角时，同一条边对不同相邻边的裁剪语义可能相反；
+      // 因此不能再只依赖每条边一把固定方向的刀具。
+      const planesReversed = points.map((pointA, edgeIdx) => {
+        const pointB = points[(edgeIdx + 1) % points.length];
+        return makeVerticalPlaneNormalAB(pointA, pointB);
+      });
+      if (!planes.every(isDefined) || !planesReversed.every(isDefined)) {
         onLog?.(t("log.replicad.edgePlane.fail"));
         console.warn("[ReplicadModeling] failed to create edge cutting planes for polygon, skip this polygon", polyData);
         return;
@@ -183,7 +200,13 @@ const buildSolidFromPolygonsWithAngles = async (
           -cutToolMargin,
           dists[edgeIdx] + 2 * cutToolMargin,
         ));
-      if (!edgeCutTools.every(isDefined)) {
+      const edgeCutToolsReversed = planesReversed.map((plane, edgeIdx) => extrudeFromContourPoints(
+          [[0,-cutToolMargin], [0,cutToolMargin], [cutToolMargin,cutToolMargin], [cutToolMargin,-cutToolMargin]],
+          plane,
+          -cutToolMargin,
+          dists[edgeIdx] + 2 * cutToolMargin,
+        ));
+      if (!edgeCutTools.every(isDefined) || !edgeCutToolsReversed.every(isDefined)) {
         onLog?.(t("log.replicad.edgeSketch.fail"));
         console.warn("[ReplicadModeling] failed to create edge cut tools for polygon, skip this polygon", polyData);
         return;
@@ -203,9 +226,15 @@ const buildSolidFromPolygonsWithAngles = async (
         const distAB = dists[idx];
         const edgePerpendicularPlane = planes[idx];
         // 相邻两条边的刀具用于裁剪当前边生成的几何体。
-        // 这里不再依赖三角形专用的 pick()，直接按环索引取前后邻边。
-        const adjEdgeCutToolL = edgeCutTools[nextEdgeIdx];
-        const adjEdgeCutToolR = edgeCutTools[prevEdgeIdx];
+        //
+        // 多边形语境下，如果当前边在某个共享顶点处是阴角（>180），
+        // 则该顶点对应的“相邻边裁剪刀具”需要反向。
+        // - 当前边终点(pointB)对应 nextEdgeIdx
+        // - 当前边起点(pointA)对应 prevEdgeIdx
+        const pointAReflex = (getPolygonPointAngle(pointA) ?? 0) > 180 + 1e-6;
+        const pointBReflex = (getPolygonPointAngle(pointB) ?? 0) > 180 + 1e-6;
+        const adjEdgeCutToolL = pointBReflex ? edgeCutToolsReversed[nextEdgeIdx] : edgeCutTools[nextEdgeIdx];
+        const adjEdgeCutToolR = pointAReflex ? edgeCutToolsReversed[prevEdgeIdx] : edgeCutTools[prevEdgeIdx];
         if ((!edge.isOuter && edge.angle > 180) || edge.angle < 180) {
           // 第二步：生成弯折、拼接坡度刀具
           const slopeStartZ = edge.isOuter ? layerHeight : connectionThickness;
@@ -567,7 +596,9 @@ const buildSolidFromPolygonsWithAngles = async (
         }
       });
       edgeCutTools.forEach((tool) => tool.delete());
+      edgeCutToolsReversed.forEach((tool) => tool.delete());
       planes.forEach((plane) => { if (plane) plane.delete(); });
+      planesReversed.forEach((plane) => { if (plane) plane.delete(); });
 
       onProgress?.(Math.floor(2 + progressPerPolygon * (i + 1)));
 

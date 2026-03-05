@@ -34,6 +34,13 @@ export type PolygonEdgeInfo = {
 
 // 顶点角度相关的附加信息，当前建模侧尚未正式消费，但保留类型语义。
 export type PointAngleData = { vertexKey: string; unfold2dPos: Point2D; minAngle: number };
+// 多边形自身边界顶点的局部夹角信息。
+// 这层数据与“整个展开组外轮廓”的角度不同：
+// - 它只描述当前 polygon 自身边界上，相邻两条边在该顶点形成的角度；
+// - 因此即使该顶点并不位于整个展开组的总外轮廓上，这里仍然会有记录。
+//
+// 后续建模侧若需要判断 polygon 语境下的阴角/阳角，应优先使用这层数据。
+export type PolygonPointAngleData = { point: Point2D; angle: number };
 
 // 新的多边形建模输入。
 // points[i] -> points[(i + 1) % n] 对应 edges[i]。
@@ -41,6 +48,7 @@ export type PolygonWithEdgeInfo = {
   points: Point2D[];
   edges: PolygonEdgeInfo[];
   pointAngleData?: PointAngleData[];
+  boundaryPointAngleData?: PolygonPointAngleData[];
 };
 
 export const v2 = (p: Point2D) => new THREE.Vector2(p[0], p[1]);
