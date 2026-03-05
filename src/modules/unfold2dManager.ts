@@ -653,6 +653,9 @@ export function createUnfold2dManager(
           if (Math.abs(angle - Math.PI) > coplanarThresholdRad) return;
           edgeRec.faces.forEach((neighborFaceId) => {
             if (neighborFaceId === faceId || !faceIds.has(neighborFaceId) || visited.has(neighborFaceId)) return;
+            // 共面合并只用于“同一整片平面”聚合，不能跨 seam。
+            // 即便二面角接近 180°，seam 依然必须保留为分界。
+            if (sharedEdgeIsSeam(faceId, neighborFaceId)) return;
             visited.add(neighborFaceId);
             queue.push(neighborFaceId);
           });
@@ -680,7 +683,9 @@ export function createUnfold2dManager(
     });
 
     // 统一在最终返回时应用 scale，避免中间步骤的任何 key / 拓扑判断受缩放影响。
-    return polygons.map((polygon) => finalizePolygonForExport(polygon, scale));
+    const exportedPolygons = polygons.map((polygon) => finalizePolygonForExport(polygon, scale));
+
+    return exportedPolygons;
   };
 
   // 最终导出给建模侧前，统一做两件事：

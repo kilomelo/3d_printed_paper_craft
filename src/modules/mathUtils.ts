@@ -316,26 +316,71 @@ export function reflectPointAcrossLine(p: Point2D, l0: Point2D, l1: Point2D): Po
 }
 
 // 通过展开后的多边形面片信息找到整体外轮廓，并计算建模所需的边界数据。
-export function polygons2Outer(items: PolygonWithEdgeInfo[]): {
+export function polygons2Outer(items: PolygonWithEdgeInfo[], debug: boolean = false): {
   outer: Point2D[];
   min: Point2D;
   max: Point2D;
   maxEdgeLen: number; // 所有输入面片边中最长的边长
   outerPointAngleMap: Map<string, number>;
 } | undefined {
-  if (!items.length) return undefined;
+  const log = (...args: unknown[]) => {
+    if (!debug) return;
+    console.log("[polygons2Outer]", ...args);
+  };
+  const logWarn = (...args: unknown[]) => {
+    console.warn("[polygons2Outer]", ...args);
+  };
+  const toFlatJson = (payload: unknown) => {
+    try {
+      return JSON.stringify(payload);
+    } catch {
+      return String(payload);
+    }
+  };
+  const logFlat = (label: string, payload: unknown) => {
+    if (!debug) return;
+    console.log("[polygons2Outer]", `${label}: ${toFlatJson(payload)}`);
+  };
+  const logWarnFlat = (label: string, payload: unknown) => {
+    console.warn("[polygons2Outer]", `${label}: ${toFlatJson(payload)}`);
+  };
+  if (!items.length) {
+    logWarn("输入为空，无法计算外轮廓");
+    return undefined;
+  }
+  log("start", { polygonCount: items.length });
   const edgeMap = new Map<string, { a: Point2D; b: Point2D; isSeam: boolean }>();
+  const outerEdgeSourceMap = new Map<string, Array<{
+    polygonIndex: number;
+    edgeIndex: number;
+    aKey: string;
+    bKey: string;
+    isOuter: boolean;
+    isSeam: boolean;
+    angle: number;
+    joinType: string;
+    joinSide?: string;
+  }>>();
   const max: Point2D = [-Infinity, -Infinity];
   const min: Point2D = [Infinity, Infinity];
   let maxEdgeLen = 0;
-  items.forEach((item) => {
+  let allEdgeCount = 0;
+  let outerEdgeCount = 0;
+  let duplicateOuterEdgeCount = 0;
+  items.forEach((item, polygonIndex) => {
     const points = item.points;
     // edges[i] 对应 points[i] -> points[(i + 1) % n]。
     const edges = points.map((point, idx) => [
       point,
       points[(idx + 1) % points.length],
       item.edges?.[idx],
-    ] as [Point2D, Point2D, { isOuter: boolean; angle: number; isSeam?: boolean } | undefined]);
+    ] as [Point2D, Point2D, {
+      isOuter: boolean;
+      angle: number;
+      isSeam?: boolean;
+      joinType?: "default" | "clip" | "interlocking";
+      joinSide?: "mp" | "fp";
+    } | undefined]);
 
     points.forEach((pt) => {
       if (pt[0] < min[0]) min[0] = pt[0];
@@ -343,19 +388,47 @@ export function polygons2Outer(items: PolygonWithEdgeInfo[]): {
       if (pt[0] > max[0]) max[0] = pt[0];
       if (pt[1] > max[1]) max[1] = pt[1];
     });
-    edges.forEach(([a, b, info]) => {
+    edges.forEach(([a, b, info], edgeIndex) => {
+      allEdgeCount += 1;
       const edgeLen = Math.hypot(b[0] - a[0], b[1] - a[1]);
       if (edgeLen > maxEdgeLen) maxEdgeLen = edgeLen;
       if (!info?.isOuter) return;
+      outerEdgeCount += 1;
       const k = edgeKey(a, b);
+      const source = {
+        polygonIndex,
+        edgeIndex,
+        aKey: pointKey(a),
+        bKey: pointKey(b),
+        isOuter: !!info.isOuter,
+        isSeam: !!info.isSeam,
+        angle: info.angle,
+        joinType: info.joinType ?? "unknown",
+        joinSide: info.joinSide,
+      };
+      if (!outerEdgeSourceMap.has(k)) outerEdgeSourceMap.set(k, []);
+      outerEdgeSourceMap.get(k)!.push(source);
       if (!edgeMap.has(k)) {
         edgeMap.set(k, { a, b, isSeam: !!info.isSeam });
+      } else {
+        duplicateOuterEdgeCount += 1;
       }
     });
   });
+  logFlat("edge stats", {
+    allEdgeCount,
+    outerEdgeCount,
+    uniqueOuterEdgeCount: edgeMap.size,
+    duplicateOuterEdgeCount,
+    maxEdgeLen,
+    bbox: { min, max },
+  });
 
   const boundary = Array.from(edgeMap.values());
-  if (!boundary.length) return undefined;
+  if (!boundary.length) {
+    logWarn("没有任何 outer edge，无法构造边界");
+    return undefined;
+  }
 
   const adjacency = new Map<string, Point2D[]>();
   boundary.forEach(({ a, b }) => {
@@ -366,6 +439,49 @@ export function polygons2Outer(items: PolygonWithEdgeInfo[]): {
     adjacency.get(ka)!.push(b);
     adjacency.get(kb)!.push(a);
   });
+  const abnormalDegreeVertices = Array.from(adjacency.entries())
+    .filter(([, neigh]) => neigh.length !== 2)
+    .map(([key, neigh]) => ({ key, degree: neigh.length, neigh: neigh.map((pt) => pointKey(pt)) }));
+  if (abnormalDegreeVertices.length > 0) {
+    // 反查异常顶点关联到哪些 boundary edge 以及这些 edge 的来源 polygon/edge 信息。
+    // 这能快速判断是“某条边没有被标记为 isOuter”，还是“端点 key 不一致导致断链”。
+    const abnormalKeySet = new Set(abnormalDegreeVertices.map((v) => v.key));
+    const incidentBoundaryEdges = boundary
+      .filter(({ a, b }) => abnormalKeySet.has(pointKey(a)) || abnormalKeySet.has(pointKey(b)))
+      .map(({ a, b }) => {
+        const k = edgeKey(a, b);
+        return {
+          edgeKey: k,
+          aKey: pointKey(a),
+          bKey: pointKey(b),
+          sources: outerEdgeSourceMap.get(k) ?? [],
+        };
+      });
+    // 如果是坐标微小差异导致 key 断裂，通常会出现“端点附近有很近但不相等的顶点”。
+    // 这里提供 nearest 候选，便于判断 pointKey 精度是否是根因。
+    const allBoundaryVertices = Array.from(
+      new Map<string, Point2D>(
+        boundary.flatMap(({ a, b }) => [[pointKey(a), a], [pointKey(b), b]]),
+      ).entries(),
+    );
+    const nearestBoundaryVertex = abnormalDegreeVertices.map((v) => {
+      const curr = allBoundaryVertices.find(([k]) => k === v.key)?.[1];
+      if (!curr) return { key: v.key, nearest: null as null | { key: string; dist: number } };
+      let nearest: { key: string; dist: number } | null = null;
+      allBoundaryVertices.forEach(([k, pt]) => {
+        if (k === v.key) return;
+        const dist = Math.hypot(pt[0] - curr[0], pt[1] - curr[1]);
+        if (!nearest || dist < nearest.dist) nearest = { key: k, dist };
+      });
+      return { key: v.key, nearest };
+    });
+    logFlat("non-manifold boundary vertices detected", {
+      count: abnormalDegreeVertices.length,
+      sample: abnormalDegreeVertices.slice(0, 20),
+      incidentBoundaryEdges,
+      nearestBoundaryVertex,
+    });
+  }
 
   const visited = new Set<string>();
   const loops: Point2D[][] = [];
@@ -386,9 +502,30 @@ export function polygons2Outer(items: PolygonWithEdgeInfo[]): {
     }
     if (loop.length >= 3 && pointKey(current) === pointKey(loop[0])) {
       loops.push(loop);
+      logFlat("loop detected", {
+        loopIndex: loops.length - 1,
+        loopLength: loop.length,
+        start: pointKey(loop[0]),
+      });
+    } else if (debug) {
+      logFlat("loop tracing stopped before closure", {
+        startEdge: startEdgeKey,
+        tracedLength: loop.length,
+        lastPoint: pointKey(current),
+        guardLeft: guard,
+      });
     }
   });
-  if (!loops.length) return undefined;
+  if (!loops.length) {
+    const unvisitedBoundaryEdges = boundary.filter(({ a, b }) => !visited.has(edgeKey(a, b))).length;
+    logWarnFlat("未找到闭合环，外轮廓构造失败", {
+      boundaryEdgeCount: boundary.length,
+      visitedEdgeCount: visited.size,
+      unvisitedBoundaryEdges,
+      abnormalDegreeVertexCount: abnormalDegreeVertices.length,
+    });
+    return undefined;
+  }
   let outer = loops[0];
   let bestArea = Math.abs(polygonArea(outer));
   loops.slice(1).forEach((lp) => {
@@ -402,6 +539,12 @@ export function polygons2Outer(items: PolygonWithEdgeInfo[]): {
     outer = outer.slice(0, -1);
   }
   const polyOrientation = Math.sign(polygonArea(outer)) || 1; // 1:CCW, -1:CW
+  logFlat("outer selected", {
+    loopCount: loops.length,
+    outerLength: outer.length,
+    outerAreaAbs: bestArea,
+    orientation: polyOrientation > 0 ? "CCW" : "CW",
+  });
   const pointAngleMap = new Map<string, number>();
   const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
   const len = outer.length;
@@ -431,6 +574,10 @@ export function polygons2Outer(items: PolygonWithEdgeInfo[]): {
     const angleDeg = isReflex ? 360 - baseDeg : baseDeg;
     pointAngleMap.set(pointKey(curr), angleDeg);
   }
+  logFlat("outer point angle map", {
+    seamCornerCount: pointAngleMap.size,
+    seamCornerSample: Array.from(pointAngleMap.entries()).slice(0, 20),
+  });
   return { outer, min, max, maxEdgeLen, outerPointAngleMap: pointAngleMap };
 }
 
