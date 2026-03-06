@@ -283,6 +283,7 @@ textarea {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 
 .loading-overlay {
@@ -375,17 +376,18 @@ textarea {
   overflow: hidden;
 }
 
-#group-edit-toggle {
-  min-width: 90px;
-  margin-right: 10px;
-  justify-content: center;
-}
-#group-edit-toggle:disabled {
+.btn:disabled {
   color: var(--muted);
   border-color: var(--border);
   cursor: not-allowed;
   pointer-events: none;
   background: rgba(255, 255, 255, 0.04);
+}
+.btn.toggle:disabled.active {
+  color: var(--muted);
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: none;
 }
 
 .toolbar-spacer {
@@ -497,6 +499,52 @@ textarea {
   position: absolute;
   inset: 0;
   z-index: 0;
+}
+
+.group-preview-mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 8;
+  pointer-events: auto;
+}
+
+.overlay-cache-indicator {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  z-index: 5;
+  min-width: 14px;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 16px;
+  line-height: 1;
+  font-weight: 700;
+  /* text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85); */
+  pointer-events: none;
+  user-select: none;
+}
+
+.viewer-mode-slot {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  right: 6px;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.viewer-mode-control {
+  pointer-events: auto;
+  --seg-bg: rgba(9, 14, 24, 0.74);
+  --seg-border: rgba(255, 255, 255, 0.08);
+  --seg-item-hover: rgba(255, 255, 255, 0.06);
+  --seg-item-active-bg: rgba(255, 255, 255, 0.14);
+  --seg-item-font-size: 10px;
+  --seg-item-pad-y: 7px;
+  --seg-item-pad-x: 10px;
+  backdrop-filter: blur(12px);
 }
 
 #operation-hints-left,
@@ -869,6 +917,11 @@ textarea {
   pointer-events: none;
 }
 
+/* 设置项与默认值不一致时，用黄色强调标题，便于快速识别改动。 */
+.setting-row.modified .setting-label {
+  color: #faec95;
+}
+
 .setting-counter-group {
   flex: 1;
   display: flex;
@@ -949,6 +1002,11 @@ textarea {
 .color-swatch.overlay-btn:hover {
   transition: border-color 0.2s ease;
   border-color: var(--hoverHighLigt);
+}
+
+#group-color-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 .overlay-visibility.overlay-btn {

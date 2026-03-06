@@ -14,13 +14,20 @@ const stlLoader = new STLLoader();
 export async function loadRawObject(
   file: File,
   ext: string,
-): Promise<{ object: Object3D; importedGroups?: PPCFile["groups"]; importedColorCursor?: number; importedSeting?: Object }> {
+): Promise<{
+  object: Object3D;
+  importedGroups?: PPCFile["groups"];
+  importedColorCursor?: number;
+  importedSeting?: Object;
+  importedEdgeJoinTypes?: [string, string][];
+}> {
   const url = URL.createObjectURL(file);
   try {
     let object: Object3D;
     let importedGroups: PPCFile["groups"] | undefined;
     let importedColorCursor: number | undefined;
     let importedSeting: Object | undefined;
+    let importedEdgeJoinTypes: [string, string][] | undefined;
     if (ext === "obj") {
       const loaded = await objLoader.loadAsync(url);
       loaded.traverse((child) => {
@@ -49,8 +56,17 @@ export async function loadRawObject(
       if (loaded.annotations && typeof loaded.annotations.settings === "object") {
         importedSeting = loaded.annotations.settings??undefined;
       }
+      if (loaded.annotations && Array.isArray(loaded.annotations.edgeJoinTypes)) {
+        importedEdgeJoinTypes = loaded.annotations.edgeJoinTypes.filter(
+          (entry): entry is [string, string] =>
+            Array.isArray(entry) &&
+            entry.length === 2 &&
+            typeof entry[0] === "string" &&
+            typeof entry[1] === "string",
+        );
+      }
     }
-    return { object, importedGroups, importedColorCursor, importedSeting };
+    return { object, importedGroups, importedColorCursor, importedSeting, importedEdgeJoinTypes };
   } finally {
     URL.revokeObjectURL(url);
   }

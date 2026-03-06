@@ -1,14 +1,21 @@
 // 材质工厂：提供前/背面、线框、hover 等 Three.js 材质实例生成，集中管理颜色与透明度。
 import * as THREE from "three";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
+import type { EdgeJoinType } from "../types/geometryTypes";
 
 export const FACE_DEFAULT_COLOR = new THREE.Color(0xffffff);
 const BACK_DEFAULT_COLOR = new THREE.Color(0x666666);
 const SILHOUETTE_COLOR = new THREE.Color(0xffffff);
 const EDGE_DEFAULT_COLOR = new THREE.Color(0x442200);
 const SEAMEDGE_DEFAULT_COLOR = new THREE.Color(0x222222);
+const UNFOLD_COPLANAR_EDGE_COLOR = new THREE.Color(0xffffff);
 const HOVERLINE_DEFAULT_COLOR = new THREE.Color(0xffa500);
 const SEAM_CONNECT_LINE_COLOR = new THREE.Color(0x00ff88);
+const SEAM_LINE_EDIT_COLORS: Record<EdgeJoinType, { idle: number; hover: number }> = {
+  default: { idle: 0x888888, hover: 0xeeeeee },
+  clip: { idle: 0x55a4fb, hover: 0x8ac0fc },
+  interlocking: { idle: 0x3be95d, hover: 0x9dedad },
+};
 
 export function createFrontMaterial(baseColor?: THREE.Color) {
   return new THREE.MeshStandardMaterial({
@@ -144,6 +151,20 @@ export function createSeamLineMaterial(resolution: { width: number; height: numb
   });
 }
 
+// seam 线在不同编辑态下只改颜色，不重建几何。
+// normal 模式统一使用默认 seam 颜色；editingSeam 模式按边的 joinType + hover 状态切换颜色。
+export function applySeamLineColor(
+  material: LineMaterial,
+  options: { joinType: EdgeJoinType; editing: boolean; hovered: boolean },
+) {
+  const { joinType, editing, hovered } = options;
+  const nextColor = editing
+    ? (hovered ? SEAM_LINE_EDIT_COLORS[joinType].hover : SEAM_LINE_EDIT_COLORS[joinType].idle)
+    : SEAMEDGE_DEFAULT_COLOR.getHex();
+  material.color.setHex(nextColor);
+  material.needsUpdate = true;
+}
+
 // 特殊边材质
 export function createSpecialEdgeMaterial(options: {
   color: number;
@@ -197,6 +218,19 @@ export function createUnfoldEdgeLineFoldoutMaterial(resolution: { width: number;
         linewidth: 1.5,
         resolution: new THREE.Vector2(resolution.width, resolution.height),
       });
+}
+
+// 2D 视图中，用于表示“已被上游共面合并逻辑折叠掉的内部边”。
+// 这类边仍保留渲染对象，便于用户感知原始三角划分，但用白色与真实折痕区分。
+export function createUnfoldEdgeLineCoplanarMaterial(resolution: { width: number; height: number }) {
+  const mat = createLineMaterial({
+    color: UNFOLD_COPLANAR_EDGE_COLOR.getHex(),
+    linewidth: 1.5,
+    resolution,
+  });
+  mat.transparent = true;
+  mat.opacity = 0.1;
+  return mat;
 }
 
 // 两遍渲染

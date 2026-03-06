@@ -13,6 +13,7 @@ export function createSpecialEdgeManager(
 ) {
   const edgeLines = new Map<number, LineSegments2>();
   let currentRoot = root;
+  let forceHidden = false;
 
   const colors: Record<SpecialType, number> = {
     open: 0x7700dd, // purple
@@ -90,7 +91,7 @@ export function createSpecialEdgeManager(
     const arr = new Float32Array([localV1.x, localV1.y, localV1.z, localV2.x, localV2.y, localV2.z]);
     line.geometry.setPositions(arr);
     line.computeLineDistances();
-    line.visible = true;
+    line.visible = !forceHidden;
   };
 
   const rebuild = (
@@ -114,6 +115,11 @@ export function createSpecialEdgeManager(
         nonManifoldCount += 1;
       }
     });
+    if (forceHidden) {
+      edgeLines.forEach((line) => {
+        line.visible = false;
+      });
+    }
     return { openCount, nonManifoldCount };
   };
 
@@ -123,6 +129,12 @@ export function createSpecialEdgeManager(
     getGroupVisibility: (groupId: number) => boolean,
     forceSingleGroupVisible?: number | null,
   ) => {
+    if (forceHidden) {
+      edgeLines.forEach((line) => {
+        line.visible = false;
+      });
+      return;
+    }
     const edges = getEdges();
     const faceGroupMap = getFaceGroupMap();
     edgeLines.forEach((line, edgeId) => {
@@ -141,9 +153,19 @@ export function createSpecialEdgeManager(
     });
   };
 
+  const setForceHidden = (hidden: boolean) => {
+    forceHidden = hidden;
+    if (forceHidden) {
+      edgeLines.forEach((line) => {
+        line.visible = false;
+      });
+    }
+  };
+
   return {
     rebuild,
     updateVisibility,
+    setForceHidden,
     dispose: disposeAll,
   };
 }

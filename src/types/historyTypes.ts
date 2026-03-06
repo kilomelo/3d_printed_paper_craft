@@ -8,5 +8,7 @@ export type ProjectState = {
   previewGroupId: number;
   settings: Settings;
   groupVisibility: Array<[number, boolean]>;
+  // 边级拼接方式覆盖表，按 edge key 存储，仅包含非 default 的显式覆盖。
+  edgeJoinTypes: ReturnType<typeof import("../modules/model.js").exportEdgeJoinTypes>;
 };
 export type Snapshot = { data: ProjectState; action: MetaAction; uid: number };

@@ -1,5 +1,5 @@
 import { Vector3 } from "three";
-import type { Point2D, Point3D, Vec3, Triangle2D, Vec2, Plane3D, TriangleWithEdgeInfo } from "../types/geometryTypes";
+import type { Point2D, Point3D, Vec3, Triangle2D, Vec2, Plane3D, PolygonWithEdgeInfo } from "../types/geometryTypes";
 
 // 弧度转角度
 export function radToDeg(rad: number) { return (rad * 180) / Math.PI; }
@@ -315,45 +315,120 @@ export function reflectPointAcrossLine(p: Point2D, l0: Point2D, l1: Point2D): Po
   return [2 * proj[0] - p[0], 2 * proj[1] - p[1]];
 }
 
-// 通过展开后的三角形信息找到外轮廓，并且计算用于参数化建模的一系列数据
-export function triangles2Outer(trianglesWithAngles: TriangleWithEdgeInfo[]): {
+// 通过展开后的多边形面片信息找到整体外轮廓，并计算建模所需的边界数据。
+export function polygons2Outer(items: PolygonWithEdgeInfo[], debug: boolean = false): {
   outer: Point2D[];
   min: Point2D;
   max: Point2D;
-  maxEdgeLen: number; // 所有三角形的边中最长的边长
+  maxEdgeLen: number; // 所有输入面片边中最长的边长
   outerPointAngleMap: Map<string, number>;
 } | undefined {
-  if (!trianglesWithAngles.length) return undefined;
+  const log = (...args: unknown[]) => {
+    if (!debug) return;
+    console.log("[polygons2Outer]", ...args);
+  };
+  const logWarn = (...args: unknown[]) => {
+    console.warn("[polygons2Outer]", ...args);
+  };
+  const toFlatJson = (payload: unknown) => {
+    try {
+      return JSON.stringify(payload);
+    } catch {
+      return String(payload);
+    }
+  };
+  const logFlat = (label: string, payload: unknown) => {
+    if (!debug) return;
+    console.log("[polygons2Outer]", `${label}: ${toFlatJson(payload)}`);
+  };
+  const logWarnFlat = (label: string, payload: unknown) => {
+    console.warn("[polygons2Outer]", `${label}: ${toFlatJson(payload)}`);
+  };
+  if (!items.length) {
+    logWarn("输入为空，无法计算外轮廓");
+    return undefined;
+  }
+  log("start", { polygonCount: items.length });
   const edgeMap = new Map<string, { a: Point2D; b: Point2D; isSeam: boolean }>();
+  const outerEdgeSourceMap = new Map<string, Array<{
+    polygonIndex: number;
+    edgeIndex: number;
+    aKey: string;
+    bKey: string;
+    isOuter: boolean;
+    isSeam: boolean;
+    angle: number;
+    joinType: string;
+    joinSide?: string;
+  }>>();
   const max: Point2D = [-Infinity, -Infinity];
   const min: Point2D = [Infinity, Infinity];
   let maxEdgeLen = 0;
-  trianglesWithAngles.forEach((triData) => {
-    const edges: [Point2D, Point2D, { isOuter: boolean; angle: number; isSeam?: boolean } | undefined][] = [
-      [triData.tri[0], triData.tri[1], triData.edges?.[0]],
-      [triData.tri[1], triData.tri[2], triData.edges?.[1]],
-      [triData.tri[2], triData.tri[0], triData.edges?.[2]],
-    ];
+  let allEdgeCount = 0;
+  let outerEdgeCount = 0;
+  let duplicateOuterEdgeCount = 0;
+  items.forEach((item, polygonIndex) => {
+    const points = item.points;
+    // edges[i] 对应 points[i] -> points[(i + 1) % n]。
+    const edges = points.map((point, idx) => [
+      point,
+      points[(idx + 1) % points.length],
+      item.edges?.[idx],
+    ] as [Point2D, Point2D, {
+      isOuter: boolean;
+      angle: number;
+      isSeam?: boolean;
+      joinType?: "default" | "clip" | "interlocking";
+      joinSide?: "mp" | "fp";
+    } | undefined]);
 
-    triData.tri.forEach((pt) => {
+    points.forEach((pt) => {
       if (pt[0] < min[0]) min[0] = pt[0];
       if (pt[1] < min[1]) min[1] = pt[1];
       if (pt[0] > max[0]) max[0] = pt[0];
       if (pt[1] > max[1]) max[1] = pt[1];
     });
-    edges.forEach(([a, b, info]) => {
+    edges.forEach(([a, b, info], edgeIndex) => {
+      allEdgeCount += 1;
       const edgeLen = Math.hypot(b[0] - a[0], b[1] - a[1]);
       if (edgeLen > maxEdgeLen) maxEdgeLen = edgeLen;
       if (!info?.isOuter) return;
+      outerEdgeCount += 1;
       const k = edgeKey(a, b);
+      const source = {
+        polygonIndex,
+        edgeIndex,
+        aKey: pointKey(a),
+        bKey: pointKey(b),
+        isOuter: !!info.isOuter,
+        isSeam: !!info.isSeam,
+        angle: info.angle,
+        joinType: info.joinType ?? "unknown",
+        joinSide: info.joinSide,
+      };
+      if (!outerEdgeSourceMap.has(k)) outerEdgeSourceMap.set(k, []);
+      outerEdgeSourceMap.get(k)!.push(source);
       if (!edgeMap.has(k)) {
         edgeMap.set(k, { a, b, isSeam: !!info.isSeam });
+      } else {
+        duplicateOuterEdgeCount += 1;
       }
     });
   });
+  logFlat("edge stats", {
+    allEdgeCount,
+    outerEdgeCount,
+    uniqueOuterEdgeCount: edgeMap.size,
+    duplicateOuterEdgeCount,
+    maxEdgeLen,
+    bbox: { min, max },
+  });
 
   const boundary = Array.from(edgeMap.values());
-  if (!boundary.length) return undefined;
+  if (!boundary.length) {
+    logWarn("没有任何 outer edge，无法构造边界");
+    return undefined;
+  }
 
   const adjacency = new Map<string, Point2D[]>();
   boundary.forEach(({ a, b }) => {
@@ -364,6 +439,49 @@ export function triangles2Outer(trianglesWithAngles: TriangleWithEdgeInfo[]): {
     adjacency.get(ka)!.push(b);
     adjacency.get(kb)!.push(a);
   });
+  const abnormalDegreeVertices = Array.from(adjacency.entries())
+    .filter(([, neigh]) => neigh.length !== 2)
+    .map(([key, neigh]) => ({ key, degree: neigh.length, neigh: neigh.map((pt) => pointKey(pt)) }));
+  if (abnormalDegreeVertices.length > 0) {
+    // 反查异常顶点关联到哪些 boundary edge 以及这些 edge 的来源 polygon/edge 信息。
+    // 这能快速判断是“某条边没有被标记为 isOuter”，还是“端点 key 不一致导致断链”。
+    const abnormalKeySet = new Set(abnormalDegreeVertices.map((v) => v.key));
+    const incidentBoundaryEdges = boundary
+      .filter(({ a, b }) => abnormalKeySet.has(pointKey(a)) || abnormalKeySet.has(pointKey(b)))
+      .map(({ a, b }) => {
+        const k = edgeKey(a, b);
+        return {
+          edgeKey: k,
+          aKey: pointKey(a),
+          bKey: pointKey(b),
+          sources: outerEdgeSourceMap.get(k) ?? [],
+        };
+      });
+    // 如果是坐标微小差异导致 key 断裂，通常会出现“端点附近有很近但不相等的顶点”。
+    // 这里提供 nearest 候选，便于判断 pointKey 精度是否是根因。
+    const allBoundaryVertices = Array.from(
+      new Map<string, Point2D>(
+        boundary.flatMap(({ a, b }) => [[pointKey(a), a], [pointKey(b), b]]),
+      ).entries(),
+    );
+    const nearestBoundaryVertex = abnormalDegreeVertices.map((v) => {
+      const curr = allBoundaryVertices.find(([k]) => k === v.key)?.[1];
+      if (!curr) return { key: v.key, nearest: null as null | { key: string; dist: number } };
+      let nearest: { key: string; dist: number } | null = null;
+      allBoundaryVertices.forEach(([k, pt]) => {
+        if (k === v.key) return;
+        const dist = Math.hypot(pt[0] - curr[0], pt[1] - curr[1]);
+        if (!nearest || dist < nearest.dist) nearest = { key: k, dist };
+      });
+      return { key: v.key, nearest };
+    });
+    logFlat("non-manifold boundary vertices detected", {
+      count: abnormalDegreeVertices.length,
+      sample: abnormalDegreeVertices.slice(0, 20),
+      incidentBoundaryEdges,
+      nearestBoundaryVertex,
+    });
+  }
 
   const visited = new Set<string>();
   const loops: Point2D[][] = [];
@@ -384,9 +502,30 @@ export function triangles2Outer(trianglesWithAngles: TriangleWithEdgeInfo[]): {
     }
     if (loop.length >= 3 && pointKey(current) === pointKey(loop[0])) {
       loops.push(loop);
+      logFlat("loop detected", {
+        loopIndex: loops.length - 1,
+        loopLength: loop.length,
+        start: pointKey(loop[0]),
+      });
+    } else if (debug) {
+      logFlat("loop tracing stopped before closure", {
+        startEdge: startEdgeKey,
+        tracedLength: loop.length,
+        lastPoint: pointKey(current),
+        guardLeft: guard,
+      });
     }
   });
-  if (!loops.length) return undefined;
+  if (!loops.length) {
+    const unvisitedBoundaryEdges = boundary.filter(({ a, b }) => !visited.has(edgeKey(a, b))).length;
+    logWarnFlat("未找到闭合环，外轮廓构造失败", {
+      boundaryEdgeCount: boundary.length,
+      visitedEdgeCount: visited.size,
+      unvisitedBoundaryEdges,
+      abnormalDegreeVertexCount: abnormalDegreeVertices.length,
+    });
+    return undefined;
+  }
   let outer = loops[0];
   let bestArea = Math.abs(polygonArea(outer));
   loops.slice(1).forEach((lp) => {
@@ -400,6 +539,12 @@ export function triangles2Outer(trianglesWithAngles: TriangleWithEdgeInfo[]): {
     outer = outer.slice(0, -1);
   }
   const polyOrientation = Math.sign(polygonArea(outer)) || 1; // 1:CCW, -1:CW
+  logFlat("outer selected", {
+    loopCount: loops.length,
+    outerLength: outer.length,
+    outerAreaAbs: bestArea,
+    orientation: polyOrientation > 0 ? "CCW" : "CW",
+  });
   const pointAngleMap = new Map<string, number>();
   const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
   const len = outer.length;
@@ -429,6 +574,10 @@ export function triangles2Outer(trianglesWithAngles: TriangleWithEdgeInfo[]): {
     const angleDeg = isReflex ? 360 - baseDeg : baseDeg;
     pointAngleMap.set(pointKey(curr), angleDeg);
   }
+  logFlat("outer point angle map", {
+    seamCornerCount: pointAngleMap.size,
+    seamCornerSample: Array.from(pointAngleMap.entries()).slice(0, 20),
+  });
   return { outer, min, max, maxEdgeLen, outerPointAngleMap: pointAngleMap };
 }
 
@@ -599,6 +748,34 @@ export function trapezoid(
   ];
   return [a, b, f, e];
 }
+
+/**
+ * 求点 p 到线段 ab 所在线的垂点（落在“无限直线”上）
+ * - 若 a、b 重合（线段退化为点），返回 undefined
+ */
+export function footOfPerpendicularToSegmentLine(
+  p: Point2D,
+  a: Point2D,
+  b: Point2D,
+  eps = 1e-12
+): Point2D | undefined {
+  const abx = b[0] - a[0];
+  const aby = b[1] - a[1];
+  const len2 = abx * abx + aby * aby;
+  if (len2 < eps) return undefined;
+
+  const apx = p[0] - a[0];
+  const apy = p[1] - a[1];
+
+  const t = (apx * abx + apy * aby) / len2;
+
+  return [
+    a[0] + t * abx,
+    a[1] + t * aby,
+  ];
+}
+
+
 /** 求由三角形 ABC 与 ABD（共享边 AB）构成的二面角的角平分面。
  * 返回的 Plane3D 以 point = a，normal 给出平分面的法向 
  */
@@ -963,4 +1140,22 @@ export function isCounterClockwiseFromFront(
   // 点积>0表示法向量方向一致，从正面看是逆时针
   // 点积<0表示法向量方向相反，从正面看是顺时针
   return dot > 0;
+}
+
+/**
+ * 根据半径 r 和弧长 s 计算圆心角（弧度）
+ * 公式：theta = s / r
+ */
+export function angleFromRadiusAndArcLength(radius: number, arcLength: number): number | undefined {
+  if (!Number.isFinite(radius) || !Number.isFinite(arcLength)) return undefined;
+  if (radius <= 0) return undefined;
+  return arcLength / radius;
+}
+
+/**
+ * 根据半径 r 和弧长 s 计算圆心角（度）
+ */
+export function angleDegFromRadiusAndArcLength(radius: number, arcLength: number): number | undefined {
+  const rad = angleFromRadiusAndArcLength(radius, arcLength);
+  return rad === undefined ? undefined : radToDeg(rad);
 }

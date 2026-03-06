@@ -43,6 +43,15 @@ const hintTable: Record<WorkspaceState, HintConfig> = {
       { key: "rename-group", i18n: "op.group.rename" },
     ],
   },
+  editingSeam: {
+    left: [
+      { key: "seam-change", i18n: "op.seam.change" },
+      { key: "view-rotate", i18n: "op.view.rotate" },
+      { key: "view-zoom", i18n: "op.view.zoom" },
+      { key: "view-pan", i18n: "op.view.pan" },
+    ],
+    right: [],
+  },
   previewGroupModel: {
     left: [
       { key: "view-rotate", i18n: "op.view.rotate" },

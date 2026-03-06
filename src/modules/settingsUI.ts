@@ -8,8 +8,24 @@ type SettingsUIRefs = {
   openBtn: HTMLButtonElement;
   cancelBtn: HTMLButtonElement;
   confirmBtn: HTMLButtonElement;
+  joinTypeInterlockingBtn: HTMLButtonElement;
+  joinTypeClipBtn: HTMLButtonElement;
+  joinTypeResetBtn: HTMLButtonElement;
   scaleInput: HTMLInputElement;
   scaleResetBtn: HTMLButtonElement;
+  minFoldAngleThresholdInput: HTMLInputElement;
+  minFoldAngleThresholdResetBtn: HTMLButtonElement;
+  clawInterlockingAngleInput: HTMLInputElement;
+  clawInterlockingAngleResetBtn: HTMLButtonElement;
+  clawTargetRadiusInput: HTMLInputElement;
+  clawTargetRadiusResetBtn: HTMLButtonElement;
+  clawRadiusAdaptiveOffBtn: HTMLButtonElement;
+  clawRadiusAdaptiveOnBtn: HTMLButtonElement;
+  clawRadiusAdaptiveResetBtn: HTMLButtonElement;
+  clawWidthInput: HTMLInputElement;
+  clawWidthResetBtn: HTMLButtonElement;
+  clawFitGapInput: HTMLInputElement;
+  clawFitGapResetBtn: HTMLButtonElement;
   tabWidthInput: HTMLInputElement;
   tabWidthResetBtn: HTMLButtonElement;
   tabThicknessInput: HTMLInputElement;
@@ -36,8 +52,12 @@ type SettingsUIRefs = {
   bodyLayersValue: HTMLSpanElement;
   bodyLayersResetBtn: HTMLButtonElement;
   navBasic: HTMLButtonElement;
+  navInterlocking: HTMLButtonElement;
+  navClip: HTMLButtonElement;
   navExperiment: HTMLButtonElement;
   panelBasic: HTMLDivElement;
+  panelInterlocking: HTMLDivElement;
+  panelClip: HTMLDivElement;
   panelExperiment: HTMLDivElement;
 };
 
@@ -59,6 +79,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
 
   const closeSettings = () => {
     refs.overlay.classList.add("hidden");
+    refs.overlay.style.visibility = "";
     settingsSnapshot = null;
   };
 
@@ -67,9 +88,19 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.hollowOffBtn.classList.toggle("active", !settingsDraft.hollowStyle);
   };
 
+  const updateJoinTypeButtons = () => {
+    refs.joinTypeInterlockingBtn.classList.toggle("active", settingsDraft.joinType === "interlocking");
+    refs.joinTypeClipBtn.classList.toggle("active", settingsDraft.joinType === "clip");
+  };
+
   const updateClipGapAdjustButtons = () => {
     refs.clipGapAdjustNormalBtn.classList.toggle("active", settingsDraft.clipGapAdjust === "off");
     refs.clipGapAdjustNarrowBtn.classList.toggle("active", settingsDraft.clipGapAdjust === "on");
+  };
+
+  const updateClawRadiusAdaptiveButtons = () => {
+    refs.clawRadiusAdaptiveOffBtn.classList.toggle("active", settingsDraft.clawRadiusAdaptive === "off");
+    refs.clawRadiusAdaptiveOnBtn.classList.toggle("active", settingsDraft.clawRadiusAdaptive === "on");
   };
 
   const updateWireframeEnabled = () => {
@@ -79,32 +110,80 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.wireframeRow.classList.toggle("disabled", !enabled);
   };
 
-  const activateTab = (tab: "basic" | "experiment") => {
-    const isBasic = tab === "basic";
-    refs.navBasic.classList.toggle("active", isBasic);
-    refs.navExperiment.classList.toggle("active", !isBasic);
-    refs.panelBasic.classList.toggle("active", isBasic);
-    refs.panelExperiment.classList.toggle("active", !isBasic);
+  const setRowModified = (anchor: HTMLElement | null | undefined, modified: boolean) => {
+    const row = anchor?.closest(".setting-row");
+    if (!row) return;
+    row.classList.toggle("modified", modified);
+  };
+
+  // 所有“是否为默认值”的高亮逻辑集中在这里，
+  // 避免分散在各个控件事件里造成状态不一致。
+  const updateModifiedIndicators = () => {
+    const defaults = getDefaultSettings();
+    setRowModified(refs.scaleInput, settingsDraft.scale !== defaults.scale);
+    setRowModified(refs.minFoldAngleThresholdInput, settingsDraft.minFoldAngleThreshold !== defaults.minFoldAngleThreshold);
+    setRowModified(refs.clawInterlockingAngleInput, settingsDraft.clawInterlockingAngle !== defaults.clawInterlockingAngle);
+    setRowModified(refs.clawTargetRadiusInput, settingsDraft.clawTargetRadius !== defaults.clawTargetRadius);
+    setRowModified(refs.clawRadiusAdaptiveOffBtn, settingsDraft.clawRadiusAdaptive !== defaults.clawRadiusAdaptive);
+    setRowModified(refs.clawWidthInput, settingsDraft.clawWidth !== defaults.clawWidth);
+    setRowModified(refs.clawFitGapInput, settingsDraft.clawFitGap !== defaults.clawFitGap);
+    setRowModified(refs.layerHeightInput, settingsDraft.layerHeight !== defaults.layerHeight);
+    setRowModified(refs.connectionLayersValue, settingsDraft.connectionLayers !== defaults.connectionLayers);
+    setRowModified(refs.bodyLayersValue, settingsDraft.bodyLayers !== defaults.bodyLayers);
+    setRowModified(refs.joinTypeInterlockingBtn, settingsDraft.joinType !== defaults.joinType);
+    setRowModified(refs.tabWidthInput, settingsDraft.tabWidth !== defaults.tabWidth);
+    setRowModified(refs.tabThicknessInput, settingsDraft.tabThickness !== defaults.tabThickness);
+    setRowModified(refs.tabClipGapInput, settingsDraft.tabClipGap !== defaults.tabClipGap);
+    setRowModified(refs.clipGapAdjustNormalBtn, settingsDraft.clipGapAdjust !== defaults.clipGapAdjust);
+    setRowModified(refs.hollowOnBtn, settingsDraft.hollowStyle !== defaults.hollowStyle);
+    setRowModified(refs.wireframeThicknessInput, settingsDraft.wireframeThickness !== defaults.wireframeThickness);
+  };
+
+  const activateTab = (tab: "basic" | "interlocking" | "clip" | "experiment") => {
+    const tabs: Array<{
+      key: "basic" | "interlocking" | "clip" | "experiment";
+      nav: HTMLButtonElement;
+      panel: HTMLDivElement;
+    }> = [
+      { key: "basic", nav: refs.navBasic, panel: refs.panelBasic },
+      { key: "interlocking", nav: refs.navInterlocking, panel: refs.panelInterlocking },
+      { key: "clip", nav: refs.navClip, panel: refs.panelClip },
+      { key: "experiment", nav: refs.navExperiment, panel: refs.panelExperiment },
+    ];
+    tabs.forEach(({ key, nav, panel }) => {
+      const active = key === tab;
+      nav.classList.toggle("active", active);
+      panel.classList.toggle("active", active);
+    });
   };
 
   const measurePanelHeight = (panel: HTMLDivElement) => {
     const prevDisplay = panel.style.display;
     const prevVisibility = panel.style.visibility;
     const prevPosition = panel.style.position;
+    const prevWidth = panel.style.width;
     panel.style.visibility = "hidden";
     panel.style.position = "absolute";
-    panel.style.display = "block";
+    panel.style.display = "flex";
+    const contentWidth = refs.content.clientWidth || refs.content.getBoundingClientRect().width;
+    if (contentWidth > 0) {
+      panel.style.width = `${contentWidth}px`;
+    }
     const h = panel.scrollHeight;
     panel.style.display = prevDisplay;
     panel.style.visibility = prevVisibility;
     panel.style.position = prevPosition;
+    panel.style.width = prevWidth;
     return h;
   };
 
   const adjustContentHeight = () => {
-    const basicH = measurePanelHeight(refs.panelBasic);
-    const expH = measurePanelHeight(refs.panelExperiment);
-    const maxContent = Math.max(basicH, expH);
+    const maxContent = Math.max(
+      measurePanelHeight(refs.panelBasic),
+      measurePanelHeight(refs.panelInterlocking),
+      measurePanelHeight(refs.panelClip),
+      measurePanelHeight(refs.panelExperiment),
+    );
     const maxAllowed = Math.floor(window.innerHeight * 0.8);
     const target = Math.min(maxContent, maxAllowed);
     if (target > 0) {
@@ -119,6 +198,26 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
 
   const validators = {
     scale: (val: number) => !Number.isNaN(val) && val > SETTINGS_LIMITS.scale.min,
+    minFoldAngleThreshold: (val: number) =>
+      !Number.isNaN(val) &&
+      val >= SETTINGS_LIMITS.minFoldAngleThreshold.min &&
+      val <= SETTINGS_LIMITS.minFoldAngleThreshold.max,
+    clawInterlockingAngle: (val: number) =>
+      !Number.isNaN(val) &&
+      val >= SETTINGS_LIMITS.clawInterlockingAngle.min &&
+      val <= SETTINGS_LIMITS.clawInterlockingAngle.max,
+    clawTargetRadius: (val: number) =>
+      !Number.isNaN(val) &&
+      val >= SETTINGS_LIMITS.clawTargetRadius.min &&
+      val <= SETTINGS_LIMITS.clawTargetRadius.max,
+    clawWidth: (val: number) =>
+      !Number.isNaN(val) &&
+      val >= SETTINGS_LIMITS.clawWidth.min &&
+      val <= SETTINGS_LIMITS.clawWidth.max,
+    clawFitGap: (val: number) =>
+      !Number.isNaN(val) &&
+      val >= SETTINGS_LIMITS.clawFitGap.min &&
+      val <= SETTINGS_LIMITS.clawFitGap.max,
     tabThickness: (val: number) =>
       !Number.isNaN(val) && val >= SETTINGS_LIMITS.tabThickness.min && val <= SETTINGS_LIMITS.tabThickness.max,
     layerHeight: (val: number) =>
@@ -153,7 +252,14 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
   refs.openBtn.addEventListener("click", () => {
     settingsSnapshot = getSettings();
     settingsDraft = { ...settingsSnapshot };
+    updateJoinTypeButtons();
     refs.scaleInput.value = String(settingsDraft.scale);
+    refs.minFoldAngleThresholdInput.value = String(settingsDraft.minFoldAngleThreshold);
+    refs.clawInterlockingAngleInput.value = String(settingsDraft.clawInterlockingAngle);
+    refs.clawTargetRadiusInput.value = String(settingsDraft.clawTargetRadius);
+    updateClawRadiusAdaptiveButtons();
+    refs.clawWidthInput.value = String(settingsDraft.clawWidth);
+    refs.clawFitGapInput.value = String(settingsDraft.clawFitGap);
     refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
     refs.layerHeightInput.value = String(settingsDraft.layerHeight);
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
@@ -165,45 +271,95 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateClipGapAdjustButtons();
     updateHollowButtons();
     updateWireframeEnabled();
-    [refs.scaleInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
+    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterlockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.clawFitGapInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
       updateInputColor(el, true),
     );
+    updateModifiedIndicators();
     updateWireframeEnabled();
-    activateTab("basic");
-    adjustContentHeight();
+    refs.content.style.minHeight = "";
+    refs.content.style.height = "";
+    refs.overlay.style.visibility = "hidden";
     refs.overlay.classList.remove("hidden");
+    activateTab("basic");
+    requestAnimationFrame(() => {
+      adjustContentHeight();
+      refs.overlay.style.visibility = "";
+    });
+  });
+
+  refs.joinTypeInterlockingBtn.addEventListener("click", () => {
+    settingsDraft.joinType = "interlocking";
+    updateJoinTypeButtons();
+    updateModifiedIndicators();
+  });
+  refs.joinTypeClipBtn.addEventListener("click", () => {
+    settingsDraft.joinType = "clip";
+    updateJoinTypeButtons();
+    updateModifiedIndicators();
+  });
+  refs.joinTypeResetBtn.addEventListener("click", () => {
+    settingsDraft.joinType = getDefaultSettings().joinType;
+    updateJoinTypeButtons();
+    updateModifiedIndicators();
   });
 
   refs.hollowOnBtn.addEventListener("click", () => {
     settingsDraft.hollowStyle = true;
     updateHollowButtons();
     updateWireframeEnabled();
+    updateModifiedIndicators();
   });
   refs.hollowOffBtn.addEventListener("click", () => {
     settingsDraft.hollowStyle = false;
     updateHollowButtons();
     updateWireframeEnabled();
+    updateModifiedIndicators();
   });
   refs.hollowResetBtn.addEventListener("click", () => {
     const def = getDefaultSettings().hollowStyle;
     settingsDraft.hollowStyle = def;
     updateHollowButtons();
     updateWireframeEnabled();
+    updateModifiedIndicators();
   });
   refs.clipGapAdjustNormalBtn.addEventListener("click", () => {
     settingsDraft.clipGapAdjust = "off";
     updateClipGapAdjustButtons();
+    updateModifiedIndicators();
   });
   refs.clipGapAdjustNarrowBtn.addEventListener("click", () => {
     settingsDraft.clipGapAdjust = "on";
     updateClipGapAdjustButtons();
+    updateModifiedIndicators();
   });
   refs.clipGapAdjustResetBtn.addEventListener("click", () => {
     settingsDraft.clipGapAdjust = getDefaultSettings().clipGapAdjust;
     updateClipGapAdjustButtons();
+    updateModifiedIndicators();
+  });
+  refs.clawRadiusAdaptiveOffBtn.addEventListener("click", () => {
+    settingsDraft.clawRadiusAdaptive = "off";
+    updateClawRadiusAdaptiveButtons();
+    updateModifiedIndicators();
+  });
+  refs.clawRadiusAdaptiveOnBtn.addEventListener("click", () => {
+    settingsDraft.clawRadiusAdaptive = "on";
+    updateClawRadiusAdaptiveButtons();
+    updateModifiedIndicators();
+  });
+  refs.clawRadiusAdaptiveResetBtn.addEventListener("click", () => {
+    settingsDraft.clawRadiusAdaptive = getDefaultSettings().clawRadiusAdaptive;
+    updateClawRadiusAdaptiveButtons();
+    updateModifiedIndicators();
   });
   refs.navBasic.addEventListener("click", () => {
     activateTab("basic");
+  });
+  refs.navInterlocking.addEventListener("click", () => {
+    activateTab("interlocking");
+  });
+  refs.navClip.addEventListener("click", () => {
+    activateTab("clip");
   });
   refs.navExperiment.addEventListener("click", () => {
     activateTab("experiment");
@@ -234,6 +390,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
       }
       setDraft(val);
       updateInputColor(input, true);
+      updateModifiedIndicators();
     });
 
     input.addEventListener("keydown", (e) => {
@@ -247,6 +404,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
       setDraft(def);
       input.value = String(def);
       updateInputColor(input, true);
+      updateModifiedIndicators();
     });
   };
 
@@ -258,6 +416,51 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     (v) => (settingsDraft.scale = v),
     validators.scale,
     () => getDefaultSettings().scale,
+  );
+  bindNumericInput(
+    refs.minFoldAngleThresholdInput,
+    refs.minFoldAngleThresholdResetBtn,
+    (raw) => parseFloat(raw),
+    () => settingsDraft.minFoldAngleThreshold,
+    (v) => (settingsDraft.minFoldAngleThreshold = v),
+    validators.minFoldAngleThreshold,
+    () => getDefaultSettings().minFoldAngleThreshold,
+  );
+  bindNumericInput(
+    refs.clawInterlockingAngleInput,
+    refs.clawInterlockingAngleResetBtn,
+    (raw) => parseFloat(raw),
+    () => settingsDraft.clawInterlockingAngle,
+    (v) => (settingsDraft.clawInterlockingAngle = v),
+    validators.clawInterlockingAngle,
+    () => getDefaultSettings().clawInterlockingAngle,
+  );
+  bindNumericInput(
+    refs.clawTargetRadiusInput,
+    refs.clawTargetRadiusResetBtn,
+    (raw) => parseFloat(raw),
+    () => settingsDraft.clawTargetRadius,
+    (v) => (settingsDraft.clawTargetRadius = v),
+    validators.clawTargetRadius,
+    () => getDefaultSettings().clawTargetRadius,
+  );
+  bindNumericInput(
+    refs.clawWidthInput,
+    refs.clawWidthResetBtn,
+    (raw) => parseFloat(raw),
+    () => settingsDraft.clawWidth,
+    (v) => (settingsDraft.clawWidth = v),
+    validators.clawWidth,
+    () => getDefaultSettings().clawWidth,
+  );
+  bindNumericInput(
+    refs.clawFitGapInput,
+    refs.clawFitGapResetBtn,
+    (raw) => parseFloat(raw),
+    () => settingsDraft.clawFitGap,
+    (v) => (settingsDraft.clawFitGap = v),
+    validators.clawFitGap,
+    () => getDefaultSettings().clawFitGap,
   );
   bindNumericInput(
     refs.layerHeightInput,
@@ -313,10 +516,12 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
       SETTINGS_LIMITS.connectionLayers.max,
     );
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
+    updateModifiedIndicators();
   };
   const updateBodyValue = (val: number) => {
     settingsDraft.bodyLayers = clamp(val, SETTINGS_LIMITS.bodyLayers.min, SETTINGS_LIMITS.bodyLayers.max);
     refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
+    updateModifiedIndicators();
   };
 
   refs.connectionLayersDecBtn.addEventListener("click", () => updateConnectionValue(settingsDraft.connectionLayers - 1));
@@ -330,6 +535,12 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     closeSettings();
     settingsDraft = getSettings();
     refs.scaleInput.value = String(settingsDraft.scale);
+    refs.minFoldAngleThresholdInput.value = String(settingsDraft.minFoldAngleThreshold);
+    refs.clawInterlockingAngleInput.value = String(settingsDraft.clawInterlockingAngle);
+    refs.clawTargetRadiusInput.value = String(settingsDraft.clawTargetRadius);
+    updateClawRadiusAdaptiveButtons();
+    refs.clawWidthInput.value = String(settingsDraft.clawWidth);
+    refs.clawFitGapInput.value = String(settingsDraft.clawFitGap);
     refs.layerHeightInput.value = String(settingsDraft.layerHeight);
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
     refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
@@ -337,11 +548,13 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
     refs.tabClipGapInput.value = String(settingsDraft.tabClipGap);
     refs.wireframeThicknessInput.value = String(settingsDraft.wireframeThickness);
+    updateJoinTypeButtons();
     updateClipGapAdjustButtons();
     updateHollowButtons();
-    [refs.scaleInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
+    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterlockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.clawFitGapInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
       updateInputColor(el, true),
     );
+    updateModifiedIndicators();
   });
 
   refs.confirmBtn.addEventListener("click", () => {
@@ -350,8 +563,35 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
       return;
     }
     const changes: string[] = [];
+    if (settingsDraft.joinType !== settingsSnapshot.joinType) {
+      changes.push(
+        t("log.settings.changed", {
+          label: t("settings.joinType.label"),
+          value: settingsDraft.joinType === "interlocking" ? t("settings.joinType.interlocking") : t("settings.joinType.clip"),
+        }),
+      );
+    }
     if (settingsDraft.scale !== settingsSnapshot.scale) {
       changes.push(t("log.settings.changed", { label: t("settings.scale.label"), value: settingsDraft.scale }));
+    }
+    if (settingsDraft.minFoldAngleThreshold !== settingsSnapshot.minFoldAngleThreshold) {
+      changes.push(t("log.settings.changed", { label: t("settings.minFoldAngleThreshold.label"), value: settingsDraft.minFoldAngleThreshold }));
+    }
+    if (settingsDraft.clawInterlockingAngle !== settingsSnapshot.clawInterlockingAngle) {
+      changes.push(t("log.settings.changed", { label: t("settings.clawInterlockingAngle.label"), value: settingsDraft.clawInterlockingAngle }));
+    }
+    if (settingsDraft.clawTargetRadius !== settingsSnapshot.clawTargetRadius) {
+      changes.push(t("log.settings.changed", { label: t("settings.clawTargetRadius.label"), value: settingsDraft.clawTargetRadius }));
+    }
+    if (settingsDraft.clawRadiusAdaptive !== settingsSnapshot.clawRadiusAdaptive) {
+      const label = settingsDraft.clawRadiusAdaptive === "off" ? t("settings.clawRadiusAdaptive.off") : t("settings.clawRadiusAdaptive.on");
+      changes.push(t("log.settings.changed", { label: t("settings.clawRadiusAdaptive.label"), value: label }));
+    }
+    if (settingsDraft.clawWidth !== settingsSnapshot.clawWidth) {
+      changes.push(t("log.settings.changed", { label: t("settings.clawWidth.label"), value: settingsDraft.clawWidth }));
+    }
+    if (settingsDraft.clawFitGap !== settingsSnapshot.clawFitGap) {
+      changes.push(t("log.settings.changed", { label: t("settings.clawFitGap.label"), value: settingsDraft.clawFitGap }));
     }
     if (settingsDraft.tabWidth !== settingsSnapshot.tabWidth) {
       changes.push(t("log.settings.changed", { label: t("settings.tabWidth.label"), value: settingsDraft.tabWidth }));

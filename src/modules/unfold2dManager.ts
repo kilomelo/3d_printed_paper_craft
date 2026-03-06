@@ -15,22 +15,29 @@ import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { EdgeRecord, getFaceVertexIndices } from "./model";
 import { sharedEdgeIsSeam } from "./groups";
-import {  } from "./model";
 import { AngleIndex } from "./geometry";
 import { appEventBus } from "./eventBus";
 import type { Renderer2DContext } from "./renderer2d";
 import {
+  createUnfoldEdgeLineCoplanarMaterial,
   createUnfoldFaceMaterial,
   createWarnningMaterial,
   createUnfoldEdgeLineFoldinMaterial,
   createUnfoldEdgeLineFoldoutMaterial,
   ensurePlanarUVWorldScale, ensurePlanarUVScreenSpaceCSS } from "./materials";
-import type { Point2D, Point3D, Vec3, TriangleWithEdgeInfo as TriangleData } from "../types/geometryTypes";
+import type {
+  Point2D,
+  Point3D,
+  Vec3,
+  PolygonWithEdgeInfo as PolygonData,
+  PolygonEdgeInfo,
+} from "../types/geometryTypes";
 import { p3, v3 } from "../types/geometryTypes";
 import {
   isCounterClockwiseFromFront,
   pointKey3D,
   edgeKey3D,
+  radToDeg,
   sub3,
   cross3,
   norm3,
@@ -503,16 +510,34 @@ export function createUnfold2dManager(
     // 展开边线段渲染
     const sizeVec = new Vector2();
     renderer2d.renderer.getSize(sizeVec);
+    const { minFoldAngleThreshold } = getSettings();
+    // 与 getGroupPolygonsData 中的共面合并规则保持一致：
+    // 仅当一条边确实是双面共享边，且其二面角距离 180° 的偏差不超过阈值时，
+    // 才认为它不会形成折痕，因此在 2D 预览中不绘制该线段。
+    // 外轮廓边只有一个相邻面，必须继续显示，不能因为 fallback angle = PI 而被误隐藏。
+    const coplanarThresholdRad = (minFoldAngleThreshold * Math.PI) / 180;
     edgeCache.forEach((rec, eid) => {
       if (!rec || rec.length === 0) return;
+      const edgeRec = edgesArray[eid];
+      const angleRad = angleIndex.getAngle(eid);
+      const isSeamEdge =
+        !!edgeRec &&
+        edgeRec.faces.size === 2 &&
+        sharedEdgeIsSeam(...Array.from(edgeRec.faces) as [number, number]);
+      const isCoplanarInnerEdge =
+        !!edgeRec &&
+        edgeRec.faces.size === 2 &&
+        !isSeamEdge &&
+        Math.abs(angleRad - Math.PI) <= coplanarThresholdRad;
       rec.forEach((unfoldedEdge) => {
         const p1 = unfoldedEdge.unfoldedPos[0];
         const p2 = unfoldedEdge.unfoldedPos[1];
         const lineGeom = new LineSegmentsGeometry();
         lineGeom.setPositions(new Float32Array([p1.x, p1.y, 0, p2.x, p2.y, 1]));
-        const angleRad = angleIndex.getAngle(eid);
         const mat =
-        angleRad > Math.PI + 1e-4
+        isCoplanarInnerEdge
+        ? createUnfoldEdgeLineCoplanarMaterial({ width: sizeVec.x || 1, height: sizeVec.y || 1 })
+        : angleRad > Math.PI + 1e-4
         ? createUnfoldEdgeLineFoldinMaterial({ width: sizeVec.x || 1, height: sizeVec.y || 1 }, foldinDashScale)
         : createUnfoldEdgeLineFoldoutMaterial({ width: sizeVec.x || 1, height: sizeVec.y || 1 });
         const line = new LineSegments2(lineGeom, mat);
@@ -554,61 +579,366 @@ export function createUnfold2dManager(
     renderer2d.bboxRuler.update(minX, maxX, minY, maxY, scale);
   }
 
-  // 获取指定展开组的三角形数据（含边信息），用于生成 2D 展开图及用于打印的展开3D模型
-  const getGroupTrianglesData = (groupId: number): TriangleData[] => {
+  // 新建模链路：按“共面连通块”输出多边形。
+  // 这里刻意复用单面边信息计算，再做边界合并，避免重复实现 tabAngle / joinSide 等规则。
+  // scale 只在最终构造返回结果时应用，避免影响依赖原始坐标/顶点 key 的中间计算。
+  const getGroupPolygonsData = (groupId: number): PolygonData[] => {
     const tris = buildSnappedTris(groupId);
     if (!tris.length) return [];
-    const faceToEdges = getFaceToEdges();
-    const faceIndexMap = getFaceIndexMap();
-    const vertexKeyToPos = getVertexKeyToPos();
-    const edgesArray = getEdgesArray();
-    // 预构建：顶点 -> 与之相连的拼接边的另一端点列表（3D）
-    const vertexSeamNeighbors = new Map<string, { key: string; pos: Point3D }[]>();
-    const addNeighbor = (k: string, neighborKey: string, p: Vector3 | undefined) => {
-      if (!p) return;
-      const arr = vertexSeamNeighbors.get(k) ?? [];
-      arr.push({ key: neighborKey, pos: [p.x, p.y, p.z] });
-      vertexSeamNeighbors.set(k, arr);
+    const { scale, hollowStyle, minFoldAngleThreshold } = getSettings();
+    // 当前设置项的单位是“度”，表示与完全共面（180°）的允许偏差。
+    // 偏差不超过该阈值的相邻三角面，会被视为共面并参与合并。
+    const coplanarThresholdRad = (minFoldAngleThreshold * Math.PI) / 180;
+    const seamContext = createSeamContext();
+    type FacePolygonSeed = {
+      faceId: number;
+      points: [Point2D, Point2D, Point2D];
+      vertexKeys: [string, string, string] | null;
+      edgeIds: number[];
+      edges: PolygonEdgeInfo[];
     };
-    edgesArray.forEach((edge) => {
-      if (!edge) return;
-      const isSeam = edge?.faces && edge.faces.size === 2 && sharedEdgeIsSeam([...edge.faces][0], [...edge.faces][1]);
-      if (!isSeam) return;
-      const [k1, k2] = edge.vertices;
-      const p1 = vertexKeyToPos.get(k1);
-      const p2 = vertexKeyToPos.get(k2);
-      addNeighbor(k1, k2, p2);
-      addNeighbor(k2, k1, p1);
-    });
-    const edgeKeyToId = getEdgeKeyToId();
-    const makeEndpointKey = (edgeKey: string, vertexKey: string) => `${edgeKey}|${vertexKey}`;
-    // 缓存：拼接边 key -> 角度
-    const seamEdgeAngleMap = new Map<string, number>();
-    const { scale } = getSettings();
-    const makeVertexKey = (pos: BufferAttribute | InterleavedBufferAttribute, idx: number) => pointKey3D([pos.getX(idx), pos.getY(idx), pos.getZ(idx)]);
-    const result: Array<TriangleData> = [];
-    tris.forEach(({ faceId: fid, tri }) => {
+    const faceSeeds = new Map<number, FacePolygonSeed>();
+    tris.forEach(({ faceId: fid, tri, vertexKeys, edgeIds }) => {
       const [a, b, c] = tri;
       const triNormal = new Vector3();
       angleIndex.getFaceNormal(fid, triNormal);
-      const edgeIds = faceToEdges.get(fid) ?? [];
-      const keyTo2D = new Map<string, Point2D>();
+      const localVertexKeys =
+        vertexKeys.length === 3
+          ? [vertexKeys[0], vertexKeys[1], vertexKeys[2]] as [string, string, string]
+          : null;
+      faceSeeds.set(fid, {
+        faceId: fid,
+        points: [
+          // 保持未缩放坐标参与后续合并。
+          // 任何依赖原始展开坐标的判断，都在 scale 之前完成。
+          [a.x, a.y],
+          [b.x, b.y],
+          [c.x, c.y],
+        ],
+        vertexKeys: localVertexKeys,
+        edgeIds,
+        edges: buildFaceEdgeInfo(fid, vertexKeys, edgeIds, [a, b, c], triNormal, seamContext),
+      });
+    });
+    if (hollowStyle) {
+      return Array.from(faceSeeds.values()).map((seed) =>
+        finalizePolygonForExport(
+          {
+            // 镂空模式下按你的约束，不做共面合并，退回到“三角形即 polygon”。
+            points: seed.points.map((pt) => [...pt] as Point2D),
+            edges: seed.edges.map(clonePolygonEdgeInfo),
+          },
+          scale,
+        ),
+      );
+    }
+
+    const faceIds = new Set(faceSeeds.keys());
+    const visited = new Set<number>();
+    const polygons: PolygonData[] = [];
+
+    const collectComponent = (startFaceId: number) => {
+      const component: number[] = [];
+      const queue = [startFaceId];
+      visited.add(startFaceId);
+      while (queue.length) {
+        const faceId = queue.pop()!;
+        component.push(faceId);
+        const seed = faceSeeds.get(faceId);
+        if (!seed) continue;
+        seed.edgeIds.forEach((eid) => {
+          const edgeRec = getEdgesArray()[eid];
+          if (!edgeRec || edgeRec.faces.size !== 2) return;
+          const angle = angleIndex.getAngle(eid);
+          if (Math.abs(angle - Math.PI) > coplanarThresholdRad) return;
+          edgeRec.faces.forEach((neighborFaceId) => {
+            if (neighborFaceId === faceId || !faceIds.has(neighborFaceId) || visited.has(neighborFaceId)) return;
+            // 共面合并只用于“同一整片平面”聚合，不能跨 seam。
+            // 即便二面角接近 180°，seam 依然必须保留为分界。
+            if (sharedEdgeIsSeam(faceId, neighborFaceId)) return;
+            visited.add(neighborFaceId);
+            queue.push(neighborFaceId);
+          });
+        });
+      }
+      return component;
+    };
+
+    Array.from(faceSeeds.keys()).forEach((faceId) => {
+      if (visited.has(faceId)) return;
+      const componentFaceIds = collectComponent(faceId);
+      const merged = mergeCoplanarFaceSeeds(componentFaceIds.map((id) => faceSeeds.get(id)).filter(Boolean) as FacePolygonSeed[]);
+      if (merged) {
+        polygons.push(merged);
+        return;
+      }
+      componentFaceIds.forEach((id) => {
+        const seed = faceSeeds.get(id);
+        if (!seed) return;
+        polygons.push({
+          points: seed.points.map((pt) => [...pt] as Point2D),
+          edges: seed.edges.map(clonePolygonEdgeInfo),
+        });
+      });
+    });
+
+    // 统一在最终返回时应用 scale，避免中间步骤的任何 key / 拓扑判断受缩放影响。
+    const exportedPolygons = polygons.map((polygon) => finalizePolygonForExport(polygon, scale));
+
+    return exportedPolygons;
+  };
+
+  // 最终导出给建模侧前，统一做两件事：
+  // 1. 应用 scale（保持与旧逻辑一致：只在最后一步缩放）；
+  // 2. 计算“当前 polygon 自身边界顶点角度”。
+  //
+  // 这层角度数据是为后续建模修复准备的：
+  // - 它描述的是 polygon 语境下的相邻边夹角；
+  // - 不依赖整个展开组总外轮廓；
+  // - 因此可覆盖那些“在局部 polygon 上是边界点，但并非全局外轮廓点”的情况。
+  const finalizePolygonForExport = (polygon: PolygonData, scale: number): PolygonData => {
+    const scaledPoints = polygon.points.map(([x, y]) => [x * scale, y * scale] as Point2D);
+    return {
+      ...polygon,
+      points: scaledPoints,
+      boundaryPointAngleData: buildPolygonBoundaryPointAngleData(scaledPoints),
+    };
+  };
+
+  const buildPolygonBoundaryPointAngleData = (points: Point2D[]) => {
+    if (points.length < 3) return [];
+    const signedArea = polygonSignedArea(points);
+    const polyOrientation = Math.sign(signedArea) || 1; // 1:CCW, -1:CW
+    const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+    return points.map((curr, idx) => {
+      const prev = points[(idx - 1 + points.length) % points.length];
+      const next = points[(idx + 1) % points.length];
+      const ax = prev[0] - curr[0];
+      const ay = prev[1] - curr[1];
+      const bx = next[0] - curr[0];
+      const by = next[1] - curr[1];
+      const la = Math.hypot(ax, ay);
+      const lb = Math.hypot(bx, by);
+      if (la < 1e-9 || lb < 1e-9) {
+        return { point: curr, angle: 0 };
+      }
+      const cos = clamp((ax * bx + ay * by) / (la * lb), -1, 1);
+      const baseDeg = radToDeg(Math.acos(cos));
+      const cross = ax * by - ay * bx;
+      const isReflex = polyOrientation > 0 ? cross > 0 : cross < 0;
+      return {
+        point: curr,
+        angle: isReflex ? 360 - baseDeg : baseDeg,
+      };
+    });
+  };
+
+  const polygonSignedArea = (points: Point2D[]) => {
+    let area = 0;
+    for (let i = 0; i < points.length; i += 1) {
+      const [x1, y1] = points[i];
+      const [x2, y2] = points[(i + 1) % points.length];
+      area += x1 * y2 - x2 * y1;
+    }
+    return area * 0.5;
+  };
+
+  // 深拷贝边信息，避免合并/反转时直接修改单面缓存。
+  const clonePolygonEdgeInfo = (edge: PolygonEdgeInfo): PolygonEdgeInfo => ({
+    ...edge,
+    // joinType 是值语义的枚举字段，直接透传即可；
+    // 这里显式保留该字段，避免后续扩展 clone 逻辑时误以为它可被省略。
+    joinType: edge.joinType,
+    tabAngle: [...edge.tabAngle],
+  });
+
+  // 边方向反转时，stableOrder 的语义也要同步反转。
+  const reverseStableOrder = (stableOrder: "ab" | "ba" | undefined): "ab" | "ba" | undefined => {
+    if (stableOrder === "ab") return "ba";
+    if (stableOrder === "ba") return "ab";
+    return undefined;
+  };
+
+  // 合并多边形边界时，如果边的遍历方向与原三角形局部方向相反，
+  // 需要同步翻转与方向相关的附加属性。
+  const orientPolygonEdgeInfo = (edge: PolygonEdgeInfo, reversed: boolean): PolygonEdgeInfo => {
+    if (!reversed) return clonePolygonEdgeInfo(edge);
+    return {
+      ...edge,
+      tabAngle: [...edge.tabAngle].reverse(),
+      stableOrder: reverseStableOrder(edge.stableOrder),
+    };
+  };
+
+  const mergeCoplanarFaceSeeds = (
+    seeds: Array<{
+      faceId: number;
+      points: [Point2D, Point2D, Point2D];
+      vertexKeys: [string, string, string] | null;
+      edgeIds: number[];
+      edges: PolygonEdgeInfo[];
+    }>,
+  ): PolygonData | null => {
+    if (seeds.length === 0) return null;
+    if (seeds.length === 1) {
+      return {
+        points: seeds[0].points.map((pt) => [...pt] as Point2D),
+        edges: seeds[0].edges.map(clonePolygonEdgeInfo),
+      };
+    }
+
+    type BoundaryEdge = {
+      id: string;
+      aKey: string;
+      bKey: string;
+      a: Point2D;
+      b: Point2D;
+      edge: PolygonEdgeInfo;
+      localOrder: [string, string];
+    };
+
+    // 用“无向顶点对”统计边出现次数：
+    // - 出现 2 次：组件内部共享边，应消除
+    // - 出现 1 次：组件边界边，应保留
+    const edgeCounts = new Map<string, BoundaryEdge[]>();
+    const edgePointIndex: Array<[0, 1] | [1, 2] | [2, 0]> = [[0, 1], [1, 2], [2, 0]];
+
+    seeds.forEach((seed) => {
+      if (!seed.vertexKeys) return;
+      edgePointIndex.forEach(([i0, i1], edgeIdx) => {
+        const aKey = seed.vertexKeys![i0];
+        const bKey = seed.vertexKeys![i1];
+        const undirectedKey = [aKey, bKey].sort().join("|");
+        const list = edgeCounts.get(undirectedKey) ?? [];
+        list.push({
+          id: undirectedKey,
+          aKey,
+          bKey,
+          a: seed.points[i0],
+          b: seed.points[i1],
+          edge: seed.edges[edgeIdx],
+          localOrder: [aKey, bKey],
+        });
+        edgeCounts.set(undirectedKey, list);
+      });
+    });
+
+    const boundaryEdges = Array.from(edgeCounts.values())
+      .filter((entries) => entries.length === 1)
+      .map((entries) => entries[0]);
+    if (!boundaryEdges.length) return null;
+
+    // 由边界边重建边界环。展开来自树结构，因此这里按单一闭环处理。
+    const adjacency = new Map<string, BoundaryEdge[]>();
+    boundaryEdges.forEach((edge) => {
+      const from = adjacency.get(edge.aKey) ?? [];
+      from.push(edge);
+      adjacency.set(edge.aKey, from);
+      const to = adjacency.get(edge.bKey) ?? [];
+      to.push(edge);
+      adjacency.set(edge.bKey, to);
+    });
+
+    const orderedPoints: Point2D[] = [];
+    const orderedEdges: PolygonEdgeInfo[] = [];
+    const visitedBoundaryEdges = new Set<string>();
+    let current = boundaryEdges[0];
+    let currentStartKey = current.aKey;
+    let currentStartPoint = current.a;
+    let currentEndKey = current.bKey;
+    const loopStartKey = currentStartKey;
+    const maxGuard = boundaryEdges.length + 1;
+    let guard = 0;
+
+    while (guard++ < maxGuard) {
+      const reversed = current.localOrder[0] !== currentStartKey;
+      orderedPoints.push(currentStartPoint);
+      orderedEdges.push(orientPolygonEdgeInfo(current.edge, reversed));
+      visitedBoundaryEdges.add(current.id);
+      if (currentEndKey === loopStartKey) {
+        break;
+      }
+      const nextCandidates = (adjacency.get(currentEndKey) ?? []).filter((edge) => !visitedBoundaryEdges.has(edge.id));
+      if (nextCandidates.length !== 1) return null;
+      const next = nextCandidates[0];
+      if (next.aKey === currentEndKey) {
+        current = next;
+        currentStartKey = next.aKey;
+        currentStartPoint = next.a;
+        currentEndKey = next.bKey;
+      } else if (next.bKey === currentEndKey) {
+        current = next;
+        currentStartKey = next.bKey;
+        currentStartPoint = next.b;
+        currentEndKey = next.aKey;
+      } else {
+        return null;
+      }
+    }
+
+    if (orderedEdges.length !== boundaryEdges.length) return null;
+    return {
+      points: orderedPoints,
+      edges: orderedEdges,
+    };
+  };
+
+  const buildFaceEdgeInfo = (
+    fid: number,
+    vertexKeys: string[],
+    edgeIds: number[],
+    tri: [Vector3, Vector3, Vector3],
+    triNormal: Vector3,
+    seamContext: {
+      vertexSeamNeighbors: Map<string, { key: string; pos: Point3D }[]>;
+      seamEdgeAngleMap: Map<string, number>;
+    },
+  ): PolygonEdgeInfo[] => {
+    // 这里定义“单个三角面上的边信息”。
+    // 多边形模式只是复用该结果，再按边界顺序重排，不改变单边的几何定义。
+    const faceIndexMap = getFaceIndexMap();
+    const vertexKeyToPos = getVertexKeyToPos();
+    const edgesArray = getEdgesArray();
+    const { vertexSeamNeighbors, seamEdgeAngleMap } = seamContext;
+    const edgeKeyToId = getEdgeKeyToId();
+    const makeEndpointKey = (edgeKey: string, vertexKey: string) => `${edgeKey}|${vertexKey}`;
+    const makeVertexKey = (pos: BufferAttribute | InterleavedBufferAttribute, idx: number) => pointKey3D([pos.getX(idx), pos.getY(idx), pos.getZ(idx)]);
+    const [a, b, c] = tri;
+    const keyTo2D = new Map<string, Point2D>();
+    let triVertexKeys: [string, string, string] | null = null;
+    const localVertexKeys =
+      vertexKeys.length === 3
+        ? [vertexKeys[0], vertexKeys[1], vertexKeys[2]] as [string, string, string]
+        : null;
+    if (localVertexKeys) {
+      triVertexKeys = localVertexKeys;
+      keyTo2D.set(localVertexKeys[0], [a.x, a.y]);
+      keyTo2D.set(localVertexKeys[1], [b.x, b.y]);
+      keyTo2D.set(localVertexKeys[2], [c.x, c.y]);
+    } else {
       const mapping = faceIndexMap.get(fid);
       if (mapping) {
         const geom = mapping.mesh.geometry;
         const pos = geom.getAttribute("position");
         if (pos) {
           const [ia, ib, ic] = getFaceVertexIndices(geom, mapping.localFace);
-          keyTo2D.set(makeVertexKey(pos, ia), [a.x, a.y]);
-          keyTo2D.set(makeVertexKey(pos, ib), [b.x, b.y]);
-          keyTo2D.set(makeVertexKey(pos, ic), [c.x, c.y]);
+          const keyA = makeVertexKey(pos, ia);
+          const keyB = makeVertexKey(pos, ib);
+          const keyC = makeVertexKey(pos, ic);
+          triVertexKeys = [keyA, keyB, keyC];
+          keyTo2D.set(keyA, [a.x, a.y]);
+          keyTo2D.set(keyB, [b.x, b.y]);
+          keyTo2D.set(keyC, [c.x, c.y]);
         }
       }
-      const edgeInfo = edgeIds.map((eid, edgeIdx) => {
-        const edgeRec = getEdgesArray()[eid];
+    }
+    return edgeIds.map((eid, edgeIdx) => {
+        const edgeRec = edgesArray[eid];
         const isSeam = edgeRec?.faces && edgeRec.faces.size === 2 && sharedEdgeIsSeam([...edgeRec.faces][0], [...edgeRec.faces][1]);
         const isOuter = isSeam || (edgeRec?.faces.size ?? 0) === 1;
         const tabAngle: number[] = [];
+        let joinSide: "mp" | "fp" | undefined;
+        let stableOrder: "ab" | "ba" | undefined;
         if (isSeam && edgeRec?.vertices) {
           const [k1, k2] = edgeRec.vertices;
           // console.log("Processing seam edge:", edgeRec.id, k1, k2);
@@ -778,12 +1108,26 @@ export function createUnfold2dManager(
               // console.log("[geometry] Found third vertex", thirdVertexKey, "for face", fid, "when processing seam edge", edgeRec.id);
               const thirdVertexPos = vertexKeyToPos.get(thirdVertexKey);
               if (thirdVertexPos) {
-                const isCCW = isCounterClockwiseFromFront(p1Vec, p2Vec, thirdVertexPos, [triNormal.x, triNormal.y, triNormal.z]);
-                if (!isCCW) {
+                const isEdgeOrderCCW = isCounterClockwiseFromFront(p1Vec, p2Vec, thirdVertexPos, [triNormal.x, triNormal.y, triNormal.z]);
+                if (!isEdgeOrderCCW) {
                   // console.log("Reversing tab angle order for edge:", edgeRec.id, "due to CW face winding", p1Vec, p2Vec, thirdVertexPos);
                   tabAngle.reverse();
                 }
-                // else console.log("Keeping tab angle order for edge:", edgeRec.id, "due to CCW face winding", p1Vec, p2Vec, thirdVertexPos);
+                if (triVertexKeys) {
+                  const localEndpoints: [string, string] | null =
+                    edgeIdx === 0 ? [triVertexKeys[0], triVertexKeys[1]]
+                    : edgeIdx === 1 ? [triVertexKeys[1], triVertexKeys[2]]
+                    : edgeIdx === 2 ? [triVertexKeys[2], triVertexKeys[0]]
+                    : null;
+                  if (localEndpoints) {
+                    const [pointAKey, pointBKey] = localEndpoints;
+                    stableOrder = pointAKey > pointBKey ? "ab" : "ba";
+                    const stableFirstKey = stableOrder === "ab" ? pointAKey : pointBKey;
+                    const stableMatchesEdgeOrder = stableFirstKey === k1;
+                    const isStableOrderCCW = stableMatchesEdgeOrder ? isEdgeOrderCCW : !isEdgeOrderCCW;
+                    joinSide = isStableOrderCCW ? "fp" : "mp";
+                  }
+                }
               }
               else {
                 console.warn("Cannot find third vertex position for face", fid, "when processing seam edge", k1, k2);
@@ -796,22 +1140,43 @@ export function createUnfold2dManager(
         }
         return {
           isOuter: isOuter,
-          angle: angleIndex.getAngle(eid),
+          // 直接透传去重边上的 joinType。
+          // 该值对所有边都定义；后续消费端只在边实际成为 seam 时再决定它是否生效。
+          joinType: edgeRec?.joinType ?? "default",
+          // PolygonEdgeInfo 约定使用角度制；内部几何索引仍保留弧度，
+          // 因此只在最终构造输出数据时做一次转换，避免影响依赖原始坐标/拓扑的中间计算。
+          angle: radToDeg(angleIndex.getAngle(eid)),
           isSeam: isSeam,
           tabAngle: tabAngle,
+          joinSide,
+          stableOrder,
         };
-      });
-      result.push({
-        tri: [
-          [a.x * scale, a.y * scale],
-          [b.x * scale, b.y * scale],
-          [c.x * scale, c.y * scale],
-        ],
-        faceId: fid,
-        edges: edgeInfo,
-      });
     });
-    return result;
+  };
+
+  // seam 相关缓存按一次导出构建一次，避免每个面重复扫描所有边。
+  const createSeamContext = () => {
+    const vertexKeyToPos = getVertexKeyToPos();
+    const edgesArray = getEdgesArray();
+    const vertexSeamNeighbors = new Map<string, { key: string; pos: Point3D }[]>();
+    const seamEdgeAngleMap = new Map<string, number>();
+    const addNeighbor = (k: string, neighborKey: string, p: Vector3 | undefined) => {
+      if (!p) return;
+      const arr = vertexSeamNeighbors.get(k) ?? [];
+      arr.push({ key: neighborKey, pos: [p.x, p.y, p.z] });
+      vertexSeamNeighbors.set(k, arr);
+    };
+    edgesArray.forEach((edge) => {
+      if (!edge || !edge.faces || edge.faces.size !== 2) return;
+      const [f1, f2] = [...edge.faces];
+      if (!sharedEdgeIsSeam(f1, f2)) return;
+      const [k1, k2] = edge.vertices;
+      const p1 = vertexKeyToPos.get(k1);
+      const p2 = vertexKeyToPos.get(k2);
+      addNeighbor(k1, k2, p2);
+      addNeighbor(k2, k1, p1);
+    });
+    return { vertexSeamNeighbors, seamEdgeAngleMap };
   };
 
   appEventBus.on("clearAppStates", () => {
@@ -904,9 +1269,13 @@ export function createUnfold2dManager(
   appEventBus.on("groupCurrentChanged", (groupId: number) => rebuildGroup2D(groupId));
 
   appEventBus.on("settingsChanged", (changedItemCnt) => {
+    // 目前没有细粒度的“某个设置项发生变化”事件。
+    // 为了让 minFoldAngleThreshold 改动后立即反映到 2D 边线显示，
+    // 这里在任意设置变更时直接强制重建当前展开组。
+    // 这样 bbox 尺寸线、折痕线过滤、拼接线材质都会同步刷新。
     if (!lastBounds) return;
-    const { scale } = getSettings();
-    renderer2d.bboxRuler.update(lastBounds.minX, lastBounds.maxX, lastBounds.minY, lastBounds.maxY, scale);
+    const gid = getPreviewGroupId();
+    rebuildGroup2D(gid, true);
   });
 
   appEventBus.on("groupPlaceAngleChanged", ({ groupId, newAngle, oldAngle }) => {
@@ -925,7 +1294,7 @@ export function createUnfold2dManager(
   });
 
   return {
-    getGroupTrianglesData,
+    getGroupPolygonsData,
     getEdges2D: () => groupEdgesCache,
     getLastBounds,
     hasGroupIntersection: (groupId: number) => {

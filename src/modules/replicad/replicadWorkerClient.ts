@@ -1,4 +1,4 @@
-import { TriangleWithEdgeInfo } from "../../types/geometryTypes";
+import { PolygonWithEdgeInfo } from "../../types/geometryTypes";
 import { getSettings } from "../settings";
 import { Mesh } from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
@@ -13,9 +13,9 @@ type WorkerResponse =
   | { id: number; ok: false; error: string };
 
 type WorkerRequest =
-  | { id: number; type: "step"; triangles: TriangleWithEdgeInfo[]; settings: ReturnType<typeof getSettings>; lang?: string }
-  | { id: number; type: "stl"; triangles: TriangleWithEdgeInfo[]; settings: ReturnType<typeof getSettings>; lang?: string }
-  | { id: number; type: "mesh"; triangles: TriangleWithEdgeInfo[]; settings: ReturnType<typeof getSettings>; lang?: string };
+  | { id: number; type: "step"; polygons: PolygonWithEdgeInfo[]; settings: ReturnType<typeof getSettings>; lang?: string }
+  | { id: number; type: "stl"; polygons: PolygonWithEdgeInfo[]; settings: ReturnType<typeof getSettings>; lang?: string }
+  | { id: number; type: "mesh"; polygons: PolygonWithEdgeInfo[]; settings: ReturnType<typeof getSettings>; lang?: string };
 
 let worker: Worker | null = null;
 let seq = 0;
@@ -79,11 +79,11 @@ export const onWorkerBusyChange = (cb: (busy: boolean) => void) => {
 };
 
 export async function buildStepInWorker(
-  trisWithAngles: TriangleWithEdgeInfo[],
+  polygonsWithAngles: PolygonWithEdgeInfo[],
   onProgress?: (msg: number) => void,
   onLog?: (msg: string, tone?: string) => void,
 ) {
-  const res = (await callWorker({ type: "step", triangles: trisWithAngles, settings: getSettings(), lang: getCurrentLang() }, onProgress, onLog)) as Extract<
+  const res = (await callWorker({ type: "step", polygons: polygonsWithAngles, settings: getSettings(), lang: getCurrentLang() }, onProgress, onLog)) as Extract<
     WorkerResponse,
     { type: "step"; ok: true }
   >;
@@ -91,11 +91,11 @@ export async function buildStepInWorker(
 }
 
 export async function buildStlInWorker(
-  trisWithAngles: TriangleWithEdgeInfo[],
+  polygonsWithAngles: PolygonWithEdgeInfo[],
   onProgress?: (msg: number) => void,
   onLog?: (msg: string, tone?: string) => void,
 ) {
-  const res = (await callWorker({ type: "stl", triangles: trisWithAngles, settings: getSettings(), lang: getCurrentLang() }, onProgress, onLog)) as Extract<
+  const res = (await callWorker({ type: "stl", polygons: polygonsWithAngles, settings: getSettings(), lang: getCurrentLang() }, onProgress, onLog)) as Extract<
     WorkerResponse,
     { type: "stl"; ok: true }
   >;
@@ -105,11 +105,11 @@ export async function buildStlInWorker(
 const stlLoader = new STLLoader();
 
 export async function buildMeshInWorker(
-  trisWithAngles: TriangleWithEdgeInfo[],
+  polygonsWithAngles: PolygonWithEdgeInfo[],
   onProgress?: (msg: number) => void,
   onLog?: (msg: string, tone?: string) => void,
 ) {
-  const res = (await callWorker({ type: "mesh", triangles: trisWithAngles, settings: getSettings(), lang: getCurrentLang() }, onProgress, onLog)) as Extract<
+  const res = (await callWorker({ type: "mesh", polygons: polygonsWithAngles, settings: getSettings(), lang: getCurrentLang() }, onProgress, onLog)) as Extract<
     WorkerResponse,
     { type: "mesh"; ok: true }
   >;
