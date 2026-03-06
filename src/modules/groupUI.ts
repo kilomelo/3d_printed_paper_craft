@@ -53,7 +53,7 @@ export function createGroupUI(
     if (!ui.groupTabsEl) return;
     clearHover(); // 重新渲染前确保成对触发 hoverOut
     ui.groupTabsEl.innerHTML = "";
-    const applyEllipsis = (el: HTMLButtonElement, txt: string) => {
+    const applyEllipsis = (el: HTMLElement, txt: string) => {
       el.textContent = txt;
       if (el.scrollWidth <= el.clientWidth + 1) return;
       let content = txt;

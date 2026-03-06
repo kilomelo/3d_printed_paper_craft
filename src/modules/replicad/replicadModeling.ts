@@ -22,7 +22,6 @@ import {
   arcByCenterStartAngleSafe,
 } from "./replicadUtils";
 import { t, initI18n, setLanguage } from "../i18n";
-import { log } from "three/examples/jsm/nodes/Nodes.js";
 
 let i18nReady: Promise<void> | null = null;
 let desiredLang: string | null = null;
@@ -222,8 +221,8 @@ const buildSolidFromPolygonsWithAngles = async (
         const prevEdgeIdx = (idx - 1 + points.length) % points.length;
         const joinSide = edge.joinSide;
         const stableOrder = edge.stableOrder ?? "ab";
-        // const [stablePointA, stablePointB] =
-          // stableOrder === "ab" ? [pointA, pointB] : [pointB, pointA];
+        const [stablePointA, stablePointB] =
+          stableOrder === "ab" ? [pointA, pointB] : [pointB, pointA];
         const distAB = dists[idx];
         const edgePerpendicularPlane = planes[idx];
         // 相邻两条边的刀具用于裁剪当前边生成的几何体。
@@ -257,7 +256,7 @@ const buildSolidFromPolygonsWithAngles = async (
             ] : [
               [-slopeFirstLayerOffset, slopeStartZ], [0,slopeStartZ],
               [0, slopToolHeight], [-slopeTopOffset, slopToolHeight]],
-            edgePerpendicularPlane, -cutToolMargin, distAB + cutToolMargin);
+            edgePerpendicularPlane, -cutToolMargin, distAB + 2 * cutToolMargin);
           if (!slopeToolBase) {
             onLog?.(t("log.replicad.slopeSketch.fail"));
             console.warn('[ReplicadModeling] failed to create slope tool sketch for edge, skip this edge', edge);
@@ -432,8 +431,10 @@ const buildSolidFromPolygonsWithAngles = async (
             const clawCylinderWidth = clawWidth - 4 * clawFitGap;
             // 计算可用于放置爪的宽度和位置
             // 这里复用舌片计算逻辑，根据两端防干涉角度算出三角形->梯形->宽度和位置
-            const tabAngleA = edge.tabAngle[0];
-            const tabAngleB = edge.tabAngle[1];
+            // 这里可以比舌片的策略激进一些，因为爪大概率不会分布在拼接边的端点附近
+            const tabAngleA = edge.tabAngle[0] + (edge.tabAngle[0] > 45 ? 0 : (45 - edge.tabAngle[0]) * 0.7);
+            const tabAngleB = edge.tabAngle[1] + (edge.tabAngle[1] > 45 ? 0 : (45 - edge.tabAngle[1]) * 0.7);
+            console.log('[ReplicadModeling] tabAngleA, tabAngleB', { tabAngleA, tabAngleB }, edge.tabAngle);
             const tabPointByAngle = buildTriangleByEdgeAndAngles(
               pointA, pointB,
               degToRad(tabAngleA),
@@ -488,9 +489,29 @@ const buildSolidFromPolygonsWithAngles = async (
               console.log(t("log.replicad.claw.fail"), 'tabLength, actualClawWidth', { tabLength, actualClawWidth: clawCylinderWidth });
               return false;
             }
-            const clawSetCount = Math.floor(tabLength / (clawWidth * 2));
+            const clawSetCount = Math.max(1, Math.floor(tabLength / (clawWidth * 3)));
             const distBFoot = Math.hypot(foot[0] - pointB[0], foot[1] - pointB[1]);
-            console.log('[ReplicadModeling] tabLength', tabLength, 'clawSetCount', clawSetCount);
+            const clawSetSpacing = tabLength / clawSetCount;
+            const clawSetOffsets = Array.from({ length: clawSetCount }, (_, idx) => {
+              return (idx - (clawSetCount - 1) / 2) * clawSetSpacing;
+            });
+            // 交替顺序按稳定端点方向定义，避免互拼边局部方向相反时偶数组出现同类型对位。
+            const stableDir: Point2D = [
+              stablePointB[0] - stablePointA[0],
+              stablePointB[1] - stablePointA[1],
+            ];
+            const stableDirLen = Math.hypot(stableDir[0], stableDir[1]);
+            const normalizedStableDir: Point2D =
+              stableDirLen > 1e-8 ? [stableDir[0] / stableDirLen, stableDir[1] / stableDirLen] : [0, 0];
+            const orderedClawPlacements = clawSetOffsets
+              .map((offset) => {
+                const clawCenter: Point2D = [foot[0] + dirAB[0] * offset, foot[1] + dirAB[1] * offset];
+                const projectionOnStableDir =
+                  (clawCenter[0] - stablePointA[0]) * normalizedStableDir[0] +
+                  (clawCenter[1] - stablePointA[1]) * normalizedStableDir[1];
+                return { offset, projectionOnStableDir };
+              })
+              .sort((a, b) => a.projectionOnStableDir - b.projectionOnStableDir);
             const clawExtrudePlane = transformPlaneLocal(edgePerpendicularPlane, { offset: 
               edge.angle < 225+1e-3 ? [
                 (edge.angle < 180 ? bodyThickness : (bodyThickness + connectionThickness)) * -Math.tan(degToRad(90 - edge.angle / 2)),
@@ -539,6 +560,7 @@ const buildSolidFromPolygonsWithAngles = async (
             const planeD = transformPlaneLocal(planeD_, { rotateAround: "x", angle: -actualClawInterlockAngle });
             planeD_.delete();
             const claws = splitCylinder(clawBaseCylinder, [planeA, planeB, planeC, planeD]);
+            // 在这里需要把各个指头移动以使他们的间距满足clawFitGap
             const mpClaw = claws[0].translate(dirAB[0] * 2 * -clawFitGap, dirAB[1] * 2 * -clawFitGap, 0).fuse(claws[2])
               .fuse(claws[4].translate(dirAB[0] * 2 * clawFitGap, dirAB[1] * 2 * clawFitGap, 0))
               .rotate(180, clawExtrudePlane.origin, [0,0,1])
@@ -546,8 +568,14 @@ const buildSolidFromPolygonsWithAngles = async (
               .translate(dirAB[0] * clawCylinderWidth, dirAB[1] * clawCylinderWidth, 0);
             const fpClaw = claws[1].translate(dirAB[0] * -clawFitGap, dirAB[1] * -clawFitGap, 0)
               .fuse(claws[3].translate(dirAB[0] * clawFitGap, dirAB[1] * clawFitGap, 0));
-            if (interlockingClaws.length === 0) interlockingClaws.push(joinSide === "mp" ? mpClaw : fpClaw);
-            else interlockingClaws[0] = interlockingClaws[0].fuse(joinSide === "mp" ? mpClaw : fpClaw);
+            const primaryClawTemplate = joinSide === "mp" ? mpClaw : fpClaw;
+            const secondaryClawTemplate = joinSide === "mp" ? fpClaw : mpClaw;
+            orderedClawPlacements.forEach(({ offset }, clawIdx) => {
+              const clawTemplate = clawIdx % 2 === 0 ? primaryClawTemplate : secondaryClawTemplate;
+              const placedClaw = clawTemplate.clone().translate(dirAB[0] * offset, dirAB[1] * offset, 0);
+              if (interlockingClaws.length === 0) interlockingClaws.push(placedClaw);
+              else interlockingClaws[0] = interlockingClaws[0].fuse(placedClaw);
+            });
             // 补基座
             if (edge.angle > 90) {
               const clawBaseSketcher = new Sketcher(clawExtrudePlane);
@@ -569,18 +597,28 @@ const buildSolidFromPolygonsWithAngles = async (
                 ]);
                 clawBaseSketcher.lineTo(arcStartPoint);
               }
-              interlockingClaws[0] = interlockingClaws[0].fuse(
-                clawBaseSketcher.close().extrude(clawWidth).translate(dirAB[0] * 2 * -clawFitGap, dirAB[1] * 2 * -clawFitGap, 0));
+              const clawBaseTemplate = clawBaseSketcher.close().extrude(clawWidth).translate(dirAB[0] * 2 * -clawFitGap, dirAB[1] * 2 * -clawFitGap, 0);
+              clawSetOffsets.forEach((offset) => {
+                const base = clawBaseTemplate.clone().translate(dirAB[0] * offset, dirAB[1] * offset, 0);
+                interlockingClaws[0] = interlockingClaws[0].fuse(base);
+              });
             }
             // 如果角度在225到270之间，则需要对body进行一些切割以让爪子通过
             if (edge.angle > 225 && edge.angle < 270) {
-              const bodyCutSolid = extrudeFromContourPoints([[0, 0], [0, bodyThickness + connectionThickness + 1], arcStartPoint], clawExtrudePlane, 0, clawWidth);
-              if (bodyCutSolid) connectionSolid = connectionSolid.cut(bodyCutSolid);
+              const bodyCutTemplate = extrudeFromContourPoints([[0, 0], [0, bodyThickness + connectionThickness + 1], arcStartPoint], clawExtrudePlane, 0, clawWidth);
+              if (bodyCutTemplate) {
+                clawSetOffsets.forEach((offset) => {
+                  const bodyCutSolid = bodyCutTemplate.clone().translate(dirAB[0] * offset, dirAB[1] * offset, 0);
+                  connectionSolid = connectionSolid.cut(bodyCutSolid);
+                });
+              }
             }
             try {
-              claws.forEach(p => p.delete());
               splitPlanes.forEach(p => p.delete());
               clawExtrudePlane.delete();
+              claws.forEach(p => p.delete());
+              mpClaw.delete();
+              fpClaw.delete();
             } catch (e) { }
             return true;
           };

@@ -26,8 +26,8 @@ type BindGroupPreviewActionsOptions = {
   loadPreviewModel: (mesh: Mesh, angle: number) => void;
   changeWorkspaceState: (state: WorkspaceState) => void;
   onPreviewMeshCacheMutated?: () => void;
-  log: (msg: string, tone?: "info" | "success" | "error" | "progress") => void;
-  t: (key: string, params?: Record<string, unknown>) => string;
+  log: (msg: string | number, tone?: "info" | "success" | "error" | "progress") => void;
+  t: (key: string, params?: Record<string, string | number>) => string;
 };
 
 export const bindGroupPreviewActions = (opts: BindGroupPreviewActionsOptions) => {

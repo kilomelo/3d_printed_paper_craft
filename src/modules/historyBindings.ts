@@ -23,7 +23,7 @@ type BindHistorySystemOptions = {
   updateMenuState: () => void;
   onPreviewMeshCacheMutated?: () => void;
   log: (msg: string, tone?: "info" | "success" | "error" | "progress", persist?: boolean) => void;
-  t: (key: string, params?: Record<string, unknown>) => string;
+  t: (key: string, params?: Record<string, string | number>) => string;
 };
 
 export const bindHistorySystem = (opts: BindHistorySystemOptions): HistoryPanelUI => {
