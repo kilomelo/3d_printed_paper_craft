@@ -99,6 +99,7 @@ const applyI18nTexts = () => {
     if (!key) return;
     el.title = t(key);
   });
+  homeDemoOptionsEl?.setAttribute("aria-label", "Demo project selector");
   const layerHeightDesc = document.querySelector<HTMLElement>('[data-i18n="settings.layerHeight.desc"]');
   if (layerHeightDesc) {
     layerHeightDesc.textContent = t("settings.layerHeight.desc", {
@@ -154,6 +155,7 @@ const applyI18nTexts = () => {
       def: defaultSettings.wireframeThickness,
     });
   }
+  renderHomeDemoOptions();
   refreshToggleTextLabels?.();
   groupUI.render(buildGroupUIState());
   // 语言切换时刷新历史面板条目文本
@@ -457,6 +459,7 @@ const logPanelEl = document.querySelector<HTMLDivElement>("#log-panel");
 const fileInput = document.querySelector<HTMLInputElement>("#file-input");
 const homeStartBtn = document.querySelector<HTMLButtonElement>("#home-start");
 const homeDemoBtn = document.querySelector<HTMLButtonElement>("#home-demo");
+const homeDemoOptionsEl = document.querySelector<HTMLDivElement>("#home-demo-options");
 const homeChangelogList = document.querySelector<HTMLDivElement>("#home-changelog-list");
 const exitPreviewBtn = document.querySelector<HTMLButtonElement>("#exit-preview-btn");
 const menuOpenBtn = document.querySelector<HTMLButtonElement>("#menu-open");
@@ -495,8 +498,57 @@ langToggleBtn = document.querySelector<HTMLButtonElement>("#lang-toggle");
 langToggleGlobalBtn = document.querySelector<HTMLButtonElement>("#lang-toggle-global");
 
 const getDemoFileName = () => {
-  const name = t("mainpage.demoFile");
-  return name && name !== "mainpage.demoFile" ? name : "熊猫头_demo.3dppc";
+  const selected = homeDemoProjects.find((item) => item.id === selectedHomeDemoProjectId) ?? homeDemoProjects[0];
+  return selected.filePath;
+};
+
+type HomeDemoProject = {
+  id: string;
+  filePath: string;
+  gifPath: string;
+  stillPath: string;
+};
+
+const homeDemoProjects: HomeDemoProject[] = [
+  {
+    id: "panda-cn",
+    filePath: "demo/熊猫头_demo.3dppc",
+    gifPath: "/demo/demo_project_1.gif",
+    stillPath: "/demo/demo_project_1.png",
+  },
+  {
+    id: "panda-poly",
+    filePath: "demo/虎鲸_demo.3dppc",
+    gifPath: "/demo/demo_project_2.gif",
+    stillPath: "/demo/demo_project_2.png",
+  },
+];
+
+let selectedHomeDemoProjectId = homeDemoProjects[0]?.id ?? "";
+
+const renderHomeDemoOptions = () => {
+  if (!homeDemoOptionsEl) return;
+  homeDemoOptionsEl.innerHTML = "";
+  homeDemoProjects.forEach((item) => {
+    const isSelected = item.id === selectedHomeDemoProjectId;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `home-demo-option${isSelected ? " is-selected" : ""}`;
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-checked", String(isSelected));
+    button.setAttribute("aria-label", item.id);
+    button.innerHTML = `
+      <span class="home-demo-option-cover">
+        <img class="home-demo-option-still" src="${item.stillPath}" alt="" loading="lazy" />
+        <img class="home-demo-option-gif" src="${item.gifPath}" alt="" loading="lazy" />
+      </span>
+    `;
+    button.addEventListener("click", () => {
+      selectedHomeDemoProjectId = item.id;
+      renderHomeDemoOptions();
+    });
+    homeDemoOptionsEl.appendChild(button);
+  });
 };
 
 const showLoadingOverlay = () => loadingOverlay?.classList.remove("hidden");
@@ -550,6 +602,7 @@ if (
   !fileInput ||
   !homeStartBtn ||
   !homeDemoBtn ||
+  !homeDemoOptionsEl ||
   !exitPreviewBtn ||
   !editorPreviewEl ||
   !menuOpenBtn ||

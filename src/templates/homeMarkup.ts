@@ -48,6 +48,9 @@ export const renderHomeSection = () => `
           <button class="home-btn home-btn--secondary" id="home-demo" data-i18n="mainpage.try">
             试玩示例项目
           </button>
+          <div class="home-demo-selector">
+            <div class="home-demo-options" id="home-demo-options" role="radiogroup" aria-label="Demo project selector"></div>
+          </div>
         </div>
       </div>
 

@@ -8,6 +8,10 @@ type HintItem = { key: string; i18n: string };
 type HintConfig = { left: HintItem[]; right: HintItem[] };
 
 const hintTable: Record<WorkspaceState, HintConfig> = {
+  mainPage: {
+    left: [],
+    right: [],
+  },
   loading: {
     left: [],
     right: [],
