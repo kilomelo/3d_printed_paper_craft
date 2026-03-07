@@ -14,7 +14,7 @@ import { createUnfold2dManager } from "./modules/unfold2dManager";
 import { createGeometryContext, snapGeometryPositions } from "./modules/geometry";
 import { build3dppcData, download3dppc, type PPCFile } from "./modules/ppc";
 import { createSettingsUI } from "./modules/settingsUI";
-import { getDefaultSettings, SETTINGS_LIMITS } from "./modules/settings";
+import { SETTINGS_LIMITS } from "./modules/settings";
 import { exportEdgeJoinTypes, getModel, importEdgeJoinTypes } from "./modules/model";
 import {
   onWorkerBusyChange,
@@ -30,6 +30,9 @@ import { createOperationHints } from "./modules/operationHints";
 import { createPreviewMeshCacheManager } from "./modules/previewMeshCache";
 import { bindHistorySystem } from "./modules/historyBindings";
 import { bindGroupPreviewActions } from "./modules/groupPreviewActions";
+import { downloadBlob } from "./modules/gifRecorder";
+import { loadHomeChangelog } from "./modules/homeChangelog";
+import { createGifCaptureController } from "./modules/gifCapture";
 import { createHoldButton } from "./components/createHoldButton";
 import { createSegmentedControl } from "./components/createSegmentedControl";
 import "./components/holdButton.css";
@@ -41,7 +44,6 @@ import { initI18n, t, getCurrentLang, setLanguage, onLanguageChanged } from "./m
 const VERSION = packageJson.version ?? "0.0.0.0";
 
 const previewMeshCacheManager = createPreviewMeshCacheManager();
-const defaultSettings = getDefaultSettings();
 const limits = SETTINGS_LIMITS;
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) {
@@ -55,6 +57,15 @@ let workerBusy = false;
 let viewerModeControl: ReturnType<typeof createSegmentedControl> | null = null;
 let edgesEnabledBeforeEditingSeam: boolean | null = null;
 let seamsEnabledBeforeEditingSeam: boolean | null = null;
+
+const ENABLE_GIF_RECORDER_TOOL = new URLSearchParams(window.location.search).get("gifTool") === "1";
+const resolveGifCaptureFps = () => {
+  const raw = new URLSearchParams(window.location.search).get("gifFps");
+  const parsed = raw ? Number(raw) : NaN;
+  if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 60) return Math.round(parsed);
+  return 45;
+};
+const GIF_CAPTURE_FPS = resolveGifCaptureFps();
 
 // 右侧展开组预览区的缓存有效性指示器。
 // 规则很简单：
@@ -208,7 +219,7 @@ const applyI18nTexts = () => {
       max: limits.wireframeThickness.max,
     });
   }
-  void loadHomeChangelog();
+  void loadHomeChangelog(homeChangelogList, t);
   void loadHomeDemoProjects();
   renderHomeDemoOptions();
   refreshToggleTextLabels?.();
@@ -305,6 +316,7 @@ app.innerHTML = `
         <button class="btn sm toggle" id="seams-toggle">拼接边：开</button>
         <button class="btn sm toggle active" id="faces-toggle">面渲染：开</button>
         <button class="btn sm toggle" id="bbox-toggle">包围盒：关</button>
+        <button class="btn sm ghost ${ENABLE_GIF_RECORDER_TOOL ? "" : "hidden"}" id="gif-record-btn">录制GIF</button>
         <div class="toolbar-spacer"></div>
         <span class="toolbar-stat" id="tri-counter">渲染负载：0</span>
       </div>
@@ -634,6 +646,7 @@ const groupPreviewEmpty = document.querySelector<HTMLDivElement>("#group-preview
 const groupPreviewMask = document.querySelector<HTMLDivElement>("#group-preview-mask");
 const groupPreviewCacheIndicator = document.querySelector<HTMLDivElement>("#group-preview-cache-indicator");
 const groupVisibilityToggle = document.querySelector<HTMLButtonElement>("#group-visibility-toggle");
+const gifRecordBtn = document.querySelector<HTMLButtonElement>("#gif-record-btn");
 const settingsOverlay = document.querySelector<HTMLDivElement>("#settings-overlay");
 const settingsContent = settingsOverlay?.querySelector<HTMLDivElement>(".settings-content") || null;
 const renameOverlay = document.querySelector<HTMLDivElement>("#rename-overlay");
@@ -665,17 +678,56 @@ const ZH_HOME_DEMO_CONFIG_PATH = "/demo/demo_projects.json";
 let homeDemoProjects: HomeDemoProject[] = [];
 let selectedHomeDemoProjectId = "";
 let loadedHomeDemoConfigPath = "";
+let homeDemoCaptureSizeCache: { width: number; height: number } | null = null;
+let homeDemoGifPlayNonce = 0;
 
 const refreshHomeDemoEntryVisibility = () => {
   if (!homeDemoEntry) return;
   homeDemoEntry.classList.toggle("hidden", homeDemoProjects.length === 0);
 };
 
+const syncHomeDemoCoverDisplaySize = () => {
+  if (!homeDemoOptionsEl) return;
+  const optionsWidth = Math.round(homeDemoOptionsEl.getBoundingClientRect().width);
+  if (optionsWidth <= 0) return;
+  const optionsStyle = window.getComputedStyle(homeDemoOptionsEl);
+  const columnGap = parseFloat(optionsStyle.columnGap || optionsStyle.gap || "8") || 8;
+  const optionOuterWidth = Math.max(1, Math.floor((optionsWidth - columnGap) / 2));
+  homeDemoOptionsEl.style.gridTemplateColumns = `repeat(2, ${optionOuterWidth}px)`;
+  homeDemoOptionsEl.style.justifyContent = "space-between";
+  const sampleOption = homeDemoOptionsEl.querySelector<HTMLElement>(".home-demo-option");
+  const sampleOptionStyle = sampleOption ? window.getComputedStyle(sampleOption) : null;
+  if (sampleOptionStyle) {
+    const inlineHeight = parseFloat(homeDemoOptionsEl.style.getPropertyValue("--home-demo-cover-height") || "0");
+    const computedHeight = parseFloat(window.getComputedStyle(homeDemoOptionsEl).getPropertyValue("--home-demo-cover-height") || "0");
+    const effectiveHeight = inlineHeight > 0 ? inlineHeight : computedHeight;
+    if (!effectiveHeight || effectiveHeight <= 0) {
+      homeDemoOptionsEl.style.setProperty("--home-demo-cover-height", "131px");
+    }
+    const finalHeight = Math.max(1, Math.round(
+      parseFloat(window.getComputedStyle(homeDemoOptionsEl).getPropertyValue("--home-demo-cover-height") || "131"),
+    ));
+    const buttonHorizontalInset = (
+      parseFloat(sampleOptionStyle.paddingLeft || "0")
+      + parseFloat(sampleOptionStyle.paddingRight || "0")
+      + parseFloat(sampleOptionStyle.borderLeftWidth || "0")
+      + parseFloat(sampleOptionStyle.borderRightWidth || "0")
+    );
+    const finalWidth = Math.max(1, Math.round(optionOuterWidth - buttonHorizontalInset));
+    homeDemoCaptureSizeCache = { width: finalWidth, height: finalHeight };
+  }
+};
+
 const renderHomeDemoOptions = () => {
   if (!homeDemoOptionsEl) return;
   homeDemoOptionsEl.innerHTML = "";
+  const withNonce = (url: string, nonce: number) => {
+    const sep = url.includes("?") ? "&" : "?";
+    return `${url}${sep}play=${nonce}`;
+  };
   homeDemoProjects.forEach((item) => {
     const isSelected = item.id === selectedHomeDemoProjectId;
+    const gifSrc = isSelected ? withNonce(item.gifPath, homeDemoGifPlayNonce) : item.gifPath;
     const button = document.createElement("button");
     button.type = "button";
     button.className = `home-demo-option${isSelected ? " is-selected" : ""}`;
@@ -685,15 +737,19 @@ const renderHomeDemoOptions = () => {
     button.innerHTML = `
       <span class="home-demo-option-cover">
         <img class="home-demo-option-still" src="${item.stillPath}" alt="" loading="lazy" />
-        <img class="home-demo-option-gif" src="${item.gifPath}" alt="" loading="lazy" />
+        <img class="home-demo-option-gif" src="${gifSrc}" alt="" loading="lazy" />
       </span>
     `;
     button.addEventListener("click", () => {
+      if (selectedHomeDemoProjectId !== item.id) {
+        homeDemoGifPlayNonce += 1;
+      }
       selectedHomeDemoProjectId = item.id;
       renderHomeDemoOptions();
     });
     homeDemoOptionsEl.appendChild(button);
   });
+  syncHomeDemoCoverDisplaySize();
 };
 
 const normalizeHomeDemoProjects = (raw: unknown): HomeDemoProject[] => {
@@ -752,65 +808,6 @@ const loadHomeDemoProjects = async () => {
   }
   renderHomeDemoOptions();
   refreshHomeDemoEntryVisibility();
-};
-
-type ChangelogItem = { version: string; date: string; points: string[] };
-
-const parseChangelogText = (text: string): ChangelogItem[] => {
-  const lines = text.split(/\r?\n/);
-  const result: ChangelogItem[] = [];
-  let current: ChangelogItem | null = null;
-
-  lines.forEach((raw) => {
-    const line = raw.trim();
-    if (!line) return;
-
-    const header = line.match(/^##\s*v?([0-9A-Za-z._-]+)\s*\|\s*(\d{4}-\d{2}-\d{2})$/);
-    if (header) {
-      if (current) result.push(current);
-      current = { version: header[1], date: header[2], points: [] };
-      return;
-    }
-
-    if (line.startsWith("- ") && current) {
-      current.points.push(line.slice(2).trim());
-    }
-  });
-
-  if (current) result.push(current);
-  return result;
-};
-
-const renderHomeChangelog = (items: ChangelogItem[]) => {
-  if (!homeChangelogList) return;
-  const allItemsHtml = !items.length
-    ? `<div class="home-changelog-item">No changelog data.</div>`
-    : items.map((item) => `
-      <article class="home-changelog-item">
-        <header class="home-changelog-head">
-          <span class="home-changelog-version">v${item.version}</span>
-          <span class="home-changelog-date">${item.date}</span>
-        </header>
-        <ul class="home-changelog-points">
-          ${item.points.map((point) => `<li>${point}</li>`).join("")}
-        </ul>
-      </article>
-    `).join("");
-  homeChangelogList.innerHTML = allItemsHtml;
-};
-
-const loadHomeChangelog = async () => {
-  if (!homeChangelogList) return;
-  try {
-    const changelogPath = t("mainpage.changelogFile");
-    const path = changelogPath && changelogPath !== "mainpage.changelogFile" ? changelogPath : "/changelog.md";
-    const res = await fetch(path, { cache: "no-cache" });
-    if (!res.ok) throw new Error(`failed: ${res.status}`);
-    const content = await res.text();
-    renderHomeChangelog(parseChangelogText(content));
-  } catch {
-    homeChangelogList.innerHTML = `<div class="home-changelog-item">Load changelog failed.</div>`;
-  }
 };
 
 const showLoadingOverlay = () => loadingOverlay?.classList.remove("hidden");
@@ -1484,8 +1481,47 @@ const loadDemoProjectFromHome = async () => {
     hideLoadingOverlay();
   }
 };
+
+const getHomeDemoCaptureTargetHeight = (): number => {
+  if (homeDemoCaptureSizeCache) return homeDemoCaptureSizeCache.height;
+
+  const coverEl = homeDemoOptionsEl?.querySelector<HTMLElement>(".home-demo-option-cover");
+  if (coverEl) {
+    const rect = coverEl.getBoundingClientRect();
+    const width = Math.max(1, Math.round(rect.width));
+    const height = Math.max(1, Math.round(rect.height));
+    if (width > 0 && height > 0) {
+      homeDemoCaptureSizeCache = { width, height };
+      return height;
+    }
+  }
+
+  const height = homeDemoOptionsEl
+    ? parseFloat(window.getComputedStyle(homeDemoOptionsEl).getPropertyValue("--home-demo-cover-height") || "131")
+    : 131;
+  const fallbackHeight = Math.max(1, Math.round(height));
+  if (Number.isFinite(fallbackHeight)) {
+    return fallbackHeight;
+  }
+  return 131;
+};
+
+const gifCaptureController = createGifCaptureController({
+  renderer3d,
+  getTargetHeight: getHomeDemoCaptureTargetHeight,
+  downloadBlob,
+  log,
+  showLoadingOverlay,
+  hideLoadingOverlay,
+  gifRecordBtn,
+  gifFps: GIF_CAPTURE_FPS,
+  frameCount: 120,
+  turns: 1,
+});
+
 homeStartBtn.addEventListener("click", openFilePickerFromHome);
 homeDemoBtn?.addEventListener("click", loadDemoProjectFromHome);
+gifRecordBtn?.addEventListener("click", gifCaptureController.captureGifFromViewer);
 menuOpenBtn.addEventListener("click", () => {
   fileInput.value = "";
   showLoadingOverlay();
@@ -1639,6 +1675,9 @@ const groupUI = createGroupUI(
 onLanguageChanged(applyI18nTexts);
 void i18nReadyPromise.then(() => {
   applyI18nTexts();
+});
+window.addEventListener("resize", () => {
+  syncHomeDemoCoverDisplaySize();
 });
 
 appEventBus.on("groupCurrentChanged", (groupId: number) => {

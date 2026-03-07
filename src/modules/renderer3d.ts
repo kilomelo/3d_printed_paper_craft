@@ -14,6 +14,7 @@ import {
   AxesHelper,
   Scene,
   type Object3D,
+  type Texture,
   Box3Helper,
   Box3,
   Sprite,
@@ -59,6 +60,9 @@ export function createRenderer3D(
   let edgesVisible = true;
   let seamsVisible = true;
   let facesVisible = true;
+  let axesInsetVisible = true;
+  let transparentCaptureBackgroundEnabled = false;
+  let normalSceneBackground: Color | Texture | null = null;
   const geometryIndex = geometryContext.geometryIndex;
   const previewGeometryContext = createGeometryContext();
   let faceAdjacency = geometryIndex.getFaceAdjacency();
@@ -73,6 +77,7 @@ export function createRenderer3D(
   let seamEditModeActive = false;
   
   const { scene, camera, renderer, controls, ambient, dir, modelGroup, previewModelGroup, gizmosGroup } = createScene((getViewport().width), getViewport().height);
+  normalSceneBackground = scene.background as Color | Texture | null;
   mountRenderer(renderer.domElement);
   gizmosGroup.visible = true;
   let bboxHelper: Box3Helper | null = null;
@@ -916,6 +921,7 @@ export function createRenderer3D(
   }
 
   function renderAxesInset() {
+    if (!axesInsetVisible) return;
     const size = renderer.getSize(new Vector2());
     const inset = 150;
     const padding = 12;
@@ -950,6 +956,40 @@ export function createRenderer3D(
   }
   animate();
 
+  const renderNow = () => {
+    controls.update();
+    renderer.render(scene, camera);
+    renderAxesInset();
+  };
+  const getRendererCanvas = () => renderer.domElement as HTMLCanvasElement;
+  const getActiveDisplayRoot = () => (
+    getWorkspaceState() === "previewGroupModel" ? previewModelGroup : modelGroup
+  );
+  const hasActiveDisplayModel = () => getActiveDisplayRoot().children.length > 0;
+  const getActiveDisplayRotationZ = () => getActiveDisplayRoot().rotation.z;
+  const setActiveDisplayRotationZ = (rotationZ: number) => {
+    getActiveDisplayRoot().rotation.z = rotationZ;
+  };
+  const rotateViewHorizontally = (deltaRadians: number) => {
+    orbitRotate(deltaRadians, 0);
+  };
+  const setCaptureBackgroundTransparent = (enabled: boolean) => {
+    if (enabled === transparentCaptureBackgroundEnabled) return;
+    transparentCaptureBackgroundEnabled = enabled;
+    if (enabled) {
+      normalSceneBackground = scene.background as Color | Texture | null;
+      scene.background = null;
+      renderer.setClearAlpha(0);
+      return;
+    }
+    scene.background = normalSceneBackground;
+    renderer.setClearAlpha(1);
+  };
+  const setAxesInsetVisible = (visible: boolean) => {
+    axesInsetVisible = visible;
+  };
+  const isAxesInsetVisible = () => axesInsetVisible;
+
   return {
     loadPreviewModel,
     applyObject,
@@ -968,6 +1008,15 @@ export function createRenderer3D(
     toggleBBox,
     getBBoxVisible,
     getTriCount,
+    renderNow,
+    getRendererCanvas,
+    hasActiveDisplayModel,
+    getActiveDisplayRotationZ,
+    setActiveDisplayRotationZ,
+    rotateViewHorizontally,
+    setCaptureBackgroundTransparent,
+    setAxesInsetVisible,
+    isAxesInsetVisible,
     resizeRenderer3D,
     dispose: () => {
       interactionController?.dispose();
