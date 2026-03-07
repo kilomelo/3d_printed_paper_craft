@@ -43,8 +43,8 @@ export const renderHomeSection = () => `
           <span class="home-btn-sub" data-i18n="mainpage.format.supported">OBJ / FBX / STL / 3DPPC</span>
         </button>
 
-        <div class="home-alt">
-          <div class="home-meta" data-i18n="mainpage.try.desc">还没有文件？</div>
+        <div class="home-alt" id="home-demo-entry">
+          <div class="home-meta" id="home-demo-hint" data-i18n="mainpage.try.desc">还没有文件？</div>
           <button class="home-btn home-btn--secondary" id="home-demo" data-i18n="mainpage.try">
             试玩示例项目
           </button>

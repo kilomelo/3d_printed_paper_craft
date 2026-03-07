@@ -14,6 +14,7 @@
   "mainpage.localOnly": "Processing runs locally (models aren’t uploaded).",
   "mainpage.changelogTitle": "Latest Update",
   "mainpage.changelogFile": "/changelog_en.md",
+  "mainpage.demoConfigFile": "/demo/demo_projects_en.json",
 
   "menu.about": "Help & About",
   "menu.preview.exit": "Exit Preview",

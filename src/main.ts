@@ -209,6 +209,7 @@ const applyI18nTexts = () => {
     });
   }
   void loadHomeChangelog();
+  void loadHomeDemoProjects();
   renderHomeDemoOptions();
   refreshToggleTextLabels?.();
   const viewerModeAriaLabel = t("viewer.mode.ariaLabel");
@@ -608,6 +609,7 @@ const fileInput = document.querySelector<HTMLInputElement>("#file-input");
 const homeStartBtn = document.querySelector<HTMLButtonElement>("#home-start");
 const homeDemoBtn = document.querySelector<HTMLButtonElement>("#home-demo");
 const homeDemoOptionsEl = document.querySelector<HTMLDivElement>("#home-demo-options");
+const homeDemoEntry = document.querySelector<HTMLDivElement>("#home-demo-entry");
 const homeChangelogList = document.querySelector<HTMLDivElement>("#home-changelog-list");
 const exitPreviewBtn = document.querySelector<HTMLButtonElement>("#exit-preview-btn");
 const menuOpenBtn = document.querySelector<HTMLButtonElement>("#menu-open");
@@ -649,7 +651,7 @@ langToggleGlobalBtn = document.querySelector<HTMLButtonElement>("#lang-toggle-gl
 
 const getDemoFileName = () => {
   const selected = homeDemoProjects.find((item) => item.id === selectedHomeDemoProjectId) ?? homeDemoProjects[0];
-  return selected.filePath;
+  return selected?.filePath ?? "";
 };
 
 type HomeDemoProject = {
@@ -659,22 +661,15 @@ type HomeDemoProject = {
   stillPath: string;
 };
 
-const homeDemoProjects: HomeDemoProject[] = [
-  {
-    id: "panda-cn",
-    filePath: "demo/熊猫头_demo.3dppc",
-    gifPath: "/demo/demo_project_1.gif",
-    stillPath: "/demo/demo_project_1.png",
-  },
-  {
-    id: "panda-poly",
-    filePath: "demo/虎鲸_demo.3dppc",
-    gifPath: "/demo/demo_project_2.gif",
-    stillPath: "/demo/demo_project_2.png",
-  },
-];
+const ZH_HOME_DEMO_CONFIG_PATH = "/demo/demo_projects.json";
+let homeDemoProjects: HomeDemoProject[] = [];
+let selectedHomeDemoProjectId = "";
+let loadedHomeDemoConfigPath = "";
 
-let selectedHomeDemoProjectId = homeDemoProjects[0]?.id ?? "";
+const refreshHomeDemoEntryVisibility = () => {
+  if (!homeDemoEntry) return;
+  homeDemoEntry.classList.toggle("hidden", homeDemoProjects.length === 0);
+};
 
 const renderHomeDemoOptions = () => {
   if (!homeDemoOptionsEl) return;
@@ -699,6 +694,64 @@ const renderHomeDemoOptions = () => {
     });
     homeDemoOptionsEl.appendChild(button);
   });
+};
+
+const normalizeHomeDemoProjects = (raw: unknown): HomeDemoProject[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((item): item is HomeDemoProject =>
+      !!item &&
+      typeof (item as HomeDemoProject).id === "string" &&
+      typeof (item as HomeDemoProject).filePath === "string" &&
+      typeof (item as HomeDemoProject).gifPath === "string" &&
+      typeof (item as HomeDemoProject).stillPath === "string",
+    )
+    .map((item) => ({
+      id: item.id,
+      filePath: item.filePath,
+      gifPath: item.gifPath,
+      stillPath: item.stillPath,
+    }));
+};
+
+const resolveHomeDemoConfigPath = () => {
+  const configuredPath = t("mainpage.demoConfigFile");
+  if (configuredPath && configuredPath !== "mainpage.demoConfigFile") return configuredPath;
+  return ZH_HOME_DEMO_CONFIG_PATH;
+};
+
+const loadHomeDemoProjects = async () => {
+  const primaryConfigPath = resolveHomeDemoConfigPath();
+  const candidatePaths = primaryConfigPath === ZH_HOME_DEMO_CONFIG_PATH
+    ? [primaryConfigPath]
+    : [primaryConfigPath, ZH_HOME_DEMO_CONFIG_PATH];
+  if (loadedHomeDemoConfigPath === primaryConfigPath && homeDemoProjects.length > 0) return;
+
+  let loaded = false;
+  for (const configPath of candidatePaths) {
+    try {
+      const res = await fetch(configPath, { cache: "no-cache" });
+      if (!res.ok) throw new Error(`failed: ${res.status}`);
+      const data = await res.json();
+      const parsed = normalizeHomeDemoProjects(data);
+      if (parsed.length === 0) throw new Error("empty or invalid demo project config");
+      homeDemoProjects = parsed;
+      loadedHomeDemoConfigPath = configPath;
+      loaded = true;
+      break;
+    } catch (error) {
+      console.warn("[main] loadHomeDemoProjects failed", { configPath, error });
+    }
+  }
+  if (!loaded) {
+    homeDemoProjects = [];
+    loadedHomeDemoConfigPath = "";
+  }
+  if (!homeDemoProjects.some((item) => item.id === selectedHomeDemoProjectId)) {
+    selectedHomeDemoProjectId = homeDemoProjects[0]?.id ?? "";
+  }
+  renderHomeDemoOptions();
+  refreshHomeDemoEntryVisibility();
 };
 
 type ChangelogItem = { version: string; date: string; points: string[] };
@@ -1417,7 +1470,9 @@ const openFilePickerFromHome = () => {
 const loadDemoProjectFromHome = async () => {
   try {
     showLoadingOverlay();
+    await loadHomeDemoProjects();
     const demoFile = getDemoFileName();
+    if (!demoFile) throw new Error("demo project config is empty");
     const resp = await fetch(`/${demoFile}`, { cache: "no-cache" });
     if (!resp.ok) throw new Error("demo file fetch failed");
     const blob = await resp.blob();
