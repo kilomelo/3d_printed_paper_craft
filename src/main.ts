@@ -1473,7 +1473,8 @@ const loadDemoProjectFromHome = async () => {
     const resp = await fetch(`/${demoFile}`, { cache: "no-cache" });
     if (!resp.ok) throw new Error("demo file fetch failed");
     const blob = await resp.blob();
-    const file = new File([blob], demoFile, { type: "application/json" });
+    const demoFileName = demoFile.replace(/[?#].*$/, "").split(/[\\/]/).pop() || demoFile;
+    const file = new File([blob], demoFileName, { type: "application/json" });
     await handleFileSelectedFromFile(file);
   } catch (err) {
     console.error("加载 demo 失败", err);

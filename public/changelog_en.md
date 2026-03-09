@@ -1,7 +1,9 @@
 ## v1.1.0.0 | 2026-02-26
 - Added: a new clipless seam-joining workflow and related settings.
-- Added: the changelog UI on the home page.
+- Added: export any number of connected coplanar triangles as polygons, plus a coplanarity threshold setting.
 - Added: a new sample project and the entry UI on the home page.
+- Added: changelog UI on the home page.
+- Fixed: a geometry calculation issue that could create a small bump at one end of a fold, blocking the bend.
 
 ## v1.0.1.1 | 2026-02-26
 - Fixed: false-positive self-intersection triangle detection in some cases.
