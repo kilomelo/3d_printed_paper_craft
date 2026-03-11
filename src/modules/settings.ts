@@ -27,8 +27,8 @@ export const SETTINGS_LIMITS = {
   connectionLayers: { min: 1, max: 4 },
   bodyLayers: { min: 1, max: 8 },
   joinType: { allowed: ["interlocking", "clip"] as const },
-  clawInterlockingAngle: { min: 1, max: 6 },
-  clawTargetRadius: { min: 2, max: 6 },
+  clawInterlockingAngle: { min: 1, max: 8 },
+  clawTargetRadius: { min: 1.5, max: 5 },
   clawRadiusAdaptive: { allowed: ["off", "on"] as const },
   clawWidth: { min: 5, max: 10 },
   clawFitGap: { min: 0.02, max: 0.2 },
@@ -41,13 +41,13 @@ export const SETTINGS_LIMITS = {
 } as const;
 
 const defaultSettings: Settings = {
-  joinType: "interlocking",
+  joinType: "clip",
   scale: 1,
   layerHeight: 0.2,
   connectionLayers: 1,
   bodyLayers: 3,
-  clawInterlockingAngle: 3,
-  clawTargetRadius: 3,
+  clawInterlockingAngle: 4,
+  clawTargetRadius: 2.5,
   clawRadiusAdaptive: "on",
   clawWidth: 7,
   clawFitGap: 0.05,

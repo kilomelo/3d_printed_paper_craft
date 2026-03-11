@@ -1,4 +1,4 @@
-## v1.1.0.0 | 2026-02-26
+## v1.1.0.0 | 2026-03-12
 - Added: a new clipless seam-joining workflow and related settings.
 - Added: export any number of connected coplanar triangles as polygons, plus a coplanarity threshold setting.
 - Added: a new sample project and the entry UI on the home page.
