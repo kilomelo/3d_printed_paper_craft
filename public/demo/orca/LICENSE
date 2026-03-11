@@ -1,0 +1,29 @@
+Orca Demo - License Notice
+
+This directory contains a demo model adapted from a CC BY-NC 4.0 licensed work.
+
+1) CC BY-NC 4.0 applies to demo ASSET files (non-commercial only)
+---------------------------------------------------------------
+Unless otherwise noted, the following kinds of files under `public/demo/orca/`
+are licensed under:
+
+Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+https://creativecommons.org/licenses/by-nc/4.0/
+
+This includes (but is not limited to):
+- 3D model / geometry files: .glb, .gltf, .obj, .stl, .3mf, .fbx, .dae, .blend, .step, .stp, .iges, .igs
+- Material / texture / render assets: .mtl, .bin, .png, .jpg, .jpeg, .webp, .tif, .tiff, .svg, .hdr, .exr
+- Any derived asset outputs exported from the adapted model.
+
+Attribution / source / change log:
+- See `public/demo/orca/ATTRIBUTION.md`
+
+Important:
+- NonCommercial (NC): You may not use these CC BY-NC assets for commercial purposes.
+- No additional restrictions: You may not apply legal terms or technological measures that restrict others
+  from doing anything the license permits.
+
+2) Other files
+--------------
+If there are any files in this directory that are clearly not asset files (e.g., .js, .ts, .json, .html, .css),
+they remain licensed under the repository's main license (GPLv3), unless those files explicitly state otherwise.

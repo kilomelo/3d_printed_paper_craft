@@ -1,5 +1,5 @@
 export const renderHomeSection = () => `
-  <section class="page home active" id="layout-empty">
+  <section class="page home home-main active" id="layout-home">
     <div class="home-fx-layer" aria-hidden="true"></div>
 
     <div class="home-card">
@@ -14,23 +14,7 @@ export const renderHomeSection = () => `
         </div>
       </header>
 
-      <div class="home-body">
-        <div class="home-meta" data-i18n="mainpage.localOnly">所有处理都在本地完成，不上传模型</div>
-
-        <button class="home-btn home-btn--primary" id="home-start">
-          <span class="home-btn-main" data-i18n="mainpage.guide">选择模型文件</span>
-          <span class="home-btn-sub" data-i18n="mainpage.format.supported">OBJ / FBX / STL / 3DPPC</span>
-        </button>
-
-        <div class="home-alt">
-          <div class="home-meta" data-i18n="mainpage.try.desc">还没有文件？</div>
-          <button class="home-btn home-btn--secondary" id="home-demo" data-i18n="mainpage.try">
-            试玩示例项目
-          </button>
-        </div>
-      </div>
-
-      <footer class="home-foot">
+      <div class="home-links-inline">
         <a class="home-link" href="https://github.com/kilomelo/3d_printed_paper_craft" target="_blank" rel="noreferrer">
           GitHub
         </a>
@@ -49,6 +33,32 @@ export const renderHomeSection = () => `
         <a class="home-link" href="https://github.com/kilomelo/3d_printed_paper_craft/blob/main/LICENSE" target="_blank" rel="noreferrer">
           GPL-3.0
         </a>
+      </div>
+
+      <div class="home-body">
+        <div class="home-meta" data-i18n="mainpage.localOnly">所有处理都在本地完成，不上传模型</div>
+
+        <button class="home-btn home-btn--primary" id="home-start">
+          <span class="home-btn-main" data-i18n="mainpage.guide">选择模型文件</span>
+          <span class="home-btn-sub" data-i18n="mainpage.format.supported">OBJ / FBX / STL / 3DPPC</span>
+        </button>
+
+        <div class="home-alt" id="home-demo-entry">
+          <div class="home-meta" id="home-demo-hint" data-i18n="mainpage.try.desc">还没有文件？</div>
+          <button class="home-btn home-btn--secondary" id="home-demo" data-i18n="mainpage.try">
+            试玩示例项目
+          </button>
+          <div class="home-demo-selector">
+            <div class="home-demo-options" id="home-demo-options" role="radiogroup" aria-label="Demo project selector"></div>
+          </div>
+        </div>
+      </div>
+
+      <footer class="home-foot home-foot--changelog">
+        <div class="home-changelog-title" data-i18n="mainpage.changelogTitle">更新日志</div>
+        <div class="home-changelog-list home-changelog-list--compact" id="home-changelog-list">
+          <div class="home-changelog-item is-loading">Loading...</div>
+        </div>
       </footer>
     </div>
   </section>

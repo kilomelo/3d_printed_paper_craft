@@ -1,9 +1,10 @@
 // 3dppc 格式处理：负责序列化/反序列化自定义 3dppc 文件，提供加载与下载工具。
 import { BufferGeometry, Float32BufferAttribute, Group, Mesh } from "three";
-import { collectGeometry, filterLargestComponent } from "./geometry";
+import { collectGeometry } from "./geometry";
 import { getCurrentProject } from "./project";
 import { getGroupColorCursor, exportGroupsData } from "./groups";
 import { getSettings } from "./settings";
+import { exportEdgeJoinTypes } from "./model";
 
 export type PPCFile = {
   version: string;
@@ -28,7 +29,13 @@ export type PPCFile = {
     placeAngle?: number;
   }[];
   groupColorCursor?: number;
-  annotations?: Record<string, unknown>;
+  annotations?: {
+    settings?: Record<string, unknown>;
+    // 边级拼接方式覆盖表，仅保存非 default 的显式覆盖。
+    // 采用 [edgeKey, joinType][] 的数组格式，便于 JSON / 二进制 meta 直接序列化。
+    edgeJoinTypes?: [string, string][];
+    [key: string]: unknown;
+  };
 };
 
 const FORMAT_VERSION = "1.0";
@@ -52,11 +59,9 @@ async function computeChecksum(payload: unknown): Promise<string> {
 
 export async function build3dppcData(object: Group): Promise<PPCFile> {
   const collected = collectGeometry(object);
-  const filtered = filterLargestComponent(collected);
   const round5 = (n: number) => Math.round(n * 1e5) / 1e5;
-  const exportVertices = filtered.vertices.map(([x, y, z]) => [round5(x), round5(y), round5(z)]);
-  const exportTriangles = filtered.triangles;
-  const mapping = filtered.mapping;
+  const exportVertices = collected.vertices.map(([x, y, z]) => [round5(x), round5(y), round5(z)]);
+  const exportTriangles = collected.triangles;
 
   const checksum = await computeChecksum({
     vertices: exportVertices,
@@ -66,15 +71,10 @@ export async function build3dppcData(object: Group): Promise<PPCFile> {
   const groupsData: NonNullable<PPCFile["groups"]> = [];
   const rawGroups = exportGroupsData();
   rawGroups.forEach((g) => {
-    const filteredFaces: number[] = [];
-    g.faces.forEach((faceId) => {
-      const mapped = mapping[faceId];
-      if (mapped !== undefined && mapped >= 0) filteredFaces.push(mapped);
-    });
     groupsData.push({
       id: g.id,
       color: `#${g.color.toString(16).padStart(6, "0")}`,
-      faces: filteredFaces,
+      faces: [...g.faces],
       name: g.name,
       placeAngle: g.placeAngle,
     });
@@ -99,6 +99,7 @@ export async function build3dppcData(object: Group): Promise<PPCFile> {
     groups: groupsData,
     annotations: {
       settings: getSettings(),
+      edgeJoinTypes: exportEdgeJoinTypes(),
     },
   };
 }

@@ -2,9 +2,7 @@
 import "./style.css";
 import packageJson from "../package.json";
 import { inject } from "@vercel/analytics";
-import { Color, Mesh, Matrix4 } from "three";
-import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
-import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { Color } from "three";
 import { type WorkspaceState, getWorkspaceState, setWorkspaceState } from "./types/workspaceState.js";
 import { createLog } from "./modules/log";
 import { createRenderer3D } from "./modules/renderer3d";
@@ -16,38 +14,36 @@ import { createUnfold2dManager } from "./modules/unfold2dManager";
 import { createGeometryContext, snapGeometryPositions } from "./modules/geometry";
 import { build3dppcData, download3dppc, type PPCFile } from "./modules/ppc";
 import { createSettingsUI } from "./modules/settingsUI";
-import { getDefaultSettings, SETTINGS_LIMITS } from "./modules/settings";
-import { getModel } from "./modules/model";
+import { SETTINGS_LIMITS } from "./modules/settings";
+import { exportEdgeJoinTypes, getModel, importEdgeJoinTypes } from "./modules/model";
 import {
-  buildStepInWorker,
-  buildStlInWorker,
-  buildMeshInWorker,
   onWorkerBusyChange,
 } from "./modules/replicad/replicadWorkerClient";
 import { buildTabClip } from "./modules/replicad/replicadModeling";
 import { startNewProject, getCurrentProject } from "./modules/project";
 import { historyManager } from "./modules/history";
-import type { MetaAction } from "./types/historyTypes.js";
 import { loadRawObject } from "./modules/fileLoader";
-import { createHistoryPanel, formatHistoryAction } from "./modules/historyPanel";
 import type { Snapshot, ProjectState } from "./types/historyTypes.js";
 import { exportGroupsData, getGroupColorCursor } from "./modules/groups";
 import { importSettings, getSettings, resetSettings } from "./modules/settings";
 import { createOperationHints } from "./modules/operationHints";
+import { createPreviewMeshCacheManager } from "./modules/previewMeshCache";
+import { bindHistorySystem } from "./modules/historyBindings";
+import { bindGroupPreviewActions } from "./modules/groupPreviewActions";
+import { downloadBlob } from "./modules/gifRecorder";
+import { loadHomeChangelog } from "./modules/homeChangelog";
+import { createGifCaptureController } from "./modules/gifCapture";
 import { createHoldButton } from "./components/createHoldButton";
+import { createSegmentedControl } from "./components/createSegmentedControl";
 import "./components/holdButton.css";
+import "./components/segmentedControl.css";
 import "./styles/home.css";
 import { renderHomeSection } from "./templates/homeMarkup";
 import { initI18n, t, getCurrentLang, setLanguage, onLanguageChanged } from "./modules/i18n";
 
 const VERSION = packageJson.version ?? "0.0.0.0";
 
-type PreviewMeshCacheItem = { mesh: Mesh, groupId: number, historyUidCreated: number, historyUidAbandoned: number };
-// 预览模型缓存，带有效期 
-const previewMeshCache: PreviewMeshCacheItem[] = [];
-const MAX_PREVIEW_MESH_CACHE_SIZE = 30;
-const stlLoader = new STLLoader();
-const defaultSettings = getDefaultSettings();
+const previewMeshCacheManager = createPreviewMeshCacheManager();
 const limits = SETTINGS_LIMITS;
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) {
@@ -57,6 +53,33 @@ if (!app) {
 let langToggleBtn: HTMLButtonElement | null = null;
 let langToggleGlobalBtn: HTMLButtonElement | null = null;
 let refreshToggleTextLabels: (() => void) | null = null;
+let workerBusy = false;
+let viewerModeControl: ReturnType<typeof createSegmentedControl> | null = null;
+let edgesEnabledBeforeEditingSeam: boolean | null = null;
+let seamsEnabledBeforeEditingSeam: boolean | null = null;
+
+const ENABLE_GIF_RECORDER_TOOL = new URLSearchParams(window.location.search).get("gifTool") === "1";
+const resolveGifCaptureFps = () => {
+  const raw = new URLSearchParams(window.location.search).get("gifFps");
+  const parsed = raw ? Number(raw) : NaN;
+  if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 60) return Math.round(parsed);
+  return 45;
+};
+const GIF_CAPTURE_FPS = resolveGifCaptureFps();
+
+// 右侧展开组预览区的缓存有效性指示器。
+// 规则很简单：
+// - 当前预览组在当前历史时间点上存在有效 mesh 缓存：显示 "✓"
+// - 否则显示 "*"
+//
+// 它不区分“缓存来自 STL 导出”还是“缓存来自预览建模”，因为两者底层复用的是同一套预览 mesh 缓存。
+const refreshPreviewMeshCacheIndicator = () => {
+  if (!groupPreviewCacheIndicator) return;
+  const groupId = groupController.getPreviewGroupId();
+  const currentHistoryUid = historyManager.getCurrentSnapshotUid() ?? -1;
+  const hasActiveCache = previewMeshCacheManager.hasActiveCachedPreviewMesh(groupId, currentHistoryUid);
+  groupPreviewCacheIndicator.textContent = hasActiveCache ? "✓ " : "-";
+};
 
 const setProjectNameLabel = (name: string) => {
   if (projectNameLabel) {
@@ -99,11 +122,11 @@ const applyI18nTexts = () => {
     if (!key) return;
     el.title = t(key);
   });
+  homeDemoOptionsEl?.setAttribute("aria-label", "Demo project selector");
   const layerHeightDesc = document.querySelector<HTMLElement>('[data-i18n="settings.layerHeight.desc"]');
   if (layerHeightDesc) {
     layerHeightDesc.textContent = t("settings.layerHeight.desc", {
       max: limits.layerHeight.max,
-      def: defaultSettings.layerHeight,
     });
   }
   const connectionDesc = document.querySelector<HTMLElement>('[data-i18n="settings.connectionLayers.desc"]');
@@ -111,7 +134,6 @@ const applyI18nTexts = () => {
     connectionDesc.textContent = t("settings.connectionLayers.desc", {
       min: limits.connectionLayers.min,
       max: limits.connectionLayers.max,
-      def: defaultSettings.connectionLayers,
     });
   }
   const bodyLayersDesc = document.querySelector<HTMLElement>('[data-i18n="settings.bodyLayers.desc"]');
@@ -119,7 +141,42 @@ const applyI18nTexts = () => {
     bodyLayersDesc.textContent = t("settings.bodyLayers.desc", {
       min: limits.bodyLayers.min,
       max: limits.bodyLayers.max,
-      def: defaultSettings.bodyLayers,
+    });
+  }
+  const joinTypeDesc = document.querySelector<HTMLElement>('[data-i18n="settings.joinType.desc"]');
+  if (joinTypeDesc) {
+    joinTypeDesc.textContent = t("settings.joinType.desc");
+  }
+  const clawInterlockingAngleDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clawInterlockingAngle.desc"]');
+  if (clawInterlockingAngleDesc) {
+    clawInterlockingAngleDesc.textContent = t("settings.clawInterlockingAngle.desc", {
+      min: limits.clawInterlockingAngle.min,
+      max: limits.clawInterlockingAngle.max,
+    });
+  }
+  const clawTargetRadiusDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clawTargetRadius.desc"]');
+  if (clawTargetRadiusDesc) {
+    clawTargetRadiusDesc.textContent = t("settings.clawTargetRadius.desc", {
+      min: limits.clawTargetRadius.min,
+      max: limits.clawTargetRadius.max,
+    });
+  }
+  const clawRadiusAdaptiveDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clawRadiusAdaptive.desc"]');
+  if (clawRadiusAdaptiveDesc) {
+    clawRadiusAdaptiveDesc.textContent = t("settings.clawRadiusAdaptive.desc");
+  }
+  const clawWidthDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clawWidth.desc"]');
+  if (clawWidthDesc) {
+    clawWidthDesc.textContent = t("settings.clawWidth.desc", {
+      min: limits.clawWidth.min,
+      max: limits.clawWidth.max,
+    });
+  }
+  const clawFitGapDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clawFitGap.desc"]');
+  if (clawFitGapDesc) {
+    clawFitGapDesc.textContent = t("settings.clawFitGap.desc", {
+      min: limits.clawFitGap.min,
+      max: limits.clawFitGap.max,
     });
   }
   const tabWidthDesc = document.querySelector<HTMLElement>('[data-i18n="settings.tabWidth.desc"]');
@@ -127,7 +184,6 @@ const applyI18nTexts = () => {
     tabWidthDesc.textContent = t("settings.tabWidth.desc", {
       min: limits.tabWidth.min,
       max: limits.tabWidth.max,
-      def: defaultSettings.tabWidth,
     });
   }
   const tabThicknessDesc = document.querySelector<HTMLElement>('[data-i18n="settings.tabThickness.desc"]');
@@ -135,26 +191,45 @@ const applyI18nTexts = () => {
     tabThicknessDesc.textContent = t("settings.tabThickness.desc", {
       min: limits.tabThickness.min,
       max: limits.tabThickness.max,
-      def: defaultSettings.tabThickness,
     });
+  }
+  const minFoldAngleThresholdDesc = document.querySelector<HTMLElement>('[data-i18n="settings.minFoldAngleThreshold.desc"]');
+  if (minFoldAngleThresholdDesc) {
+    minFoldAngleThresholdDesc.textContent = t("settings.minFoldAngleThreshold.desc");
   }
   const tabClipDesc = document.querySelector<HTMLElement>('[data-i18n="settings.tabClipGap.desc"]');
   if (tabClipDesc) {
     tabClipDesc.textContent = t("settings.tabClipGap.desc", {
       min: limits.tabClipGap.min,
       max: limits.tabClipGap.max,
-      def: defaultSettings.tabClipGap,
     });
+  }
+  const clipGapAdjustDesc = document.querySelector<HTMLElement>('[data-i18n="settings.clipGapAdjusts.desc"]');
+  if (clipGapAdjustDesc) {
+    clipGapAdjustDesc.textContent = t("settings.clipGapAdjusts.desc");
+  }
+  const hollowDesc = document.querySelector<HTMLElement>('[data-i18n="settings.hollow.desc"]');
+  if (hollowDesc) {
+    hollowDesc.textContent = t("settings.hollow.desc");
   }
   const wireframeDesc = document.querySelector<HTMLElement>('[data-i18n="settings.wireframeThickness.desc"]');
   if (wireframeDesc) {
     wireframeDesc.textContent = t("settings.wireframeThickness.desc", {
       min: limits.wireframeThickness.min,
       max: limits.wireframeThickness.max,
-      def: defaultSettings.wireframeThickness,
     });
   }
+  void loadHomeChangelog(homeChangelogList, t);
+  void loadHomeDemoProjects();
+  renderHomeDemoOptions();
   refreshToggleTextLabels?.();
+  const viewerModeAriaLabel = t("viewer.mode.ariaLabel");
+  if (viewerModeControl) {
+    viewerModeControl.el.setAttribute("aria-label", viewerModeAriaLabel);
+    viewerModeControl.setItemLabel("view", t("workspace.mode.normal"));
+    viewerModeControl.setItemLabel("group-edit", t("workspace.mode.editingGroup"));
+    viewerModeControl.setItemLabel("seam-edit", t("workspace.mode.editingSeam"));
+  }
   groupUI.render(buildGroupUIState());
   // 语言切换时刷新历史面板条目文本
   historyPanelUI?.render();
@@ -168,7 +243,7 @@ const setFileSaved = (value: boolean) => {
   setProjectNameLabel(getCurrentProject().name ?? "未命名工程");
 };
 
-let historyPanelUI: ReturnType<typeof createHistoryPanel> | null = null;
+let historyPanelUI: ReturnType<typeof bindHistorySystem> | null = null;
 let operationHints: ReturnType<typeof createOperationHints> | null = null;
 let deleteHold: ReturnType<typeof createHoldButton> | null = null;
 const captureProjectState = (): ProjectState => ({
@@ -177,6 +252,7 @@ const captureProjectState = (): ProjectState => ({
   previewGroupId: groupController.getPreviewGroupId(),
   settings: getSettings(),
   groupVisibility: groupController.getGroupVisibilityEntries(),
+  edgeJoinTypes: exportEdgeJoinTypes(),
 });
 
 const applyProjectState = (snap: Snapshot) => {
@@ -195,6 +271,7 @@ const applyProjectState = (snap: Snapshot) => {
     groupController.applyGroupVisibility(state.groupVisibility);
   }
   importSettings(state.settings);
+  importEdgeJoinTypes(state.edgeJoinTypes);
   groupUI.render(buildGroupUIState());
 };
 
@@ -239,10 +316,12 @@ app.innerHTML = `
         <button class="btn sm toggle" id="seams-toggle">拼接边：开</button>
         <button class="btn sm toggle active" id="faces-toggle">面渲染：开</button>
         <button class="btn sm toggle" id="bbox-toggle">包围盒：关</button>
+        <button class="btn sm ghost ${ENABLE_GIF_RECORDER_TOOL ? "" : "hidden"}" id="gif-record-btn">录制GIF</button>
         <div class="toolbar-spacer"></div>
         <span class="toolbar-stat" id="tri-counter">渲染负载：0</span>
       </div>
       <div class="preview-area" id="viewer">
+        <div class="viewer-mode-slot" id="viewer-mode-slot"></div>
         <div id="history-panel" class="history-panel hidden">
           <div id="history-list" class="history-list"></div>
         </div>
@@ -250,7 +329,6 @@ app.innerHTML = `
     </div>
     <div class="preview-panel">
           <div class="preview-toolbar">
-            <button class="btn sm toggle" id="group-edit-toggle">编辑展开组</button>
             <div class="group-tabs" id="group-tabs"></div>
             <div class="toolbar-spacer"></div>
             <button class="btn tab-add" id="group-add" data-i18n-title="toolbar.right.groupAdd.tooltip" title="添加展开组">+</button>
@@ -273,12 +351,14 @@ app.innerHTML = `
               </button>
               <span class="overlay-label group-faces-count" id="group-faces-count">面数量：0</span>
             </div>
+            <div class="overlay-cache-indicator" id="group-preview-cache-indicator" aria-hidden="true">*</div>
             <div class="tab-delete-slot" id="group-delete-slot"></div>
             <div id="group-preview-empty" class="preview-2d-empty hidden" data-i18n="preview.right.placeholder">
               点击【编辑展开组】按钮进行编辑
             </div>
             <input type="color" id="group-color-input" class="color-input" autocomplete="off" />
           </div>
+          <div id="group-preview-mask" class="group-preview-mask hidden" aria-hidden="true"></div>
         </div>
       </section>
   </section>
@@ -301,9 +381,11 @@ app.innerHTML = `
       <div class="settings-header">
         <div class="settings-title" data-i18n="settings.title">项目设置</div>
       </div>
-      <div class="settings-body">
-        <div class="settings-nav">
+        <div class="settings-body">
+          <div class="settings-nav">
           <button class="settings-nav-item active" id="settings-nav-basic" data-i18n="settings.nav.basic">基础设置</button>
+          <button class="settings-nav-item" id="settings-nav-interlocking" data-i18n="settings.nav.interlocking">咬合拼接</button>
+          <button class="settings-nav-item" id="settings-nav-clip" data-i18n="settings.nav.clip">卡扣拼接</button>
           <button class="settings-nav-item" id="settings-nav-experiment" data-i18n="settings.nav.experimental">实验设置</button>
         </div>
         <div class="settings-content">
@@ -321,7 +403,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-layer-height" class="setting-label" data-i18n="settings.layerHeight.label">打印层高</label>
-                <span class="setting-desc" data-i18n="settings.layerHeight.desc">实际打印时的层高设置，最大${limits.layerHeight.max}，默认${defaultSettings.layerHeight}，单位mm</span>
+                <span class="setting-desc" data-i18n="settings.layerHeight.desc">实际打印时的层高设置，最大${limits.layerHeight.max}，单位mm</span>
               </div>
               <div class="setting-field">
                 <input id="setting-layer-height" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
@@ -331,7 +413,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.connectionLayers.label">连接层数</span>
-                <span class="setting-desc" data-i18n="settings.connectionLayers.desc">面之间连接处的层数，${limits.connectionLayers.min}-${limits.connectionLayers.max}，默认${defaultSettings.connectionLayers}</span>
+                <span class="setting-desc" data-i18n="settings.connectionLayers.desc">面之间连接处的层数，${limits.connectionLayers.min}-${limits.connectionLayers.max}</span>
               </div>
               <div class="setting-field">
                 <div class="setting-counter-group">
@@ -345,7 +427,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.bodyLayers.label">主体额外层数</span>
-                <span class="setting-desc" data-i18n="settings.bodyLayers.desc">面主体的额外层数，${limits.bodyLayers.min}-${limits.bodyLayers.max}，默认${defaultSettings.bodyLayers}</span>
+                <span class="setting-desc" data-i18n="settings.bodyLayers.desc">面主体的额外层数，${limits.bodyLayers.min}-${limits.bodyLayers.max}</span>
               </div>
               <div class="setting-field">
                 <div class="setting-counter-group">
@@ -358,8 +440,88 @@ app.innerHTML = `
             </div>
             <div class="setting-row">
               <div class="setting-label-row">
+                <span class="setting-label" data-i18n="settings.joinType.label">拼接方式</span>
+                <span class="setting-desc" data-i18n="settings.joinType.desc">拼接边的默认连接方式</span>
+              </div>
+              <div class="setting-field">
+                <div class="settings-toggle-group">
+                  <button id="setting-join-type-interlocking" class="btn settings-inline-btn" data-i18n="settings.joinType.interlocking">咬合</button>
+                  <button id="setting-join-type-clip" class="btn settings-inline-btn" data-i18n="settings.joinType.clip">卡扣</button>
+                </div>
+                <button id="setting-join-type-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <label for="setting-min-fold-angle-threshold" class="setting-label" data-i18n="settings.minFoldAngleThreshold.label">折痕最小角度阈值</label>
+                <span class="setting-desc" data-i18n="settings.minFoldAngleThreshold.desc">角度小于该数值的三角面之间不会生成折痕</span>
+              </div>
+              <div class="setting-field">
+                <input id="setting-min-fold-angle-threshold" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-min-fold-angle-threshold-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+          </div>
+          <div class="settings-panel" id="settings-panel-interlocking">
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <label for="setting-claw-interlocking-angle" class="setting-label" data-i18n="settings.clawInterlockingAngle.label">咬合角度</label>
+                <span class="setting-desc" data-i18n="settings.clawInterlockingAngle.desc">抱爪的互锁角度，最小${limits.clawInterlockingAngle.min}，最大${limits.clawInterlockingAngle.max}</span>
+              </div>
+              <div class="setting-field">
+                <input id="setting-claw-interlocking-angle" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-claw-interlocking-angle-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <label for="setting-claw-target-radius" class="setting-label" data-i18n="settings.clawTargetRadius.label">目标抱爪半径</label>
+                <span class="setting-desc" data-i18n="settings.clawTargetRadius.desc">抱爪的期望大小，最小${limits.clawTargetRadius.min}，最大${limits.clawTargetRadius.max}，单位mm</span>
+              </div>
+              <div class="setting-field">
+                <input id="setting-claw-target-radius" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-claw-target-radius-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <span class="setting-label" data-i18n="settings.clawRadiusAdaptive.label">抱爪半径自适应</span>
+                <span class="setting-desc" data-i18n="settings.clawRadiusAdaptive.desc">根据拼接夹角调整抱爪半径，改善拼接牢固度</span>
+              </div>
+              <div class="setting-field">
+                <div class="settings-toggle-group">
+                  <button id="setting-claw-radius-adaptive-off" class="btn settings-inline-btn" data-i18n="settings.clawRadiusAdaptive.off">关闭</button>
+                  <button id="setting-claw-radius-adaptive-on" class="btn settings-inline-btn" data-i18n="settings.clawRadiusAdaptive.on">开启</button>
+                </div>
+                <button id="setting-claw-radius-adaptive-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <label for="setting-claw-width" class="setting-label" data-i18n="settings.clawWidth.label">抱爪宽度</label>
+                <span class="setting-desc" data-i18n="settings.clawWidth.desc">单个抱爪的宽度，最小${limits.clawWidth.min}，最大${limits.clawWidth.max}，单位mm</span>
+              </div>
+              <div class="setting-field">
+                <input id="setting-claw-width" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-claw-width-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <label for="setting-claw-fit-gap" class="setting-label" data-i18n="settings.clawFitGap.label">抱爪配合间隙</label>
+                <span class="setting-desc" data-i18n="settings.clawFitGap.desc">抱爪的松紧程度，越大越容易安装，${limits.clawFitGap.min}-${limits.clawFitGap.max}</span>
+              </div>
+              <div class="setting-field">
+                <input id="setting-claw-fit-gap" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-claw-fit-gap-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+          </div>
+          <div class="settings-panel" id="settings-panel-clip">
+            <div class="setting-row">
+              <div class="setting-label-row">
                 <label for="setting-tab-width" class="setting-label" data-i18n="settings.tabWidth.label">拼接边舌片宽度</label>
-                <span class="setting-desc" data-i18n="settings.tabWidth.desc">用于拼接边粘接的舌片宽度，${limits.tabWidth.min}-${limits.tabWidth.max}，默认${defaultSettings.tabWidth}，单位mm</span>
+                <span class="setting-desc" data-i18n="settings.tabWidth.desc">用于拼接边粘接的舌片宽度，${limits.tabWidth.min}-${limits.tabWidth.max}，单位mm</span>
               </div>
               <div class="setting-field">
                 <input id="setting-tab-width" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
@@ -369,7 +531,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-tab-thickness" class="setting-label" data-i18n="settings.tabThickness.label">拼接边舌片厚度</label>
-                <span class="setting-desc" data-i18n="settings.tabThickness.desc">用于拼接边粘接的舌片厚度，${limits.tabThickness.min}-${limits.tabThickness.max}，默认${defaultSettings.tabThickness}，单位mm</span>
+                <span class="setting-desc" data-i18n="settings.tabThickness.desc">用于拼接边粘接的舌片厚度，${limits.tabThickness.min}-${limits.tabThickness.max}，单位mm</span>
               </div>
               <div class="setting-field">
                 <input id="setting-tab-thickness" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
@@ -379,19 +541,17 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-tab-clip-gap" class="setting-label" data-i18n="settings.tabClipGap.label">夹子配合间隙</label>
-                <span class="setting-desc" data-i18n="settings.tabClipGap.desc">连接舌片的夹子松紧程度，值越大越容易安装，${limits.tabClipGap.min}-${limits.tabClipGap.max}，默认${defaultSettings.tabClipGap}</span>
+                <span class="setting-desc" data-i18n="settings.tabClipGap.desc">连接舌片的夹子松紧程度，值越大越容易安装，${limits.tabClipGap.min}-${limits.tabClipGap.max}</span>
               </div>
               <div class="setting-field">
                 <input id="setting-tab-clip-gap" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
                 <button id="setting-tab-clip-gap-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
-          </div>
-          <div class="settings-panel" id="settings-panel-experiment">
             <div class="setting-row">
               <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.clipGapAdjusts.label">夹子厚度</span>
-                <span class="setting-desc" data-i18n="settings.clipGapAdjusts.desc">夹子厚度描述</span>
+                <span class="setting-desc" data-i18n="settings.clipGapAdjusts.desc">夹子模型的配合间隙自动根据舌片厚度反比补偿</span>
               </div>
               <div class="setting-field">
                 <div class="settings-toggle-group">
@@ -401,10 +561,12 @@ app.innerHTML = `
                 <button id="setting-clip-thickness-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
+          </div>
+          <div class="settings-panel" id="settings-panel-experiment">
             <div class="setting-row">
               <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.hollow.label">镂空风格</span>
-                <span class="setting-desc" data-i18n="settings.hollow.desc">去除三角面的中间部分，默认关闭</span>
+                <span class="setting-desc" data-i18n="settings.hollow.desc">去除三角面的中间部分</span>
               </div>
               <div class="setting-field">
                 <div class="settings-toggle-group">
@@ -417,7 +579,7 @@ app.innerHTML = `
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-wireframe-thickness" class="setting-label" data-i18n="settings.wireframeThickness.label">线框粗细</label>
-                <span class="setting-desc" data-i18n="settings.wireframeThickness.desc">镂空风格下线框的粗细，${limits.wireframeThickness.min}-${limits.wireframeThickness.max}，默认${defaultSettings.wireframeThickness}，单位mm</span>
+                <span class="setting-desc" data-i18n="settings.wireframeThickness.desc">镂空风格下线框的粗细，${limits.wireframeThickness.min}-${limits.wireframeThickness.max}，单位mm</span>
               </div>
               <div class="setting-field">
                 <input id="setting-wireframe-thickness" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
@@ -451,12 +613,16 @@ app.innerHTML = `
 `;
 
 const viewer = document.querySelector<HTMLDivElement>("#viewer");
+const viewerModeSlot = document.querySelector<HTMLDivElement>("#viewer-mode-slot");
 const projectNameLabel = document.getElementById("project-name-label");
 const logListEl = document.querySelector<HTMLDivElement>("#log-list");
 const logPanelEl = document.querySelector<HTMLDivElement>("#log-panel");
 const fileInput = document.querySelector<HTMLInputElement>("#file-input");
 const homeStartBtn = document.querySelector<HTMLButtonElement>("#home-start");
 const homeDemoBtn = document.querySelector<HTMLButtonElement>("#home-demo");
+const homeDemoOptionsEl = document.querySelector<HTMLDivElement>("#home-demo-options");
+const homeDemoEntry = document.querySelector<HTMLDivElement>("#home-demo-entry");
+const homeChangelogList = document.querySelector<HTMLDivElement>("#home-changelog-list");
 const exitPreviewBtn = document.querySelector<HTMLButtonElement>("#exit-preview-btn");
 const menuOpenBtn = document.querySelector<HTMLButtonElement>("#menu-open");
 const menuBlocker = document.querySelector<HTMLDivElement>("#menu-blocker");
@@ -477,7 +643,10 @@ const groupTabsEl = document.querySelector<HTMLDivElement>("#group-tabs");
 const groupAddBtn = document.querySelector<HTMLButtonElement>("#group-add");
 const groupPreview = document.querySelector<HTMLDivElement>("#group-preview");
 const groupPreviewEmpty = document.querySelector<HTMLDivElement>("#group-preview-empty");
+const groupPreviewMask = document.querySelector<HTMLDivElement>("#group-preview-mask");
+const groupPreviewCacheIndicator = document.querySelector<HTMLDivElement>("#group-preview-cache-indicator");
 const groupVisibilityToggle = document.querySelector<HTMLButtonElement>("#group-visibility-toggle");
+const gifRecordBtn = document.querySelector<HTMLButtonElement>("#gif-record-btn");
 const settingsOverlay = document.querySelector<HTMLDivElement>("#settings-overlay");
 const settingsContent = settingsOverlay?.querySelector<HTMLDivElement>(".settings-content") || null;
 const renameOverlay = document.querySelector<HTMLDivElement>("#rename-overlay");
@@ -494,16 +663,175 @@ langToggleBtn = document.querySelector<HTMLButtonElement>("#lang-toggle");
 langToggleGlobalBtn = document.querySelector<HTMLButtonElement>("#lang-toggle-global");
 
 const getDemoFileName = () => {
-  const name = t("mainpage.demoFile");
-  return name && name !== "mainpage.demoFile" ? name : "熊猫头_demo.3dppc";
+  const selected = homeDemoProjects.find((item) => item.id === selectedHomeDemoProjectId) ?? homeDemoProjects[0];
+  return selected?.filePath ?? "";
+};
+
+type HomeDemoProject = {
+  id: string;
+  filePath: string;
+  gifPath: string;
+  stillPath: string;
+};
+
+const ZH_HOME_DEMO_CONFIG_PATH = "/demo/demo_projects.json";
+let homeDemoProjects: HomeDemoProject[] = [];
+let selectedHomeDemoProjectId = "";
+let loadedHomeDemoConfigPath = "";
+let homeDemoCaptureSizeCache: { width: number; height: number } | null = null;
+let homeDemoGifPlayNonce = 0;
+
+const refreshHomeDemoEntryVisibility = () => {
+  if (!homeDemoEntry) return;
+  homeDemoEntry.classList.toggle("hidden", homeDemoProjects.length === 0);
+};
+
+const syncHomeDemoCoverDisplaySize = () => {
+  if (!homeDemoOptionsEl) return;
+  const optionsWidth = Math.round(homeDemoOptionsEl.getBoundingClientRect().width);
+  if (optionsWidth <= 0) return;
+  const optionsStyle = window.getComputedStyle(homeDemoOptionsEl);
+  const columnGap = parseFloat(optionsStyle.columnGap || optionsStyle.gap || "8") || 8;
+  const optionOuterWidth = Math.max(1, Math.floor((optionsWidth - columnGap) / 2));
+  homeDemoOptionsEl.style.gridTemplateColumns = `repeat(2, ${optionOuterWidth}px)`;
+  homeDemoOptionsEl.style.justifyContent = "space-between";
+  const sampleOption = homeDemoOptionsEl.querySelector<HTMLElement>(".home-demo-option");
+  const sampleOptionStyle = sampleOption ? window.getComputedStyle(sampleOption) : null;
+  if (sampleOptionStyle) {
+    const inlineHeight = parseFloat(homeDemoOptionsEl.style.getPropertyValue("--home-demo-cover-height") || "0");
+    const computedHeight = parseFloat(window.getComputedStyle(homeDemoOptionsEl).getPropertyValue("--home-demo-cover-height") || "0");
+    const effectiveHeight = inlineHeight > 0 ? inlineHeight : computedHeight;
+    if (!effectiveHeight || effectiveHeight <= 0) {
+      homeDemoOptionsEl.style.setProperty("--home-demo-cover-height", "131px");
+    }
+    const finalHeight = Math.max(1, Math.round(
+      parseFloat(window.getComputedStyle(homeDemoOptionsEl).getPropertyValue("--home-demo-cover-height") || "131"),
+    ));
+    const buttonHorizontalInset = (
+      parseFloat(sampleOptionStyle.paddingLeft || "0")
+      + parseFloat(sampleOptionStyle.paddingRight || "0")
+      + parseFloat(sampleOptionStyle.borderLeftWidth || "0")
+      + parseFloat(sampleOptionStyle.borderRightWidth || "0")
+    );
+    const finalWidth = Math.max(1, Math.round(optionOuterWidth - buttonHorizontalInset));
+    homeDemoCaptureSizeCache = { width: finalWidth, height: finalHeight };
+  }
+};
+
+const renderHomeDemoOptions = () => {
+  if (!homeDemoOptionsEl) return;
+  homeDemoOptionsEl.innerHTML = "";
+  const withNonce = (url: string, nonce: number) => {
+    const sep = url.includes("?") ? "&" : "?";
+    return `${url}${sep}play=${nonce}`;
+  };
+  homeDemoProjects.forEach((item) => {
+    const isSelected = item.id === selectedHomeDemoProjectId;
+    const gifSrc = isSelected ? withNonce(item.gifPath, homeDemoGifPlayNonce) : item.gifPath;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `home-demo-option${isSelected ? " is-selected" : ""}`;
+    button.setAttribute("role", "radio");
+    button.setAttribute("aria-checked", String(isSelected));
+    button.setAttribute("aria-label", item.id);
+    button.innerHTML = `
+      <span class="home-demo-option-cover">
+        <img class="home-demo-option-still" src="${item.stillPath}" alt="" loading="lazy" />
+        <img class="home-demo-option-gif" src="${gifSrc}" alt="" loading="lazy" />
+      </span>
+    `;
+    button.addEventListener("click", () => {
+      if (selectedHomeDemoProjectId !== item.id) {
+        homeDemoGifPlayNonce += 1;
+      }
+      selectedHomeDemoProjectId = item.id;
+      renderHomeDemoOptions();
+    });
+    homeDemoOptionsEl.appendChild(button);
+  });
+  syncHomeDemoCoverDisplaySize();
+};
+
+const normalizeHomeDemoProjects = (raw: unknown): HomeDemoProject[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((item): item is HomeDemoProject =>
+      !!item &&
+      typeof (item as HomeDemoProject).id === "string" &&
+      typeof (item as HomeDemoProject).filePath === "string" &&
+      typeof (item as HomeDemoProject).gifPath === "string" &&
+      typeof (item as HomeDemoProject).stillPath === "string",
+    )
+    .map((item) => ({
+      id: item.id,
+      filePath: item.filePath,
+      gifPath: item.gifPath,
+      stillPath: item.stillPath,
+    }));
+};
+
+const resolveHomeDemoConfigPath = () => {
+  const configuredPath = t("mainpage.demoConfigFile");
+  if (configuredPath && configuredPath !== "mainpage.demoConfigFile") return configuredPath;
+  return ZH_HOME_DEMO_CONFIG_PATH;
+};
+
+const loadHomeDemoProjects = async () => {
+  const primaryConfigPath = resolveHomeDemoConfigPath();
+  const candidatePaths = primaryConfigPath === ZH_HOME_DEMO_CONFIG_PATH
+    ? [primaryConfigPath]
+    : [primaryConfigPath, ZH_HOME_DEMO_CONFIG_PATH];
+  if (loadedHomeDemoConfigPath === primaryConfigPath && homeDemoProjects.length > 0) return;
+
+  let loaded = false;
+  for (const configPath of candidatePaths) {
+    try {
+      const res = await fetch(configPath, { cache: "no-cache" });
+      if (!res.ok) throw new Error(`failed: ${res.status}`);
+      const data = await res.json();
+      const parsed = normalizeHomeDemoProjects(data);
+      if (parsed.length === 0) throw new Error("empty or invalid demo project config");
+      homeDemoProjects = parsed;
+      loadedHomeDemoConfigPath = configPath;
+      loaded = true;
+      break;
+    } catch (error) {
+      console.warn("[main] loadHomeDemoProjects failed", { configPath, error });
+    }
+  }
+  if (!loaded) {
+    homeDemoProjects = [];
+    loadedHomeDemoConfigPath = "";
+  }
+  if (!homeDemoProjects.some((item) => item.id === selectedHomeDemoProjectId)) {
+    selectedHomeDemoProjectId = homeDemoProjects[0]?.id ?? "";
+  }
+  renderHomeDemoOptions();
+  refreshHomeDemoEntryVisibility();
 };
 
 const showLoadingOverlay = () => loadingOverlay?.classList.remove("hidden");
 const hideLoadingOverlay = () => loadingOverlay?.classList.add("hidden");
 const settingsCancelBtn = document.querySelector<HTMLButtonElement>("#settings-cancel-btn");
 const settingsConfirmBtn = document.querySelector<HTMLButtonElement>("#settings-confirm-btn");
+const settingJoinTypeInterlockingBtn = document.querySelector<HTMLButtonElement>("#setting-join-type-interlocking");
+const settingJoinTypeClipBtn = document.querySelector<HTMLButtonElement>("#setting-join-type-clip");
+const settingJoinTypeResetBtn = document.querySelector<HTMLButtonElement>("#setting-join-type-reset");
 const settingScaleInput = document.querySelector<HTMLInputElement>("#setting-scale");
 const settingScaleResetBtn = document.querySelector<HTMLButtonElement>("#setting-scale-reset");
+const settingMinFoldAngleThresholdInput = document.querySelector<HTMLInputElement>("#setting-min-fold-angle-threshold");
+const settingMinFoldAngleThresholdResetBtn = document.querySelector<HTMLButtonElement>("#setting-min-fold-angle-threshold-reset");
+const settingClawInterlockingAngleInput = document.querySelector<HTMLInputElement>("#setting-claw-interlocking-angle");
+const settingClawInterlockingAngleResetBtn = document.querySelector<HTMLButtonElement>("#setting-claw-interlocking-angle-reset");
+const settingClawTargetRadiusInput = document.querySelector<HTMLInputElement>("#setting-claw-target-radius");
+const settingClawTargetRadiusResetBtn = document.querySelector<HTMLButtonElement>("#setting-claw-target-radius-reset");
+const settingClawRadiusAdaptiveOffBtn = document.querySelector<HTMLButtonElement>("#setting-claw-radius-adaptive-off");
+const settingClawRadiusAdaptiveOnBtn = document.querySelector<HTMLButtonElement>("#setting-claw-radius-adaptive-on");
+const settingClawRadiusAdaptiveResetBtn = document.querySelector<HTMLButtonElement>("#setting-claw-radius-adaptive-reset");
+const settingClawWidthInput = document.querySelector<HTMLInputElement>("#setting-claw-width");
+const settingClawWidthResetBtn = document.querySelector<HTMLButtonElement>("#setting-claw-width-reset");
+const settingClawFitGapInput = document.querySelector<HTMLInputElement>("#setting-claw-fit-gap");
+const settingClawFitGapResetBtn = document.querySelector<HTMLButtonElement>("#setting-claw-fit-gap-reset");
 const settingLayerHeightInput = document.querySelector<HTMLInputElement>("#setting-layer-height");
 const settingLayerHeightResetBtn = document.querySelector<HTMLButtonElement>("#setting-layer-height-reset");
 const settingConnectionLayersDecBtn = document.querySelector<HTMLButtonElement>("#setting-connection-layers-dec");
@@ -530,25 +858,30 @@ const settingWireframeThicknessInput = document.querySelector<HTMLInputElement>(
 const settingWireframeThicknessResetBtn = document.querySelector<HTMLButtonElement>("#setting-wireframe-thickness-reset");
 const settingWireframeRow = settingWireframeThicknessInput?.closest(".setting-row") as HTMLDivElement | null;
 const settingNavBasic = document.querySelector<HTMLButtonElement>("#settings-nav-basic");
+const settingNavInterlocking = document.querySelector<HTMLButtonElement>("#settings-nav-interlocking");
+const settingNavClip = document.querySelector<HTMLButtonElement>("#settings-nav-clip");
 const settingNavExperiment = document.querySelector<HTMLButtonElement>("#settings-nav-experiment");
 const settingPanelBasic = document.querySelector<HTMLDivElement>("#settings-panel-basic");
+const settingPanelInterlocking = document.querySelector<HTMLDivElement>("#settings-panel-interlocking");
+const settingPanelClip = document.querySelector<HTMLDivElement>("#settings-panel-clip");
 const settingPanelExperiment = document.querySelector<HTMLDivElement>("#settings-panel-experiment");
 const groupPreviewPanel = groupPreview?.closest(".preview-panel") as HTMLDivElement | null;
 const groupFacesCountLabel = document.querySelector<HTMLSpanElement>("#group-faces-count");
 const groupColorBtn = document.querySelector<HTMLButtonElement>("#group-color-btn");
 const groupColorInput = document.querySelector<HTMLInputElement>("#group-color-input");
-const groupEditToggle = document.querySelector<HTMLButtonElement>("#group-edit-toggle");
-const layoutEmpty = document.querySelector<HTMLElement>("#layout-empty");
+const layoutHome = document.querySelector<HTMLElement>("#layout-home");
 const layoutWorkspace = document.querySelector<HTMLElement>("#layout-workspace");
 const versionBadgeGlobal = document.querySelector<HTMLDivElement>(".version-badge-global");
 const groupDeleteSlot = document.querySelector<HTMLDivElement>("#group-delete-slot");
 
 if (
   !viewer ||
+  !viewerModeSlot ||
   !logListEl ||
   !fileInput ||
   !homeStartBtn ||
   !homeDemoBtn ||
+  !homeDemoOptionsEl ||
   !exitPreviewBtn ||
   !editorPreviewEl ||
   !menuOpenBtn ||
@@ -567,12 +900,13 @@ if (
   !groupPreviewPanel ||
   !groupPreview ||
   !groupPreviewEmpty ||
+  !groupPreviewMask ||
+  !groupPreviewCacheIndicator ||
   !groupFacesCountLabel ||
   !groupColorBtn ||
   !groupColorInput ||
   !groupDeleteSlot ||
-  !groupEditToggle ||
-  !layoutEmpty ||
+  !layoutHome ||
   !layoutWorkspace ||
   !settingsOverlay ||
   !renameOverlay ||
@@ -582,8 +916,24 @@ if (
   !renameConfirmBtn ||
   !settingsCancelBtn ||
   !settingsConfirmBtn ||
+  !settingJoinTypeInterlockingBtn ||
+  !settingJoinTypeClipBtn ||
+  !settingJoinTypeResetBtn ||
   !settingScaleInput ||
   !settingScaleResetBtn ||
+  !settingMinFoldAngleThresholdInput ||
+  !settingMinFoldAngleThresholdResetBtn ||
+  !settingClawInterlockingAngleInput ||
+  !settingClawInterlockingAngleResetBtn ||
+  !settingClawTargetRadiusInput ||
+  !settingClawTargetRadiusResetBtn ||
+  !settingClawRadiusAdaptiveOffBtn ||
+  !settingClawRadiusAdaptiveOnBtn ||
+  !settingClawRadiusAdaptiveResetBtn ||
+  !settingClawWidthInput ||
+  !settingClawWidthResetBtn ||
+  !settingClawFitGapInput ||
+  !settingClawFitGapResetBtn ||
   !settingTabWidthInput ||
   !settingTabWidthResetBtn ||
   !settingLayerHeightInput ||
@@ -610,8 +960,12 @@ if (
   !settingWireframeThicknessResetBtn ||
   !settingWireframeRow ||
   !settingNavBasic ||
+  !settingNavInterlocking ||
+  !settingNavClip ||
   !settingNavExperiment ||
   !settingPanelBasic ||
+  !settingPanelInterlocking ||
+  !settingPanelClip ||
   !settingPanelExperiment ||
   !settingsOpenBtn ||
   !settingsContent
@@ -625,10 +979,113 @@ fileInput.setAttribute("accept", ".obj,.fbx,.stl,.3dppc");
 document.querySelectorAll("input").forEach((inp) => inp.setAttribute("autocomplete", "off"));
 
 const { log } = createLog(logListEl);
-(async () => {
-  await initI18n();
-})();
-onLanguageChanged(applyI18nTexts);
+const i18nReadyPromise = initI18n();
+
+const viewerModeIconSvg = `
+<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
+<!-- License: Apache. Made by UXAspects: https://github.com/UXAspects/UXAspects -->
+<svg fill="#000000" height="800px" width="800px" version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
+	 viewBox="0 0 24 24" enable-background="new 0 0 24 24" xml:space="preserve">
+<g id="view">
+	<g>
+		<path d="M12,21c-5,0-8.8-2.8-11.8-8.5L0,12l0.2-0.5C3.2,5.8,7,3,12,3s8.8,2.8,11.8,8.5L24,12l-0.2,0.5C20.8,18.2,17,21,12,21z
+			 M2.3,12c2.5,4.7,5.7,7,9.7,7s7.2-2.3,9.7-7C19.2,7.3,16,5,12,5S4.8,7.3,2.3,12z"/>
+	</g>
+	<g>
+		<path d="M12,17c-2.8,0-5-2.2-5-5s2.2-5,5-5s5,2.2,5,5S14.8,17,12,17z M12,9c-1.7,0-3,1.3-3,3s1.3,3,3,3s3-1.3,3-3S13.7,9,12,9z"/>
+	</g>
+</g>
+</svg>
+`;
+
+const groupEditModeIconSvg = `
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- License: Apache. Made by vaadin: https://github.com/vaadin/vaadin-icons -->
+<svg width="800px" height="800px" viewBox="0 0 16 16" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <g transform="matrix(0.9 0 0 0.9 1.8 1.8)">
+    <path d="M8 0l-8 2v10l8 4 8-4v-10l-8-2zM14.4 2.6l-5.9 2.2-6.6-2.2 6.1-1.6 6.4 1.6zM1 11.4v-8.1l7 2.4v9.2l-7-3.5z"></path>
+  </g>
+</svg>
+`;
+
+const seamEditModeIconSvg = `
+<?xml version="1.0" encoding="utf-8"?>
+<!-- License: MIT. Made by phosphor: https://github.com/phosphor-icons/phosphor-icons -->
+<svg fill="#000000" width="800px" height="800px" viewBox="0 0 256 256" id="Flat" xmlns="http://www.w3.org/2000/svg">
+  <g transform="matrix(1.1 0 0 1.1 2.2 2.2)">
+    <path d="M217.45557,38.544a35.9967,35.9967,0,0,0-57.937,40.96679L79.5105,159.51855a36.05906,36.05906,0,0,0-40.96607,7.0254H38.544a36.00029,36.00029,0,1,0,57.93737,9.94531L176.4895,96.48145A35.99663,35.99663,0,0,0,217.45557,38.544ZM72.48584,200.48535a12.00027,12.00027,0,0,1-16.97119-16.9707h-.00049a12.00044,12.00044,0,0,1,16.97168,16.9707Zm128-128a12.01673,12.01673,0,0,1-16.969.00244l-.0022-.00244a12.0001,12.0001,0,1,1,16.97119,0Z"/>
+  </g>
+</svg>
+`;
+
+const segmentedItemValueToWorkspaceState = (value: string): WorkspaceState => {
+  if (value === "group-edit") return "editingGroup";
+  if (value === "seam-edit") return "editingSeam";
+  return "normal";
+};
+
+const workspaceStateToSegmentedItemValue = (state: WorkspaceState): string => {
+  if (state === "editingGroup") return "group-edit";
+  if (state === "editingSeam") return "seam-edit";
+  return "view";
+};
+
+const getWorkspaceStateDisplayName = (state: WorkspaceState): string => {
+  if (state === "editingGroup") return t("workspace.mode.editingGroup");
+  if (state === "editingSeam") return t("workspace.mode.editingSeam");
+  return t("workspace.mode.normal");
+};
+
+const isViewerModeControlDisabled = (state: WorkspaceState): boolean => {
+  return workerBusy || state === "previewGroupModel" || state === "loading";
+};
+
+viewerModeControl = createSegmentedControl({
+  ariaLabel: t("viewer.mode.ariaLabel"),
+  value: "view",
+  equalWidth: true,
+  items: [
+    {
+      value: "view",
+      label: t("workspace.mode.normal"),
+      iconSvg: viewerModeIconSvg,
+      hoverBg: "rgba(245, 158, 11, 0.18)",
+      activeBg: "rgba(245, 158, 61, 0.68)",
+      textColor: "#dddddd",
+      activeTextColor: "#ffffff",
+    },
+    {
+      value: "group-edit",
+      label: t("workspace.mode.editingGroup"),
+      iconSvg: groupEditModeIconSvg,
+      hoverBg: "rgba(37, 99, 235, 0.18)",
+      activeBg: "rgba(67, 129, 235, 0.68)",
+      textColor: "#dddddd",
+      activeTextColor: "#ffffff",
+    },
+    {
+      value: "seam-edit",
+      label: t("workspace.mode.editingSeam"),
+      iconSvg: seamEditModeIconSvg,
+      hoverBg: "rgba(20, 184, 166, 0.18)",
+      activeBg: "rgba(80, 184, 166, 0.68)",
+      textColor: "#dddddd",
+      activeTextColor: "#ffffff",
+    },
+  ],
+  onChange(value) {
+    const nextState = segmentedItemValueToWorkspaceState(value);
+    console.log("[ViewerModeControl] mode changed:", value, "->", nextState);
+    changeWorkspaceState(nextState);
+  },
+});
+viewerModeControl.el.classList.add("viewer-mode-control");
+viewerModeSlot.appendChild(viewerModeControl.el);
+viewerModeControl.el.classList.toggle("hidden", getWorkspaceState() === "previewGroupModel");
+viewerModeControl.setValue(workspaceStateToSegmentedItemValue(getWorkspaceState()), false);
+viewerModeControl.setDisabled(isViewerModeControlDisabled(getWorkspaceState()));
 
 // Initialize Vercel Web Analytics
 inject();
@@ -641,12 +1098,19 @@ const changeWorkspaceState = (state: WorkspaceState) => {
   } else {
     hideLoadingOverlay();
   }
-  if (previousState === "editingGroup") log(t("log.workspace.edit.exit"), "info");
-  if (state === "editingGroup") log(t("log.workspace.edit.enter"), "info");
+  if (state === "normal" || state === "editingGroup" || state === "editingSeam") {
+    log(t("log.workspace.current", { state: getWorkspaceStateDisplayName(state) }), "info");
+  }
   if (previousState === "previewGroupModel") log(t("log.preview.exit"), "info");
   if (state === "previewGroupModel") log(t("log.preview.loaded"), "info");
   appEventBus.emit("workspaceStateChanged", { previous: previousState, current: state });
 };
+
+appEventBus.on("workspaceStateChanged", ({ current }) => {
+  viewerModeControl.el.classList.toggle("hidden", current === "previewGroupModel");
+  viewerModeControl.setValue(workspaceStateToSegmentedItemValue(current), false);
+  viewerModeControl.setDisabled(isViewerModeControlDisabled(current));
+});
 
 aboutBackBtn?.addEventListener("click", () => {
   aboutOverlay?.classList.add("hidden");
@@ -683,8 +1147,8 @@ const clearAppStates = () => {
   changeWorkspaceState("loading");
   document.querySelector(".version-badge-global")?.classList.add("hidden-global");
   document.querySelector(".version-lang-toggle")?.classList.add("hidden-global");
-  previewMeshCache.length = 0;
-  historyAbandonJudgeMethods.clear();
+  previewMeshCacheManager.clear();
+  refreshPreviewMeshCacheIndicator();
   historyManager.reset();
   appEventBus.emit("clearAppStates", undefined);
   operationHints?.resetHighlights();
@@ -698,8 +1162,24 @@ const settingsUI = createSettingsUI(
     openBtn: settingsOpenBtn,
     cancelBtn: settingsCancelBtn,
     confirmBtn: settingsConfirmBtn,
+    joinTypeInterlockingBtn: settingJoinTypeInterlockingBtn,
+    joinTypeClipBtn: settingJoinTypeClipBtn,
+    joinTypeResetBtn: settingJoinTypeResetBtn,
     scaleInput: settingScaleInput,
     scaleResetBtn: settingScaleResetBtn,
+    minFoldAngleThresholdInput: settingMinFoldAngleThresholdInput,
+    minFoldAngleThresholdResetBtn: settingMinFoldAngleThresholdResetBtn,
+    clawInterlockingAngleInput: settingClawInterlockingAngleInput,
+    clawInterlockingAngleResetBtn: settingClawInterlockingAngleResetBtn,
+    clawTargetRadiusInput: settingClawTargetRadiusInput,
+    clawTargetRadiusResetBtn: settingClawTargetRadiusResetBtn,
+    clawRadiusAdaptiveOffBtn: settingClawRadiusAdaptiveOffBtn,
+    clawRadiusAdaptiveOnBtn: settingClawRadiusAdaptiveOnBtn,
+    clawRadiusAdaptiveResetBtn: settingClawRadiusAdaptiveResetBtn,
+    clawWidthInput: settingClawWidthInput,
+    clawWidthResetBtn: settingClawWidthResetBtn,
+    clawFitGapInput: settingClawFitGapInput,
+    clawFitGapResetBtn: settingClawFitGapResetBtn,
     tabWidthInput: settingTabWidthInput,
     tabWidthResetBtn: settingTabWidthResetBtn,
     tabThicknessInput: settingTabThicknessInput,
@@ -716,8 +1196,12 @@ const settingsUI = createSettingsUI(
     wireframeThicknessResetBtn: settingWireframeThicknessResetBtn,
     wireframeRow: settingWireframeRow,
     navBasic: settingNavBasic,
+    navInterlocking: settingNavInterlocking,
+    navClip: settingNavClip,
     navExperiment: settingNavExperiment,
     panelBasic: settingPanelBasic,
+    panelInterlocking: settingPanelInterlocking,
+    panelClip: settingPanelClip,
     panelExperiment: settingPanelExperiment,
     layerHeightInput: settingLayerHeightInput,
     layerHeightResetBtn: settingLayerHeightResetBtn,
@@ -752,52 +1236,6 @@ if (groupDeleteSlot) {
   });
   groupDeleteSlot.appendChild(deleteHold.el);
 }
-
-const getCachedPreviewMesh = (groupId: number): { mesh: Mesh, angle: number } | null => {
-  const currentHistoryUid = historyManager.getCurrentSnapshotUid()?? -1;
-  const cached = previewMeshCache.find((c) => c.groupId === groupId && c.historyUidCreated <= currentHistoryUid && c.historyUidAbandoned > currentHistoryUid);
-  if (!cached) return null;
-  const mesh = cached.mesh.clone();
-  const angle = groupController.getGroupPlaceAngle(groupId) ?? 0;
-  if (Math.abs(angle) > 1e-8) {
-    mesh.applyMatrix4(new Matrix4().makeRotationZ(-angle));
-  }
-  mesh.updateMatrixWorld(true);
-  mesh.geometry?.computeBoundingBox?.();
-  mesh.geometry?.computeBoundingSphere?.();
-  return { mesh, angle };
-};
-
-const addCachedPreviewMesh = (groupId: number, mesh: Mesh) => {
-  const currentHistoryUid = historyManager.getCurrentSnapshotUid()?? -1;
-  previewMeshCache.push({
-    mesh,
-    groupId,
-    historyUidCreated: currentHistoryUid,
-    historyUidAbandoned: Infinity,
-  });
-  if (previewMeshCache.length > MAX_PREVIEW_MESH_CACHE_SIZE) {
-    previewMeshCache.splice(0, previewMeshCache.length - MAX_PREVIEW_MESH_CACHE_SIZE);
-  }
-  // console.log("addCachedPreviewMesh", groupId, currentHistoryUid, previewMeshCache.length);
-};
-
-const abandonCachedPreviewMesh = (judgeMethod: AbandonCachedPreviewMeshJudgeMethod) => {
-  // console.log("abandonCachedPreviewMesh called");
-  abandonHistoryCachedPreviewMesh(judgeMethod, historyManager.getCurrentSnapshotUid()?? -1);
-};
-const abandonHistoryCachedPreviewMesh = (judgeMethod: AbandonCachedPreviewMeshJudgeMethod, historyUid: number) => {
-  // console.log("abandonHistoryCachedPreviewMesh", historyUid);
-  for (const cache of previewMeshCache) {
-    if (cache.historyUidCreated < historyUid && judgeMethod(cache)) {
-      // console.log("  abandoned", cache.groupId, cache.historyUidCreated, cache.historyUidAbandoned);
-      cache.historyUidAbandoned = historyUid;
-    }
-  }
-};
-
-type AbandonCachedPreviewMeshJudgeMethod = (cache: PreviewMeshCacheItem) => boolean;
-const historyAbandonJudgeMethods: Map<number, AbandonCachedPreviewMeshJudgeMethod> = new Map();
 
 const openRenameDialog = () => {
   if (!renameOverlay || !renameModal || !renameInput) return;
@@ -875,7 +1313,6 @@ refreshToggleTextLabels = () => {
     { btn: seamsToggle, keyOn: "toolbar.left.seam.on", keyOff: "toolbar.left.seam.off", isOn: () => renderer3d.isSeamsEnabled() },
     { btn: facesToggle, keyOn: "toolbar.left.surface.on", keyOff: "toolbar.left.surface.off", isOn: () => renderer3d.isFacesEnabled() },
     { btn: bboxToggle, keyOn: "toolbar.left.bbox.on", keyOff: "toolbar.left.bbox.off", isOn: () => renderer3d.getBBoxVisible() },
-    { btn: groupEditToggle, keyOn: "toolbar.right.groupEdit.on", keyOff: "toolbar.right.groupEdit.off", isOn: () => getWorkspaceState() === "editingGroup" },
   ]);
 };
 refreshToggleTextLabels?.();
@@ -886,6 +1323,30 @@ bboxToggle.addEventListener("click", () => {
 });
 appEventBus.on("workspaceStateChanged", ({ current, previous }) => {
   const isPreview = current === "previewGroupModel";
+  const enteringEditingSeam = current === "editingSeam" && previous !== "editingSeam";
+  const leavingEditingSeam = previous === "editingSeam" && current !== "editingSeam";
+  if (enteringEditingSeam) {
+    edgesEnabledBeforeEditingSeam = renderer3d.isEdgesEnabled();
+    seamsEnabledBeforeEditingSeam = renderer3d.isSeamsEnabled();
+    renderer3d.setEdgesEnabled(false);
+    renderer3d.setSeamsEnabled(true);
+  }
+  if (leavingEditingSeam) {
+    if (edgesEnabledBeforeEditingSeam !== null) {
+      renderer3d.setEdgesEnabled(edgesEnabledBeforeEditingSeam);
+    }
+    if (seamsEnabledBeforeEditingSeam !== null) {
+      renderer3d.setSeamsEnabled(seamsEnabledBeforeEditingSeam);
+    }
+    edgesEnabledBeforeEditingSeam = null;
+    seamsEnabledBeforeEditingSeam = null;
+  }
+  const disableEdgeControls = current === "editingSeam";
+  edgesToggle.classList.toggle("active", renderer3d.isEdgesEnabled());
+  seamsToggle.classList.toggle("active", renderer3d.isSeamsEnabled());
+  edgesToggle.disabled = disableEdgeControls;
+  seamsToggle.disabled = disableEdgeControls;
+  groupPreviewMask.classList.toggle("hidden", !disableEdgeControls);
   bboxToggle.classList.toggle("hidden", isPreview);
   if (isPreview) {
     bboxToggle.classList.remove("active");
@@ -901,61 +1362,10 @@ appEventBus.on("workspaceStateChanged", ({ current, previous }) => {
   }
 });
 
-appEventBus.on("historyApplySnapshot", ({ current, direction, snapPassed} ) => {
-  // console.log("historyApplySnapshot", current, direction, snapPassed);
-  changeWorkspaceState("normal");
-  applyProjectState(current);
-  // redo时，需要根据时间线索废弃一些缓存
-  if (direction === "redo") {
-    for (const uid of snapPassed) {
-      const judgeMethod = historyAbandonJudgeMethods.get(uid);
-      if (judgeMethod) {
-        abandonHistoryCachedPreviewMesh(judgeMethod, uid);
-      }
-    }
-  }
-  historyManager.markApplied(current.action);
-  const desc = formatHistoryAction(current.action);
-  const minutesAgo = Math.floor((Date.now() - current.action.timestamp) / 60000);
-  log(t("log.history.rewind", { desc, minutes: minutesAgo }), "info", false);
-  setFileSaved(false);
-});
-
-appEventBus.on("historyApplied", (action) => {
-  groupUI.render(buildGroupUIState());
-  updateGroupEditToggle();
-  updateMenuState();
-  historyPanelUI?.render();
-});
-
-appEventBus.on("historyErased", (erasedHistoryUid) => {
-  // 清理 previewMeshCache 中对应的记录
-  for (let i = previewMeshCache.length - 1; i >= 0; i--) {
-    if (previewMeshCache[i].historyUidAbandoned >= erasedHistoryUid[0]) {
-      // console.log(" reopen cached mesh", previewMeshCache[i].groupId, previewMeshCache[i].historyUidCreated, previewMeshCache[i].historyUidAbandoned);
-      previewMeshCache[i].historyUidAbandoned = Infinity;
-    }
-    // 这里是您的删除条件判断
-    if (previewMeshCache[i].historyUidCreated >= erasedHistoryUid[0]) {
-      // 满足条件，则删除当前元素 (i, 1)
-      // console.log(" delete cached mesh", previewMeshCache[i].groupId, previewMeshCache[i].historyUidCreated, previewMeshCache[i].historyUidAbandoned);
-      previewMeshCache.splice(i, 1);
-    }
-  }
-  // 清理 abandonJudgeMethods 中对应的记录
-  const keysToDelete: number[] = [];
-  for (const [historyUid, judgeMethod] of historyAbandonJudgeMethods) {
-    if (historyUid >= erasedHistoryUid[0]) keysToDelete.push(historyUid);
-  }
-  for (const key of keysToDelete) {
-    historyAbandonJudgeMethods.delete(key);
-  }
-});
-
 const projectLoaded = () => {
   if (versionBadgeGlobal) versionBadgeGlobal.style.display = "none";
   logPanelEl?.classList.remove("hidden");
-  layoutEmpty.classList.toggle("active", false);
+  layoutHome.classList.toggle("active", false);
   layoutWorkspace.classList.toggle("active", true);
   layoutWorkspace.classList.remove("preloaded");
   updateMenuState();
@@ -963,6 +1373,7 @@ const projectLoaded = () => {
   historyManager.reset();
   historyManager.push(captureProjectState(), { name: "loadModel", timestamp: Date.now(), payload: {}});
   historyPanelUI?.render();
+  refreshPreviewMeshCacheIndicator();
 };
 
 const allowedExtensions = ["obj", "fbx", "stl", "3dppc"];
@@ -986,7 +1397,7 @@ const handleFileSelectedFromFile = async (file: File) => {
   try {
     clearAppStates();
     await new Promise((resolve) => setTimeout(resolve, 200));
-    const { object, importedGroups, importedColorCursor, importedSeting } = await loadRawObject(file, ext);
+    const { object, importedGroups, importedColorCursor, importedSeting, importedEdgeJoinTypes } = await loadRawObject(file, ext);
     const projectInfo = startNewProject(getProjectNameFromFile(file.name));
     if (importedSeting) {
       importSettings(importedSeting);
@@ -996,6 +1407,12 @@ const handleFileSelectedFromFile = async (file: File) => {
     await renderer3d.applyObject(object, file.name);
     if (importedGroups && importedGroups.length) {
       groupController.applyImportedGroups(importedGroups, importedColorCursor);
+    }
+    // 边级拼接方式依赖于当前模型已完成几何索引构建。
+    // 因此必须放在 applyObject 之后恢复；同时又要早于 projectChanged，
+    // 这样 seamManager 首次根据 projectChanged 重建 seam 线时，就能拿到正确的 joinType 颜色。
+    if (importedEdgeJoinTypes) {
+      importEdgeJoinTypes(importedEdgeJoinTypes);
     }
     appEventBus.emit("projectChanged", projectInfo);
     projectLoaded();
@@ -1042,26 +1459,70 @@ fileInput.addEventListener("cancel", () => {
 fileInput.addEventListener("click", () => {
   window.addEventListener("focus", focusCancelHandler);
 });
-homeStartBtn.addEventListener("click", () => {
+const openFilePickerFromHome = () => {
   fileInput.value = "";
   showLoadingOverlay();
   fileInput.click();
-});
-homeDemoBtn?.addEventListener("click", async () => {
+};
+const loadDemoProjectFromHome = async () => {
   try {
     showLoadingOverlay();
+    await loadHomeDemoProjects();
     const demoFile = getDemoFileName();
+    if (!demoFile) throw new Error("demo project config is empty");
     const resp = await fetch(`/${demoFile}`, { cache: "no-cache" });
     if (!resp.ok) throw new Error("demo file fetch failed");
     const blob = await resp.blob();
-    const file = new File([blob], demoFile, { type: "application/json" });
+    const demoFileName = demoFile.replace(/[?#].*$/, "").split(/[\\/]/).pop() || demoFile;
+    const file = new File([blob], demoFileName, { type: "application/json" });
     await handleFileSelectedFromFile(file);
   } catch (err) {
     console.error("加载 demo 失败", err);
     log(t("log.demo.loadFail"), "error");
     hideLoadingOverlay();
   }
+};
+
+const getHomeDemoCaptureTargetHeight = (): number => {
+  if (homeDemoCaptureSizeCache) return homeDemoCaptureSizeCache.height;
+
+  const coverEl = homeDemoOptionsEl?.querySelector<HTMLElement>(".home-demo-option-cover");
+  if (coverEl) {
+    const rect = coverEl.getBoundingClientRect();
+    const width = Math.max(1, Math.round(rect.width));
+    const height = Math.max(1, Math.round(rect.height));
+    if (width > 0 && height > 0) {
+      homeDemoCaptureSizeCache = { width, height };
+      return height;
+    }
+  }
+
+  const height = homeDemoOptionsEl
+    ? parseFloat(window.getComputedStyle(homeDemoOptionsEl).getPropertyValue("--home-demo-cover-height") || "131")
+    : 131;
+  const fallbackHeight = Math.max(1, Math.round(height));
+  if (Number.isFinite(fallbackHeight)) {
+    return fallbackHeight;
+  }
+  return 131;
+};
+
+const gifCaptureController = createGifCaptureController({
+  renderer3d,
+  getTargetHeight: getHomeDemoCaptureTargetHeight,
+  downloadBlob,
+  log,
+  showLoadingOverlay,
+  hideLoadingOverlay,
+  gifRecordBtn,
+  gifFps: GIF_CAPTURE_FPS,
+  frameCount: 120,
+  turns: 1,
 });
+
+homeStartBtn.addEventListener("click", openFilePickerFromHome);
+homeDemoBtn?.addEventListener("click", loadDemoProjectFromHome);
+gifRecordBtn?.addEventListener("click", gifCaptureController.captureGifFromViewer);
 menuOpenBtn.addEventListener("click", () => {
   fileInput.value = "";
   showLoadingOverlay();
@@ -1212,43 +1673,20 @@ const groupUI = createGroupUI(
     onTabHoverOut: (id) => appEventBus.emit("groupBreathEnd", id),
   },
 );
-
-const updateGroupEditToggle = () => {
-  groupEditToggle.classList.toggle("active", getWorkspaceState() === "editingGroup");
-};
-
-appEventBus.on("groupAdded", ({ groupId, groupName }) => {
-  groupUI.render(buildGroupUIState());
-  historyManager.push(captureProjectState(), { name: "groupCreate", timestamp: Date.now(), payload: { name: groupName } });
-  historyPanelUI?.render();
-  setFileSaved(false);
+onLanguageChanged(applyI18nTexts);
+void i18nReadyPromise.then(() => {
+  applyI18nTexts();
 });
-appEventBus.on("groupRemoved", ({ groupId, groupName, faces }) => {
-  groupUI.render(buildGroupUIState());
-  const pushResult = historyManager.push(captureProjectState(), { name: "groupDelete", timestamp: Date.now(), payload: { name: groupName } });
-  if (pushResult > 0) {
-    const judgeMethod = (cache: PreviewMeshCacheItem) => {
-      return cache.historyUidAbandoned === Infinity;
-    };
-    abandonCachedPreviewMesh(judgeMethod);
-    historyAbandonJudgeMethods.set(pushResult, judgeMethod);
-    historyPanelUI?.render();
-  }
-  setFileSaved(false);
+window.addEventListener("resize", () => {
+  syncHomeDemoCoverDisplaySize();
 });
+
 appEventBus.on("groupCurrentChanged", (groupId: number) => {
   groupUI.render(buildGroupUIState());
+  refreshPreviewMeshCacheIndicator();
 });
 appEventBus.on("groupColorChanged", ({ groupId, color }) => {
   groupUI.render(buildGroupUIState());
-  setFileSaved(false);
-});
-appEventBus.on("groupNameChanged", ({ groupId, name }) => {
-  groupUI.render(buildGroupUIState());
-  const pushResult = historyManager.push(captureProjectState(), { name: "groupRename", timestamp: Date.now(), payload: { name } });
-  if (pushResult > 0) {
-    historyPanelUI?.render();
-  }
   setFileSaved(false);
 });
 appEventBus.on("groupFaceAdded", ({ groupId }) => {
@@ -1259,75 +1697,31 @@ appEventBus.on("groupFaceRemoved", ({ groupId }) => {
   groupUI.render(buildGroupUIState());
   setFileSaved(false);
 });
-appEventBus.on("brushOperationDone", ({ facePaintedCnt }) => {
-  if (facePaintedCnt === 0) return;
-  const currentGroupName = groupController.getGroupName(groupController.getPreviewGroupId()) ?? "???";
-  let pushResult = -1;
-  if (facePaintedCnt > 0) {
-    pushResult = historyManager.push(captureProjectState(), { name: "faceAdd", timestamp: Date.now(), payload: { count: facePaintedCnt, group: currentGroupName } });
-  } else if (facePaintedCnt < 0) {
-    pushResult = historyManager.push(captureProjectState(), { name: "faceRemove", timestamp: Date.now(), payload: { count: -facePaintedCnt, group: currentGroupName } });
-  }
-  // 一个组的拓扑变化可能会影响到其他组拼接边的舌片角度，所以需要全部清理
-  if (pushResult > 0) {
-    const judgeMethod = (cache: PreviewMeshCacheItem) => {
-      return cache.historyUidAbandoned === Infinity;
-    }
-    abandonCachedPreviewMesh(judgeMethod);
-    historyAbandonJudgeMethods.set(pushResult, judgeMethod);
-    historyPanelUI?.render();
-  }
-});
 appEventBus.on("groupPlaceAngleChanged", () => { setFileSaved(false); });
-
-appEventBus.on("groupPlaceAngleRotateDone", ({ deltaAngle }) => {
-  historyManager.push(captureProjectState(), { name: "groupRotate", timestamp: Date.now(), payload: {
-    groupId: groupController.getPreviewGroupId(),
-    angle: deltaAngle,
-    stack: (actionA: MetaAction, actionB: MetaAction) => {
-      if (!actionA.payload || !actionB.payload) return undefined;
-      if (actionA.payload.groupId !== actionB.payload.groupId) return undefined;
-      const angle = (actionA.payload.angle as number) + (actionB.payload.angle as number);
-      return {name: actionB.name, timestamp: actionB.timestamp,
-        payload: { groupId: actionB.payload.groupId, angle, stack: actionA.payload.stack }};
-    }
-  }});
-  historyPanelUI?.render();
-
-});
 appEventBus.on("workspaceStateChanged", ({ previous, current }) =>  {
   if (current !== "loading") groupUI.render(buildGroupUIState());
-  updateGroupEditToggle();
   updateMenuState();
-});
-appEventBus.on("settingsChanged", (changedItemCnt) => {
-  const pushResult = historyManager.push(captureProjectState(), { name: "settingsChange", timestamp: Date.now(), payload: { count: changedItemCnt } });
-  if (pushResult > 0) {
-    const judgeMethod = (cache: PreviewMeshCacheItem) => {
-      return cache.historyUidAbandoned === Infinity;
-    }
-    abandonCachedPreviewMesh(judgeMethod);
-    historyAbandonJudgeMethods.set(pushResult, judgeMethod);
-    historyPanelUI?.render();
-  }
-  setFileSaved(false);
 });
 
 groupUI.render(buildGroupUIState());
-updateGroupEditToggle();
 updateMenuState();
-historyPanelUI = createHistoryPanel(
-  {
-    panel: document.getElementById("history-panel"),
-    list: document.getElementById("history-list"),
-  },
-  () => historyManager.getSnapshots(),
-  () => historyManager.getUndoSteps(),
-  (snapUid) => {
-    historyManager.applySnapshot(snapUid);
-  },
-);
-historyPanelUI.render();
+historyPanelUI = bindHistorySystem({
+  panel: document.getElementById("history-panel"),
+  list: document.getElementById("history-list"),
+  renderGroupUI: () => groupUI.render(buildGroupUIState()),
+  captureProjectState,
+  setFileSaved,
+  previewMeshCacheManager,
+  getPreviewGroupId: () => groupController.getPreviewGroupId(),
+  getPreviewGroupName: () => groupController.getGroupName(groupController.getPreviewGroupId()) ?? "???",
+  changeWorkspaceState,
+  applyProjectState,
+  updateMenuState,
+  onPreviewMeshCacheMutated: refreshPreviewMeshCacheIndicator,
+  log,
+  t,
+});
+refreshPreviewMeshCacheIndicator();
 if (viewer && groupPreview) {
   operationHints = createOperationHints({
     leftMount: viewer,
@@ -1336,13 +1730,12 @@ if (viewer && groupPreview) {
   });
 }
 onWorkerBusyChange((busy) => {
+  workerBusy = busy;
   appEventBus.emit("workerBusyChange", busy);
   if (menuBlocker) {
     menuBlocker.classList.toggle("active", busy);
   }
-  if (groupEditToggle) {
-    groupEditToggle.disabled = busy;
-  }
+  viewerModeControl.setDisabled(isViewerModeControlDisabled(getWorkspaceState()));
   if (busy && getWorkspaceState() === "editingGroup") {
     changeWorkspaceState("normal");
   }
@@ -1351,17 +1744,6 @@ onWorkerBusyChange((busy) => {
 groupAddBtn.addEventListener("click", () => {
   groupController.addGroup();
   if (getWorkspaceState() !== "editingGroup") {
-    changeWorkspaceState("editingGroup");
-  }
-});
-groupEditToggle.addEventListener("click", () => {
-  if (getWorkspaceState() === "editingGroup") {
-    changeWorkspaceState("normal");
-  } else {
-    // if (isWorkerBusy()) {
-    //   log("正在生成展开组模型，请稍后再编辑", "info");
-    //   return;
-    // }
     changeWorkspaceState("editingGroup");
   }
 });
@@ -1395,143 +1777,23 @@ document.addEventListener("keydown", (e) => {
     }
   }
 });
-exportGroupStepBtn.addEventListener("click", async () => {
-  exportGroupStepBtn.disabled = true;
-  try {
-    const targetGroupId = groupController.getPreviewGroupId();
-    if (unfold2d.hasGroupIntersection(targetGroupId)) {
-      log(t("log.export.selfIntersect"), "error");
-      return;
-    }
-    const groupName = groupController.getGroupName(targetGroupId) ?? `group-${targetGroupId}`;
-    const projectName = getCurrentProject().name || "未命名工程";
-    const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
-    if (!trisWithAngles.length) {
-      log(t("log.export.noFaces"), "error");
-      return;
-    }
-    log(t("log.export.step.start"), "info");
-    const { blob } = await buildStepInWorker(
-      trisWithAngles,
-      (progress) => log(progress, "progress"),
-      (msg, tone) => log(msg, (tone as any) ?? "error"),
-    );
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${projectName}-${groupName}.step`;
-    a.style.display = "none";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    log(t("log.export.step.success", { fileName: `${projectName}-${groupName}.step` }), "success");
-  } catch (error) {
-    console.error("展开组 STEP 导出失败", error);
-    log(t("log.export.step.fail"), "error");
-  } finally {
-    exportGroupStepBtn.disabled = false;
-  }
-});
-exportGroupStlBtn.addEventListener("click", async () => {
-  exportGroupStlBtn.disabled = true;
-  const downloadMesh = (groupName: string, mesh: Mesh) => {
-    const projectName = getCurrentProject().name || "未命名工程";
-    const exporter = new STLExporter();
-    const stlResult = exporter.parse(mesh, { binary: true });
-    const stlArray =
-      stlResult instanceof ArrayBuffer
-        ? new Uint8Array(stlResult)
-        : stlResult instanceof DataView
-          ? new Uint8Array(stlResult.buffer)
-          : new Uint8Array();
-    const stlCopy = new Uint8Array(stlArray); // force into ArrayBuffer-backed copy
-    const url = URL.createObjectURL(new Blob([stlCopy.buffer], { type: "model/stl" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${projectName}-${groupName}.stl`;
-    a.style.display = "none";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    log(t("log.export.stl.success", { fileName: `${projectName}-${groupName}.stl` }), "success");
-    };
-  try {
-    const targetGroupId = groupController.getPreviewGroupId();
-    if (unfold2d.hasGroupIntersection(targetGroupId)) {
-      log(t("log.export.selfIntersect"), "error");
-      return;
-    }
-    const groupName = groupController.getGroupName(targetGroupId) ?? `group-${targetGroupId}`;
-    const cached = getCachedPreviewMesh(targetGroupId);
-    if (!cached) {
-      const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
-      if (!trisWithAngles.length) {
-        log(t("log.export.noFaces"), "error");
-        return;
-      }
-      log(t("log.export.stl.start"), "info");
-      const { blob } = await buildStlInWorker(
-        trisWithAngles,
-        (progress) => log(progress, "progress"),
-        (msg, tone) => log(msg, (tone as any) ?? "error"),
-      );
-      const buffer = await blob.arrayBuffer();
-      const geometry = stlLoader.parse(buffer);
-      snapGeometryPositions(geometry);
-      const mesh = new Mesh(geometry);
-      mesh.name = "Replicad Mesh";
-      addCachedPreviewMesh(targetGroupId, mesh);
-      const cached = getCachedPreviewMesh(targetGroupId);
-      if (cached) downloadMesh(groupName, cached.mesh);
-    } else {
-      log(t("log.export.stl.cached"), "info");
-      downloadMesh(groupName, cached.mesh);
-    }
-  } catch (error) {
-    console.error("展开组 STL 导出失败", error);
-    log(t("log.export.stl.fail"), "error");
-  } finally {
-    exportGroupStlBtn.disabled = false;
-  }
-});
-
-previewGroupModelBtn.addEventListener("click", async () => {
-  previewGroupModelBtn.disabled = true;
-  try {
-    const targetGroupId = groupController.getPreviewGroupId();
-    if (unfold2d.hasGroupIntersection(targetGroupId)) {
-      log(t("log.export.selfIntersect"), "error");
-      return;
-    }
-    const cached = getCachedPreviewMesh(targetGroupId);
-    if (cached) {
-      renderer3d.loadPreviewModel(cached.mesh, cached.angle);
-    } else {
-      const trisWithAngles = unfold2d.getGroupTrianglesData(targetGroupId);
-      if (!trisWithAngles.length) {
-        log(t("log.export.noFaces"), "error");
-        return;
-      }
-      // log("正在用 Replicad 生成 mesh...", "info");
-      const { mesh } = await buildMeshInWorker(
-        trisWithAngles,
-        (progress) => log(progress, "progress"),
-        (msg, tone) => log(msg, (tone as any) ?? "error"),
-      );
-      snapGeometryPositions(mesh.geometry);
-      addCachedPreviewMesh(targetGroupId, mesh);
-      const cached = getCachedPreviewMesh(targetGroupId);
-      if (cached) renderer3d.loadPreviewModel(cached.mesh, cached.angle);
-    }
-    changeWorkspaceState("previewGroupModel");
-  } catch (error) {
-    console.error("Replicad mesh 生成失败", error);
-    log(t("log.replicad.mesh.fail"), "error");
-  } finally {
-    previewGroupModelBtn.disabled = false;
-  }
+bindGroupPreviewActions({
+  exportGroupStepBtn,
+  exportGroupStlBtn,
+  previewGroupModelBtn,
+  getPreviewGroupId: () => groupController.getPreviewGroupId(),
+  getPreviewGroupName: (groupId) => groupController.getGroupName(groupId),
+  getProjectName: () => getCurrentProject().name || "未命名工程",
+  getCurrentHistoryUid: () => historyManager.getCurrentSnapshotUid() ?? -1,
+  getGroupPlaceAngle: (groupId) => groupController.getGroupPlaceAngle(groupId) ?? 0,
+  hasGroupIntersection: (groupId) => unfold2d.hasGroupIntersection(groupId),
+  getGroupPolygonsData: (groupId) => unfold2d.getGroupPolygonsData(groupId),
+  previewMeshCacheManager,
+  loadPreviewModel: (mesh, angle) => renderer3d.loadPreviewModel(mesh, angle),
+  changeWorkspaceState,
+  onPreviewMeshCacheMutated: refreshPreviewMeshCacheIndicator,
+  log,
+  t,
 });
 
 exportTabClipBtn?.addEventListener("click", async () => {

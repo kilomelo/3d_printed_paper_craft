@@ -1,0 +1,14 @@
+[
+  {
+    "id": "panda",
+    "filePath": "demo/panda/熊猫头_demo.3dppc",
+    "gifPath": "/demo/panda/熊猫头_demo.gif",
+    "stillPath": "/demo/panda/熊猫头_demo.png"
+  },
+  {
+    "id": "orca",
+    "filePath": "demo/orca/虎鲸_demo.3dppc",
+    "gifPath": "/demo/orca/虎鲸_demo.gif",
+    "stillPath": "/demo/orca/虎鲸_demo.png"
+  }
+]

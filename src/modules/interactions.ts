@@ -25,6 +25,11 @@ export type InteractionOptions = {
   isFaceVisible: (faceId: number) => boolean;
   facesVisible: () => boolean;
   canEdit: () => boolean;
+  // 面 hover 的可见性门控，和 canEdit 解耦：
+  // - canEdit 只控制刷子编辑；
+  // - canHoverFace 控制是否显示左视图三条橘色悬停边线。
+  // 若未提供，默认沿用 canEdit，保持旧行为兼容。
+  canHoverFace?: () => boolean;
   isPointerLocked: () => boolean;
   onAddFace: (faceId: number) => boolean;
   onRemoveFace: (faceId: number) => boolean;
@@ -172,6 +177,14 @@ export function initInteractionController(opts: InteractionOptions) {
 
   const onPointerMove = (event: PointerEvent) => {
     if (opts.isPointerLocked() || getWorkspaceState() === "previewGroupModel") {
+      hideHoverLines();
+      return;
+    }
+    // 面 hover 线只服务于“展开组编辑”刷子逻辑。
+    // 进入其它状态（尤其 editingSeam）后，必须完全关闭这套三条橘色边线，
+    // 否则会和 seam 编辑态的颜色反馈互相干扰。
+    const allowHover = (opts.canHoverFace?.() ?? opts.canEdit());
+    if (!allowHover) {
       hideHoverLines();
       return;
     }

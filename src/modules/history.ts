@@ -3,6 +3,11 @@ import { appEventBus } from "./eventBus";
 import type { MetaAction, Snapshot } from "../types/historyTypes.js";
 import type { ProjectState } from "../types/historyTypes.js";
 
+export type PushResult = {
+  uid: number;
+  stackedFromUid: number | null;
+};
+
 export class HistoryManager {
   private snapshots: Snapshot[] = [];
   private undoSteps = 0;
@@ -18,11 +23,23 @@ export class HistoryManager {
     this.uidCounter = 0;
   }
 
-  push(data: ProjectState, action: MetaAction): number {
+  push(data: ProjectState, action: MetaAction): PushResult | null {
     // console.log("[HistoryManager] Attempting to push new snapshot:", action, "applying =", this.applying, "snapshots.length =", this.snapshots.length, "undoSteps =", this.undoSteps);
-    if (this.applying) return -1;
+    if (this.applying) return null;
+
+    // 若当前处于撤销后的“历史中间态”，先剪掉未来分支，再决定是否与最后一个快照堆叠。
+    // 不能先做 stack 判断，否则会错误地拿“未来分支”的最后一个快照参与堆叠。
+    if (this.undoSteps > 0) {
+      const erasedHistoryUid = this.snapshots
+        .splice(this.snapshots.length - this.undoSteps, this.undoSteps)
+        .map((s) => s.uid);
+      this.undoSteps = 0;
+      appEventBus.emit("historyErased", erasedHistoryUid);
+    }
+
     const lastSnap = this.snapshots[this.snapshots.length - 1];
     let snapshot: Snapshot = { data, action, uid: ++this.uidCounter };
+    let stackedFromUid: number | null = null;
 
     const canStack =
       lastSnap &&
@@ -34,25 +51,20 @@ export class HistoryManager {
     if (canStack) {
       const stackedAction = (action.payload as any).stack(lastSnap.action, action);
       if (stackedAction !== undefined) {
+        stackedFromUid = lastSnap.uid;
         this.snapshots.pop();
         snapshot = { data, action: stackedAction, uid: ++this.uidCounter };
       }
     }
 
     // console.log("[HistoryManager] push snapshot:", snapshot);
-    if (this.undoSteps > 0) {
-      const erasedHistoryUid = this.snapshots.splice(this.snapshots.length - this.undoSteps, this.undoSteps).map(s => s.uid);
-      this.undoSteps = 0;
-      // console.log(`[HistoryManager] Erased old snapshots with uids:`, erasedHistoryUid, `total snap count now:`, this.snapshots.length);
-      appEventBus.emit("historyErased", erasedHistoryUid);
-    }
     this.snapshots.push(snapshot);
     if (this.snapshots.length > this.MAX) {
       this.snapshots.splice(0, this.snapshots.length - this.MAX);
     }
 
     // console.log(`[HistoryManager] New snapshot pushed. Total snapshots: ${this.snapshots.length}, undoSteps: ${this.undoSteps}`);
-    return snapshot.uid;
+    return { uid: snapshot.uid, stackedFromUid };
   }
 
   // canUndo() {
