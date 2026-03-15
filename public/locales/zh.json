@@ -166,6 +166,7 @@
   "log.group.deleted": "已删除 {group}",
   "log.group.created": "已创建 {group}",
   "log.settings.changed": "设置值 [{label}] 已修改为 {value}",
+  "log.scale.autoAdjusted": "已自动调整缩放比例为 {scale}",
   "log.model.edges.open": "检测到 {count} 条未封闭边",
   "log.model.edges.nonManifold": "检测到 {count} 条非流形边",
   "log.model.edges.openAndNonManifold": "检测到 {openCount} 条未封闭边，及 {nonManifoldCount} 条非流形边",

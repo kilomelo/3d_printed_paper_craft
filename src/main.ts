@@ -25,7 +25,7 @@ import { historyManager } from "./modules/history";
 import { loadRawObject } from "./modules/fileLoader";
 import type { Snapshot, ProjectState } from "./types/historyTypes.js";
 import { exportGroupsData, getGroupColorCursor } from "./modules/groups";
-import { importSettings, getSettings, resetSettings } from "./modules/settings";
+import { importSettings, getSettings, resetSettings, applySettings } from "./modules/settings";
 import { createOperationHints } from "./modules/operationHints";
 import { createPreviewMeshCacheManager } from "./modules/previewMeshCache";
 import { bindHistorySystem } from "./modules/historyBindings";
@@ -1397,14 +1397,22 @@ const handleFileSelectedFromFile = async (file: File) => {
   try {
     clearAppStates();
     await new Promise((resolve) => setTimeout(resolve, 200));
-    const { object, importedGroups, importedColorCursor, importedSeting, importedEdgeJoinTypes } = await loadRawObject(file, ext);
+    const { object, importedGroups, importedColorCursor, importedSeting, importedEdgeJoinTypes, suggestedScale } = await loadRawObject(file, ext);
     const projectInfo = startNewProject(getProjectNameFromFile(file.name));
     if (importedSeting) {
       importSettings(importedSeting);
     } else {
       resetSettings();
     }
+    // 对 OBJ/FBX/STL 模型进行自适应缩放
+    if (suggestedScale !== undefined && suggestedScale !== 1) {
+      applySettings({ scale: suggestedScale });
+    }
     await renderer3d.applyObject(object, file.name);
+    // 自适应缩放后输出日志
+    if (suggestedScale !== undefined && suggestedScale !== 1) {
+      log(t("log.scale.autoAdjusted", { scale: suggestedScale }));
+    }
     if (importedGroups && importedGroups.length) {
       groupController.applyImportedGroups(importedGroups, importedColorCursor);
     }

@@ -166,6 +166,7 @@
   "log.group.deleted": "Deleted {group}",
   "log.group.created": "Created {group}",
   "log.settings.changed": "Setting [{label}] changed to {value}",
+  "log.scale.autoAdjusted": "Scale automatically adjusted to {scale}",
   "log.model.edges.open": "Detected {count} open edges",
   "log.model.edges.nonManifold": "Detected {count} non-manifold edges",
   "log.model.edges.openAndNonManifold": "Detected {openCount} open edges and {nonManifoldCount} non-manifold edges",
