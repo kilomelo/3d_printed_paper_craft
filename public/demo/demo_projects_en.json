@@ -3,12 +3,14 @@
     "id": "poly",
     "filePath": "demo/panda/polyPanda_demo.3dppc",
     "gifPath": "/demo/panda/熊猫头_demo.gif",
-    "stillPath": "/demo/panda/熊猫头_demo.png"
+    "stillPath": "/demo/panda/熊猫头_demo.png",
+    "jumpLink": "https://makerworld.com.cn/zh/models/2161222-3dda-yin-zhi-yi-xiong-mao-tou-kai-yuan-sheng-cheng"
   },
   {
     "id": "orca",
     "filePath": "demo/orca/orca_demo.3dppc",
     "gifPath": "/demo/orca/虎鲸_demo.gif",
-    "stillPath": "/demo/orca/虎鲸_demo.png"
+    "stillPath": "/demo/orca/虎鲸_demo.png",
+    "jumpLink": "https://makerworld.com.cn/zh/models/2254383-3dda-yin-zhi-yi-hu-jing-deepseek#profileId-2536072"
   }
 ]

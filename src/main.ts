@@ -303,6 +303,9 @@ app.innerHTML = `
         <button class="btn ghost" id="export-seam-clip-btn" data-i18n="menu.export.seamClamp.stl">导出拼接边固定夹 STL</button>
         <button class="btn ghost" id="preview-group-model-btn" data-i18n="menu.preview.group">预览展开组模型</button>
         <button class="btn ghost" id="settings-open-btn" data-i18n="menu.project.settings">项目设置</button>
+        <a class="btn img-btn ghost hidden" id="jump-link-btn" target="_blank" rel="noopener noreferrer">
+          <img src="/demo/makerworld.png" alt="Jump Link" />
+        </a>
         <div class="about-spacer"></div>
         <button class="btn ghost" id="about-btn" data-i18n="menu.about">帮助 & 关于</button>
         <div id="menu-blocker" class="menu-blocker"></div>
@@ -638,6 +641,7 @@ const exportGroupStlBtn = document.querySelector<HTMLButtonElement>("#export-gro
 const exportTabClipBtn = document.querySelector<HTMLButtonElement>("#export-seam-clip-btn");
 const previewGroupModelBtn = document.querySelector<HTMLButtonElement>("#preview-group-model-btn");
 const settingsOpenBtn = document.querySelector<HTMLButtonElement>("#settings-open-btn");
+const jumpLinkBtn = document.querySelector<HTMLAnchorElement>("#jump-link-btn");
 const triCounter = document.querySelector<HTMLDivElement>("#tri-counter");
 const groupTabsEl = document.querySelector<HTMLDivElement>("#group-tabs");
 const groupAddBtn = document.querySelector<HTMLButtonElement>("#group-add");
@@ -672,12 +676,15 @@ type HomeDemoProject = {
   filePath: string;
   gifPath: string;
   stillPath: string;
+  jumpLink?: string;
 };
 
 const ZH_HOME_DEMO_CONFIG_PATH = "/demo/demo_projects.json";
 let homeDemoProjects: HomeDemoProject[] = [];
 let selectedHomeDemoProjectId = "";
 let loadedHomeDemoConfigPath = "";
+// 当前加载的项目是否为示例项目
+let isCurrentProjectDemo = false;
 let homeDemoCaptureSizeCache: { width: number; height: number } | null = null;
 let homeDemoGifPlayNonce = 0;
 
@@ -767,6 +774,7 @@ const normalizeHomeDemoProjects = (raw: unknown): HomeDemoProject[] => {
       filePath: item.filePath,
       gifPath: item.gifPath,
       stillPath: item.stillPath,
+      jumpLink: (item as HomeDemoProject).jumpLink,
     }));
 };
 
@@ -1425,6 +1433,19 @@ const handleFileSelectedFromFile = async (file: File) => {
     appEventBus.emit("projectChanged", projectInfo);
     projectLoaded();
     setProjectNameLabel(projectInfo.name);
+    // 更新跳转链接按钮状态
+    if (isCurrentProjectDemo && jumpLinkBtn) {
+      const currentDemo = homeDemoProjects.find(item => item.id === selectedHomeDemoProjectId);
+      if (currentDemo?.jumpLink) {
+        jumpLinkBtn.href = currentDemo.jumpLink;
+        jumpLinkBtn.classList.remove("hidden");
+      } else {
+        jumpLinkBtn.classList.add("hidden");
+      }
+    } else {
+      jumpLinkBtn?.classList.add("hidden");
+    }
+    isCurrentProjectDemo = false;
   } catch (error) {
     console.error("加载模型失败", error);
     if ((error as Error)?.stack) {
@@ -1475,6 +1496,7 @@ const openFilePickerFromHome = () => {
 const loadDemoProjectFromHome = async () => {
   try {
     showLoadingOverlay();
+    isCurrentProjectDemo = true;
     await loadHomeDemoProjects();
     const demoFile = getDemoFileName();
     if (!demoFile) throw new Error("demo project config is empty");
