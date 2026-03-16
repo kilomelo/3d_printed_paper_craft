@@ -23,7 +23,7 @@ import {
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-const clearColor = new Color("#808592");
+const clearColor = new Color("#403f3f");
 const AmbientLightIntensity = 0.8;
 const DirectionalLightIntensity = 1;
 const rulerColor = 0x00ff88;

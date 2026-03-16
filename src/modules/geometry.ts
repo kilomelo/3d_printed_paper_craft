@@ -1,5 +1,5 @@
 // 几何工具：计算面-边索引、顶点键、邻接关系等基础几何数据，供索引/业务层使用。
-import { Vector3, type Object3D, type Mesh, BufferAttribute } from "three";
+import { Vector3, Box3, type Object3D, type Mesh, BufferAttribute } from "three";
 import { EdgeRecord, prepareGeometryData, getFaceVertexIndices, registerLiveEdgeRecords, unregisterLiveEdgeRecords } from "./model";
 import { triangleArea } from "./mathUtils";
 import { Point3D } from "@/types/geometryTypes";
@@ -420,4 +420,63 @@ export function snapGeometryPositions(geometry: THREE.BufferGeometry, decimals =
   pos.needsUpdate = true;
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
+}
+
+// 阈值：包围盒长宽高的平均值小于此值时，需要放大
+const AUTO_SCALE_THRESHOLD_SMALL = 50;
+// 阈值：包围盒长宽高的平均值大于此值时，需要缩小
+const AUTO_SCALE_THRESHOLD_LARGE = 500;
+
+/**
+ * 计算模型包围盒的长宽高平均值
+ */
+export function computeBoundingBoxAverage(object: Object3D): number {
+  const box = new Box3();
+  object.traverse((child) => {
+    if ((child as Mesh).isMesh) {
+      const mesh = child as Mesh;
+      mesh.geometry.computeBoundingBox();
+      const geomBox = mesh.geometry.boundingBox;
+      if (geomBox) {
+        const cloned = geomBox.clone();
+        cloned.applyMatrix4(mesh.matrixWorld);
+        box.union(cloned);
+      }
+    }
+  });
+  const size = new Vector3();
+  box.getSize(size);
+  return (size.x + size.y + size.z) / 3;
+}
+
+/**
+ * 根据模型尺寸，计算自适应缩放比例
+ * 小模型：平均尺寸 < 50 时，放大到阈值
+ * 大模型：平均尺寸 > 500 时，缩小到阈值
+ * 放大/缩小采用 10 的整数次幂
+ * 返回新的 scale 值（如果不需要调整返回 undefined）
+ */
+export function computeAdaptiveScale(object: Object3D): number | undefined {
+  const avgSize = computeBoundingBoxAverage(object);
+
+  // 小模型：需要放大
+  if (avgSize < AUTO_SCALE_THRESHOLD_SMALL) {
+    const neededMultiplier = AUTO_SCALE_THRESHOLD_SMALL / avgSize;
+    const power = Math.ceil(Math.log10(neededMultiplier));
+    const minPower = 1;
+    const finalPower = Math.max(power, minPower);
+    return Math.pow(10, finalPower);
+  }
+
+  // 大模型：需要缩小
+  if (avgSize > AUTO_SCALE_THRESHOLD_LARGE) {
+    const neededMultiplier = avgSize / AUTO_SCALE_THRESHOLD_LARGE;
+    const power = Math.ceil(Math.log10(neededMultiplier));
+    const minPower = 1;
+    const finalPower = Math.max(power, minPower);
+    return Math.pow(10, -finalPower);
+  }
+
+  // 尺寸在阈值范围内，不需要调整
+  return undefined;
 }

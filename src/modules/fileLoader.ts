@@ -4,7 +4,7 @@ import { Mesh } from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import { snapGeometryPositions } from "./geometry";
+import { snapGeometryPositions, computeAdaptiveScale } from "./geometry";
 import { load3dppc, type PPCFile } from "./ppc";
 
 const objLoader = new OBJLoader();
@@ -20,6 +20,7 @@ export async function loadRawObject(
   importedColorCursor?: number;
   importedSeting?: Object;
   importedEdgeJoinTypes?: [string, string][];
+  suggestedScale?: number;
 }> {
   const url = URL.createObjectURL(file);
   try {
@@ -28,6 +29,8 @@ export async function loadRawObject(
     let importedColorCursor: number | undefined;
     let importedSeting: Object | undefined;
     let importedEdgeJoinTypes: [string, string][] | undefined;
+    let suggestedScale: number | undefined;
+
     if (ext === "obj") {
       const loaded = await objLoader.loadAsync(url);
       loaded.traverse((child) => {
@@ -36,6 +39,7 @@ export async function loadRawObject(
         }
       });
       object = loaded;
+      suggestedScale = computeAdaptiveScale(object);
     } else if (ext === "fbx") {
       const loaded = await fbxLoader.loadAsync(url);
       loaded.traverse((child) => {
@@ -44,10 +48,12 @@ export async function loadRawObject(
         }
       });
       object = loaded;
+      suggestedScale = computeAdaptiveScale(object);
     } else if (ext === "stl") {
       const geometry = await stlLoader.loadAsync(url);
       snapGeometryPositions(geometry);
       object = new Mesh(geometry);
+      suggestedScale = computeAdaptiveScale(object);
     } else {
       const loaded = await load3dppc(url);
       object = loaded.object;
@@ -66,7 +72,7 @@ export async function loadRawObject(
         );
       }
     }
-    return { object, importedGroups, importedColorCursor, importedSeting, importedEdgeJoinTypes };
+    return { object, importedGroups, importedColorCursor, importedSeting, importedEdgeJoinTypes, suggestedScale };
   } finally {
     URL.revokeObjectURL(url);
   }

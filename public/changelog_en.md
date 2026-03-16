@@ -1,3 +1,9 @@
+
+## v1.1.0.3 | 2026-03-16
+- Added: auto-adjust the scale setting when opening OBJ/FBX/STL models.
+- Added: a MakerWorld link button for the sample project.
+- Fixed: toolbar state was not reset when opening a model.
+
 ## v1.1.0.0 | 2026-03-12
 - Added: a new clipless seam-joining workflow and related settings.
 - Added: export any number of connected coplanar triangles as polygons, plus a coplanarity threshold setting.

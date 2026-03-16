@@ -682,6 +682,11 @@ export function createRenderer3D(
     return enabled;
   };
   const isLightEnabled = () => dir.visible;
+  const setLightEnabled = (enabled: boolean) => {
+    dir.visible = enabled;
+    ambient.intensity = enabled ? 0.8 : 5;
+    return enabled;
+  };
 
   const toggleEdges = () => {
     edgesVisible = !edgesVisible;
@@ -713,12 +718,23 @@ export function createRenderer3D(
     return facesVisible;
   };
   const isFacesEnabled = () => facesVisible;
+  const setFacesEnabled = (enabled: boolean) => {
+    facesVisible = enabled;
+    applyFaceVisibility();
+    return facesVisible;
+  };
+
   const toggleBBox = () => {
     gizmosVisible = !gizmosVisible;
     gizmosGroup.visible = gizmosVisible;
     return gizmosVisible;
   };
   const getBBoxVisible = () => gizmosVisible;
+  const setBBoxEnabled = (enabled: boolean) => {
+    gizmosVisible = enabled;
+    gizmosGroup.visible = gizmosVisible;
+    return gizmosVisible;
+  };
 
   let lastTriCount = 0;
   const getTriCount = () => lastTriCount;
@@ -997,6 +1013,7 @@ export function createRenderer3D(
     resetView,
     toggleLight,
     isLightEnabled,
+    setLightEnabled,
     toggleEdges,
     setEdgesEnabled,
     isEdgesEnabled,
@@ -1004,8 +1021,10 @@ export function createRenderer3D(
     setSeamsEnabled,
     isSeamsEnabled,
     toggleFaces,
+    setFacesEnabled,
     isFacesEnabled,
     toggleBBox,
+    setBBoxEnabled,
     getBBoxVisible,
     getTriCount,
     renderNow,
