@@ -1446,6 +1446,18 @@ const handleFileSelectedFromFile = async (file: File) => {
       jumpLinkBtn?.classList.add("hidden");
     }
     isCurrentProjectDemo = false;
+    // 重置工具栏开关状态到默认值（全部开启）
+    renderer3d.setLightEnabled(true);
+    renderer3d.setEdgesEnabled(true);
+    renderer3d.setSeamsEnabled(true);
+    renderer3d.setFacesEnabled(true);
+    renderer3d.setBBoxEnabled(true);
+    lightToggle.classList.add("active");
+    edgesToggle.classList.add("active");
+    seamsToggle.classList.add("active");
+    facesToggle.classList.add("active");
+    bboxToggle.classList.remove("active");
+    refreshToggleTextLabels?.();
   } catch (error) {
     console.error("加载模型失败", error);
     if ((error as Error)?.stack) {
