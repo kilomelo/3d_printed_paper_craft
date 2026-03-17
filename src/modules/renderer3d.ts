@@ -219,6 +219,8 @@ export function createRenderer3D(
     groupApi.getFaceGroupMap,
     groupApi.getGroupParentTree,
     () => seamsVisible,
+    () => faceIndexMap,
+    (faceId: number, out: THREE.Vector3) => geometryIndex.getFaceNormal(faceId, out),
   );
 
   const specialEdgeManager = createSpecialEdgeManager(modelGroup, getViewport);
