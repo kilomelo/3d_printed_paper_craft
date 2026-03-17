@@ -812,7 +812,10 @@ export function createRenderer3D(
     }
   });
   appEventBus.on("settingsChanged", updateBBox);
-  appEventBus.on("historyApplied", updateBBox);
+  appEventBus.on("historyApplied", () => {
+    updateBBox();
+    if (seamEditModeActive) repaintFacesForCurrentMode();
+  });
   appEventBus.on("groupColorChanged", () => {
     if (seamEditModeActive) repaintFacesForCurrentMode();
   });
