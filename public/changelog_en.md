@@ -1,3 +1,7 @@
+## v1.1.0.5 | 2026-03-17
+- 优化：拼接边编辑模式的边拾取交互，只拾取面向摄像机的边。
+- 优化：菜单栏按钮的显示和文案。
+- 优化：去除了一些不必要的状态切换日志。
 
 ## v1.1.0.3 | 2026-03-16
 - Added: auto-adjust the scale setting when opening OBJ/FBX/STL models.

@@ -275,6 +275,84 @@ const applyProjectState = (snap: Snapshot) => {
   groupUI.render(buildGroupUIState());
 };
 
+// 菜单按钮图标
+const menu_open_IconSvg = `
+<?xml version="1.0" encoding="utf-8"?><!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+<svg width="800px" height="800px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M20 21H3C2.44772 21 2 20.5523 2 20L2 4C2 3.44772 2.44771 3 3 3H7.73381C8.08507 3 8.41058 3.1843 8.5913 3.4855L9.8087 5.5145C9.98942 5.8157 10.3149 6 10.6662 6H20C20.5523 6 21 6.44772 21 7V10" stroke="#200E32" stroke-width="2" stroke-linecap="round"/>
+<path d="M4.79903 10.7369L2.34449 19.7369C2.17099 20.373 2.64988 21 3.30925 21H19.2362C19.6872 21 20.0823 20.6982 20.201 20.2631L22.6555 11.2631C22.829 10.627 22.3501 10 21.6908 10H5.7638C5.31284 10 4.91769 10.3018 4.79903 10.7369Z" stroke="#200E32" stroke-width="2"/>
+</svg>
+`;
+
+const menu_export_3dppc_IconSvg = `
+<?xml version="1.0" encoding="utf-8"?>
+<!-- License: MIT. Made by basicons: https://basicons.xyz/ -->
+<svg width="800px" height="800px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M5 21H19C20.1046 21 21 20.1046 21 19V8.82843C21 8.29799 20.7893 7.78929 20.4142 7.41421L16.5858 3.58579C16.2107 3.21071 15.702 3 15.1716 3H5C3.89543 3 3 3.89543 3 5V19C3 20.1046 3.89543 21 5 21Z" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M7 3V8H15V3" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="12" cy="15" r="2" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+`;
+
+const menu_export_clip_IconSvg = `
+<?xml version="1.0" encoding="utf-8"?>
+<!-- License: PD. Made by stephenhutchings: https://github.com/stephenhutchings/microns -->
+<svg fill="#000000" width="800px" height="800px" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" ><title>download</title><path d="M232 64L280 64 280 214 277 270 300 242 356 189 388 221 256 353 124 221 156 189 212 242 235 270 232 214 232 64ZM64 400L448 400 448 448 64 448 64 400Z" /></svg>
+`;
+
+const menu_export_stp_IconSvg = `
+<?xml version="1.0" encoding="utf-8"?>
+<!-- License: PD. Made by stephenhutchings: https://github.com/stephenhutchings/microns -->
+<svg fill="#000000" width="800px" height="800px" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" ><title>download</title><path d="M232 64L280 64 280 214 277 270 300 242 356 189 388 221 256 353 124 221 156 189 212 242 235 270 232 214 232 64ZM64 400L448 400 448 448 64 448 64 400Z" /></svg>
+`;
+
+const menu_export_stl_IconSvg = `
+<?xml version="1.0" encoding="utf-8"?>
+<!-- License: PD. Made by stephenhutchings: https://github.com/stephenhutchings/microns -->
+<svg fill="#000000" width="800px" height="800px" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" ><title>download</title><path d="M232 64L280 64 280 214 277 270 300 242 356 189 388 221 256 353 124 221 156 189 212 242 235 270 232 214 232 64ZM64 400L448 400 448 448 64 448 64 400Z" /></svg>
+`;
+
+const menu_preview_IconSvg = `
+<?xml version="1.0" encoding="utf-8"?>
+<!-- License: MIT. Made by radix-ui: https://github.com/radix-ui/icons -->
+<svg width="800px" height="800px" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path
+    fill-rule="evenodd"
+    clip-rule="evenodd"
+    d="M10 6.5C10 8.433 8.433 10 6.5 10C4.567 10 3 8.433 3 6.5C3 4.567 4.567 3 6.5 3C8.433 3 10 4.567 10 6.5ZM9.30884 10.0159C8.53901 10.6318 7.56251 11 6.5 11C4.01472 11 2 8.98528 2 6.5C2 4.01472 4.01472 2 6.5 2C8.98528 2 11 4.01472 11 6.5C11 7.56251 10.6318 8.53901 10.0159 9.30884L12.8536 12.1464C13.0488 12.3417 13.0488 12.6583 12.8536 12.8536C12.6583 13.0488 12.3417 13.0488 12.1464 12.8536L9.30884 10.0159Z"
+    fill="#000000"
+  />
+</svg>
+`;
+
+const menu_setting_IconSvg = `
+<?xml version="1.0" encoding="utf-8"?>
+<!-- License: MIT. Made by teenyicons: https://github.com/teenyicons/teenyicons -->
+<svg width="800px" height="800px" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M4.5 1C3.29052 1 2.28165 1.85888 2.05001 3L3.21071e-06 3L3.167e-06 4H2.05001C2.28165 5.14112 3.29052 6 4.5 6C5.70948 6 6.71836 5.14112 6.94999 4L15 4V3L6.94999 3C6.71836 1.85888 5.70948 1 4.5 1Z" fill="#000000"/>
+<path d="M10.5 9C9.29053 9 8.28165 9.85888 8.05001 11H2.86102e-06L3.77099e-06 12H8.05001C8.28165 13.1411 9.29052 14 10.5 14C11.7095 14 12.7184 13.1411 12.95 12L15 12V11L12.95 11C12.7184 9.85888 11.7095 9 10.5 9Z" fill="#000000"/>
+</svg>
+`;
+
+const menu_about_IconSvg = `
+<?xml version="1.0" encoding="utf-8"?>
+<!-- License: CC Attribution. Made by tetrisly: https://tetrisly.gumroad.com/l/freeicons -->
+<svg fill="#000000" width="800px" height="800px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <path fill-rule="evenodd" d="M12,2 C17.5228475,2 22,6.4771525 22,12 C22,17.5228475 17.5228475,22 12,22 C6.4771525,22 2,17.5228475 2,12 C2,6.4771525 6.4771525,2 12,2 Z M12,4 C7.581722,4 4,7.581722 4,12 C4,16.418278 7.581722,20 12,20 C16.418278,20 20,16.418278 20,12 C20,7.581722 16.418278,4 12,4 Z M12,16 C12.5522847,16 13,16.4477153 13,17 C13,17.5522847 12.5522847,18 12,18 C11.4477153,18 11,17.5522847 11,17 C11,16.4477153 11.4477153,16 12,16 Z M12,6 C14.209139,6 16,7.790861 16,10 C16,11.7948083 14.8179062,13.3135239 13.1897963,13.8200688 L13,13.8739825 L13,14 C13,14.5522847 12.5522847,15 12,15 C11.4871642,15 11.0644928,14.6139598 11.0067277,14.1166211 L11,14 L11,13 C11,12.4871642 11.3860402,12.0644928 11.8833789,12.0067277 L12.1492623,11.9945143 C13.1841222,11.9181651 14,11.0543618 14,10 C14,8.8954305 13.1045695,8 12,8 C10.8954305,8 10,8.8954305 10,10 C10,10.5522847 9.55228475,11 9,11 C8.44771525,11 8,10.5522847 8,10 C8,7.790861 9.790861,6 12,6 Z"/>
+</svg>
+`;
+
+const menu_exit_preview_IconSvg = `
+<?xml version="1.0" encoding="utf-8"?>
+<!-- License: CC Attribution. Made by salesforce: https://lightningdesignsystem.com/ -->
+<svg fill="#000000" xmlns="http://www.w3.org/2000/svg" 
+	 width="800px" height="800px" viewBox="0 0 52 52" enable-background="new 0 0 52 52" xml:space="preserve">
+<path d="M48.6,23H15.4c-0.9,0-1.3-1.1-0.7-1.7l9.6-9.6c0.6-0.6,0.6-1.5,0-2.1l-2.2-2.2c-0.6-0.6-1.5-0.6-2.1,0
+	L2.5,25c-0.6,0.6-0.6,1.5,0,2.1L20,44.6c0.6,0.6,1.5,0.6,2.1,0l2.1-2.1c0.6-0.6,0.6-1.5,0-2.1l-9.6-9.6C14,30.1,14.4,29,15.3,29
+	h33.2c0.8,0,1.5-0.6,1.5-1.4v-3C50,23.8,49.4,23,48.6,23z"/>
+</svg>
+`;
+
 app.innerHTML = `
   <main class="shell">
     <div class="version-badge version-badge-global">v${VERSION}</div>
@@ -285,6 +363,9 @@ app.innerHTML = `
 
     <section id="layout-workspace" class="page">
       <header class="editor-header">
+        <div class="editor-logo">
+          <img src="/android-chrome-192x192.png" alt="Logo" />
+        </div>
         <div class="editor-title">
           <span class="editor-title-main" data-i18n="app.title">3D 打印纸艺</span>
           <span class="editor-title-project" id="project-name-label"></span>
@@ -295,19 +376,19 @@ app.innerHTML = `
         </div>
       </header>
     <nav class="editor-menu">
-        <button class="btn ghost hidden" id="exit-preview-btn" data-i18n="menu.preview.exit">退出预览</button>
-        <button class="btn ghost" id="menu-open" data-i18n="menu.model.open">打开文件</button>
-        <button class="btn ghost" id="export-3dppc-btn" data-i18n="menu.save3dppc">保存 .3dppc</button>
-        <button class="btn ghost" id="export-group-step-btn" data-i18n="menu.export.step">导出展开组 STEP</button>
-        <button class="btn ghost" id="export-group-stl-btn" data-i18n="menu.export.stl">导出展开组 STL</button>
-        <button class="btn ghost" id="export-seam-clip-btn" data-i18n="menu.export.seamClamp.stl">导出拼接边固定夹 STL</button>
-        <button class="btn ghost" id="preview-group-model-btn" data-i18n="menu.preview.group">预览展开组模型</button>
-        <button class="btn ghost" id="settings-open-btn" data-i18n="menu.project.settings">项目设置</button>
+        <button class="btn ghost hidden menu-btn-with-icon" id="exit-preview-btn"><span class="menu-btn-icon">${menu_exit_preview_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.preview.exit">退出预览</span></button>
+        <button class="btn ghost menu-btn-with-icon" id="menu-open"><span class="menu-btn-icon">${menu_open_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.model.open">打开文件</span></button>
+        <button class="btn ghost menu-btn-with-icon" id="export-3dppc-btn"><span class="menu-btn-icon">${menu_export_3dppc_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.save3dppc">保存工程</span></button>
+        <button class="btn ghost menu-btn-with-icon" id="export-group-step-btn"><span class="menu-btn-icon">${menu_export_stp_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.export.step">导出 STEP</span></button>
+        <button class="btn ghost menu-btn-with-icon" id="export-group-stl-btn"><span class="menu-btn-icon">${menu_export_stl_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.export.stl">导出 STL</span></button>
+        <button class="btn ghost menu-btn-with-icon" id="export-seam-clip-btn"><span class="menu-btn-icon">${menu_export_clip_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.export.seamClamp.stl">导出固定夹</span></button>
+        <button class="btn ghost menu-btn-with-icon" id="preview-group-model-btn"><span class="menu-btn-icon">${menu_preview_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.preview.group">预览展开组模型</span></button>
+        <button class="btn ghost menu-btn-with-icon" id="settings-open-btn"><span class="menu-btn-icon">${menu_setting_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.project.settings">项目设置</span></button>
         <a class="btn img-btn ghost hidden" id="jump-link-btn" target="_blank" rel="noopener noreferrer">
           <img src="/demo/makerworld.png" alt="Jump Link" />
         </a>
         <div class="about-spacer"></div>
-        <button class="btn ghost" id="about-btn" data-i18n="menu.about">帮助 & 关于</button>
+        <button class="btn ghost menu-btn-with-icon" id="about-btn"><span class="menu-btn-icon">${menu_about_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.about">帮助 & 关于</span></button>
         <div id="menu-blocker" class="menu-blocker"></div>
       </nav>
   <section class="editor-preview">
@@ -1106,10 +1187,6 @@ const changeWorkspaceState = (state: WorkspaceState) => {
   } else {
     hideLoadingOverlay();
   }
-  if (state === "normal" || state === "editingGroup" || state === "editingSeam") {
-    log(t("log.workspace.current", { state: getWorkspaceStateDisplayName(state) }), "info");
-  }
-  if (previousState === "previewGroupModel") log(t("log.preview.exit"), "info");
   if (state === "previewGroupModel") log(t("log.preview.loaded"), "info");
   appEventBus.emit("workspaceStateChanged", { previous: previousState, current: state });
 };

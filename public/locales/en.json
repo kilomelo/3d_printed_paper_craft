@@ -19,10 +19,10 @@
   "menu.about": "Help & About",
   "menu.preview.exit": "Exit Preview",
   "menu.model.open": "Open File",
-  "menu.save3dppc": "Save as .3dppc",
-  "menu.export.step": "Export Group (STEP)",
-  "menu.export.stl": "Export Group (STL)",
-  "menu.export.seamClamp.stl": "Export Seam Clip (STL)",
+  "menu.save3dppc": "Save Project",
+  "menu.export.step": "Export STEP",
+  "menu.export.stl": "Export STL",
+  "menu.export.seamClamp.stl": "Export Seam Clip",
   "menu.preview.group": "Preview Group",
   "menu.project.settings": "Project Settings",
 
@@ -129,8 +129,6 @@
 
   "log.demo.loadFail": "Failed to load the demo project. Please try again later.",
   "log.progress.bar": "Progress: |{bar}| {pct}%",
-  "log.workspace.current": "Current state [{state}]",
-  "log.preview.exit": "Exited group model preview",
   "log.preview.loaded": "Group preview model loaded",
   "log.group.rename.invalid": "Invalid group name. Please enter at least one visible character",
   "log.group.rename.success": "Group name updated",
