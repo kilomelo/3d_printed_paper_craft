@@ -178,7 +178,6 @@ export const bindHistorySystem = (opts: BindHistorySystemOptions): HistoryPanelU
   });
 
   appEventBus.on("historyApplySnapshot", ({ current, direction, snapPassed }) => {
-    opts.changeWorkspaceState("normal");
     opts.applyProjectState(current);
     if (direction === "redo") {
       opts.previewMeshCacheManager.applyRedoPassedHistory(snapPassed);

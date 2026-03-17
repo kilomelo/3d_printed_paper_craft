@@ -19,10 +19,10 @@
   "menu.about": "帮助 & 关于",
   "menu.preview.exit": "退出预览",
   "menu.model.open": "打开文件",
-  "menu.save3dppc": "保存 .3dppc",
-  "menu.export.step": "导出展开组 STEP",
-  "menu.export.stl": "导出展开组 STL",
-  "menu.export.seamClamp.stl": "导出拼接边固定夹 STL",
+  "menu.save3dppc": "保存工程",
+  "menu.export.step": "导出 STEP",
+  "menu.export.stl": "导出 STL",
+  "menu.export.seamClamp.stl": "导出固定夹",
   "menu.preview.group": "预览展开组模型",
   "menu.project.settings": "项目设置",
 
@@ -129,8 +129,6 @@
 
   "log.demo.loadFail": "加载示例项目失败，请稍后重试。",
   "log.progress.bar": "工作进度: |{bar}| {pct}%",
-  "log.workspace.current": "当前状态 [{state}]",
-  "log.preview.exit": "已退出组模型预览",
   "log.preview.loaded": "展开组预览模型已加载",
   "log.group.rename.invalid": "组名无效，请输入至少一个可见字符",
   "log.group.rename.success": "展开组名称修改成功",

@@ -10,10 +10,6 @@ export class AngleIndex {
   // 顶点 -> 已见到的最小二面角（弧度，取绝对值）
   private vertexMinAngle: Map<string, number> = new Map();
   private geometryIndex: GeometryIndex | null = null;
-  private faceNormalCache: Map<number, Vector3> = new Map();
-  private tempA = new Vector3();
-  private tempB = new Vector3();
-  private tempC = new Vector3();
   private edgeDir = new Vector3();
   private n1 = new Vector3();
   private n2 = new Vector3();
@@ -23,13 +19,11 @@ export class AngleIndex {
     this.geometryIndex = geometryIndex;
     this.cache.clear();
     this.vertexMinAngle.clear();
-    this.faceNormalCache.clear();
   }
 
   clear() {
     this.cache.clear();
     this.vertexMinAngle.clear();
-    this.faceNormalCache.clear();
     this.geometryIndex = null;
   }
 
@@ -50,26 +44,21 @@ export class AngleIndex {
     if (!edge) return fallbackAngle;
     const faces = Array.from(edge.faces);
     if (faces.length < 2) return fallbackAngle;
-    const faceIndexMap = this.geometryIndex.getFaceIndexMap();
     const vertexKeyToPos = this.geometryIndex.getVertexKeyToPos();
 
     const faceAId = faces[0];
     const faceBId = faces[1];
-    const faceA = faceIndexMap.get(faceAId);
-    const faceB = faceIndexMap.get(faceBId);
-    if (!faceA || !faceB) return fallbackAngle;
 
     const [k1, k2] = edge.vertices;
     const v1 = vertexKeyToPos.get(k1);
     const v2 = vertexKeyToPos.get(k2);
     if (!v1 || !v2) return fallbackAngle;
 
-    this.applyWorld(v1, faceA.mesh, this.tempA);
-    this.applyWorld(v2, faceA.mesh, this.tempB);
-    this.edgeDir.copy(this.tempB).sub(this.tempA).normalize();
+    // 使用 GeometryIndex 的 getFaceNormal 获取面法向
+    if (!this.geometryIndex.getFaceNormal(faceAId, this.n1)) return fallbackAngle;
+    if (!this.geometryIndex.getFaceNormal(faceBId, this.n2)) return fallbackAngle;
 
-    this.getFaceNormal(faceAId, this.n1);
-    this.getFaceNormal(faceBId, this.n2);
+    this.edgeDir.copy(v2).sub(v1).normalize();
     this.crossN.crossVectors(this.n1, this.n2);
     const sin = this.edgeDir.dot(this.crossN);
     const cos = Math.min(1, Math.max(-1, this.n1.dot(this.n2)));
@@ -111,38 +100,10 @@ export class AngleIndex {
     });
   }
 
-  private applyWorld(src: Vector3, mesh: Mesh, out: Vector3) {
-    mesh.updateWorldMatrix(true, false);
-    out.copy(src).applyMatrix4(mesh.matrixWorld);
-  }
-
-  private computeFaceNormal(mesh: Mesh, localFace: number, out: Vector3) {
-    const geometry = mesh.geometry;
-    const pos = geometry.getAttribute("position");
-    if (!pos) {
-      out.set(0, 0, 1);
-      return;
-    }
-    const [ia, ib, ic] = getFaceVertexIndices(geometry, localFace);
-    this.tempA.set(pos.getX(ia), pos.getY(ia), pos.getZ(ia)).applyMatrix4(mesh.matrixWorld);
-    this.tempB.set(pos.getX(ib), pos.getY(ib), pos.getZ(ib)).applyMatrix4(mesh.matrixWorld);
-    this.tempC.set(pos.getX(ic), pos.getY(ic), pos.getZ(ic)).applyMatrix4(mesh.matrixWorld);
-    out.subVectors(this.tempB, this.tempA).cross(this.tempC.sub(this.tempA)).normalize();
-  }
-
-  // 对外提供获取某个面的世界法线（带缓存）
+  // 对外提供获取某个面的世界法线（委托给 GeometryIndex）
   getFaceNormal(faceId: number, out: Vector3): boolean {
     if (!this.geometryIndex) return false;
-    const cached = this.faceNormalCache.get(faceId);
-    if (cached) {
-      out.copy(cached);
-      return true;
-    }
-    const mapping = this.geometryIndex.getFaceIndexMap().get(faceId);
-    if (!mapping) return false;
-    this.computeFaceNormal(mapping.mesh, mapping.localFace, out);
-    this.faceNormalCache.set(faceId, out.clone());
-    return true;
+    return this.geometryIndex.getFaceNormal(faceId, out);
   }
 }
 
@@ -287,6 +248,12 @@ export class GeometryIndex {
   private edgeKeyToId = new Map<string, number>();
   private vertexKeyToPos = new Map<string, Vector3>();
   private triangleCount = 0;
+  // 面法向缓存：懒计算并缓存
+  private faceNormalCache = new Map<number, Vector3>();
+  // 临时变量，避免重复创建
+  private tempA = new Vector3();
+  private tempB = new Vector3();
+  private tempC = new Vector3();
 
   reset() {
     // 先注销旧的 EdgeRecord 引用，再清空索引。
@@ -300,6 +267,7 @@ export class GeometryIndex {
     this.edgeKeyToId = new Map();
     this.vertexKeyToPos = new Map();
     this.triangleCount = 0;
+    this.faceNormalCache.clear();
   }
 
   buildFromObject(object: Object3D) {
@@ -377,6 +345,38 @@ export class GeometryIndex {
   }
   getTriangleCount() {
     return this.triangleCount;
+  }
+
+  // 获取面法向（世界坐标系），懒计算并缓存
+  // 返回面的世界坐标系法向，out 参数接收结果
+  getFaceNormal(faceId: number, out: Vector3): boolean {
+    // 优先使用缓存
+    const cached = this.faceNormalCache.get(faceId);
+    if (cached) {
+      out.copy(cached);
+      return true;
+    }
+
+    const mapping = this.faceIndexMap.get(faceId);
+    if (!mapping) return false;
+
+    const { mesh, localFace } = mapping;
+    const geometry = mesh.geometry;
+    const pos = geometry.getAttribute("position");
+    if (!pos) return false;
+
+    const [ia, ib, ic] = getFaceVertexIndices(geometry, localFace);
+    mesh.updateWorldMatrix(true, false);
+
+    this.tempA.set(pos.getX(ia), pos.getY(ia), pos.getZ(ia)).applyMatrix4(mesh.matrixWorld);
+    this.tempB.set(pos.getX(ib), pos.getY(ib), pos.getZ(ib)).applyMatrix4(mesh.matrixWorld);
+    this.tempC.set(pos.getX(ic), pos.getY(ic), pos.getZ(ic)).applyMatrix4(mesh.matrixWorld);
+
+    out.subVectors(this.tempB, this.tempA).cross(this.tempC.sub(this.tempA)).normalize();
+
+    // 缓存结果
+    this.faceNormalCache.set(faceId, out.clone());
+    return true;
   }
 }
 

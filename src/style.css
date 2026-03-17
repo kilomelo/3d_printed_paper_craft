@@ -163,15 +163,29 @@ textarea {
   height: 45px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   background: linear-gradient(90deg, rgba(50, 51, 120, 0.8), rgba(28, 90, 124, 0.8));
   border: 1px solid var(--border);
+}
+
+.editor-logo {
+  display: flex;
+  align-items: center;
+  margin-right: 8px;
+}
+
+.editor-logo img {
+  display: block;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
 }
 
 .editor-header-right {
   display: flex;
   align-items: center;
   gap: 0;
+  margin-left: auto;
 }
 
 .editor-title {
@@ -262,6 +276,35 @@ textarea {
 
 .editor-menu .about-spacer {
   flex: 1 1 auto;
+}
+
+/* 菜单按钮图标+文案样式 */
+.editor-menu .menu-btn-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.editor-menu .menu-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.editor-menu .menu-btn-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  fill: currentColor;
+  stroke: currentColor;
+}
+
+.editor-menu .menu-btn-label {
+  white-space: nowrap;
 }
 
 .menu-blocker {

@@ -108,24 +108,10 @@ export function createUnfold2dManager(
   };
 
   const computeFaceNormal = (faceId: number, out: Vector3) => {
-    const mapping = getFaceIndexMap().get(faceId);
-    if (!mapping) {
+    // 使用 angleIndex 的 getFaceNormal（委托给 GeometryIndex，共享缓存）
+    if (!angleIndex.getFaceNormal(faceId, out)) {
       out.set(0, 0, 1);
-      return;
     }
-    const mesh = mapping.mesh;
-    const geom = mesh.geometry;
-    const pos = geom.getAttribute("position");
-    if (!pos) {
-      out.set(0, 0, 1);
-      return;
-    }
-    const [ia, ib, ic] = getFaceVertexIndices(geom, mapping.localFace);
-    mesh.updateWorldMatrix(true, false);
-    tmpA.set(pos.getX(ia), pos.getY(ia), pos.getZ(ia)).applyMatrix4(mesh.matrixWorld);
-    tmpB.set(pos.getX(ib), pos.getY(ib), pos.getZ(ib)).applyMatrix4(mesh.matrixWorld);
-    tmpC.set(pos.getX(ic), pos.getY(ic), pos.getZ(ic)).applyMatrix4(mesh.matrixWorld);
-    out.subVectors(tmpB, tmpA).cross(tmpC.sub(tmpA)).normalize();
   };
 
   const findSharedEdge = (parentId: number, childId: number): number | null => {

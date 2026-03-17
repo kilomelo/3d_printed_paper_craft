@@ -219,6 +219,8 @@ export function createRenderer3D(
     groupApi.getFaceGroupMap,
     groupApi.getGroupParentTree,
     () => seamsVisible,
+    () => faceIndexMap,
+    (faceId: number, out: THREE.Vector3) => geometryIndex.getFaceNormal(faceId, out),
   );
 
   const specialEdgeManager = createSpecialEdgeManager(modelGroup, getViewport);
@@ -810,7 +812,10 @@ export function createRenderer3D(
     }
   });
   appEventBus.on("settingsChanged", updateBBox);
-  appEventBus.on("historyApplied", updateBBox);
+  appEventBus.on("historyApplied", () => {
+    updateBBox();
+    if (seamEditModeActive) repaintFacesForCurrentMode();
+  });
   appEventBus.on("groupColorChanged", () => {
     if (seamEditModeActive) repaintFacesForCurrentMode();
   });

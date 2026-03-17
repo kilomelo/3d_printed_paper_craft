@@ -1,5 +1,5 @@
 // 拼缝管理器：管理模型中的拼缝线的创建、更新和显示
-import { Camera, Vector3, Group } from "three";
+import { Camera, Vector3, Group, Mesh } from "three";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { type EdgeRecord } from "./model";
@@ -17,6 +17,8 @@ export function createSeamManager(
   getFaceGroupMap: () => Map<number, number | null>,
   getGroupTreeParent: (groupId: number) => Map<number, number | null> | undefined,
   isSeamsVisible: () => boolean,
+  getFaceIndexMap: () => Map<number, { mesh: Mesh; localFace: number }>,
+  getFaceNormal: (faceId: number, out: Vector3) => boolean,
 ) {
   const seamLines = new Map<number, LineSegments2>();
   let editingSeamMode = false;
@@ -194,6 +196,30 @@ export function createSeamManager(
   // 1. seam 线段本身已经是当前“可见 seam”的唯一来源；
   // 2. editingSeam 只需要针对当前可见 seam 做 hover/click，屏幕空间最近线段判定足够稳定；
   // 3. 避免再维护一套碰撞体几何与显示线段的同步。
+  // 判断边是否朝向摄像机：至少有一个关联的三角形满足法向与摄像机前向夹角 > 90度
+  const isEdgeFacingCamera = (edgeId: number, camera: Camera): boolean => {
+    const edges = getEdges();
+    const edge = edges[edgeId];
+    if (!edge) return true; // 无法判断时默认返回 true（保守处理）
+
+    const cameraDirection = new Vector3();
+    camera.getWorldDirection(cameraDirection);
+    const faceNormal = new Vector3();
+
+    // 遍历边的所有关联面，使用共享的 getFaceNormal 获取面法向
+    for (const faceId of edge.faces) {
+      if (!getFaceNormal(faceId, faceNormal)) continue;
+
+      // 计算面法向与摄像机前向的点积
+      // 点积 < 0 表示夹角 > 90度，即面朝向摄像机
+      if (faceNormal.dot(cameraDirection) < 0) {
+        return true; // 至少有一个面朝向摄像机
+      }
+    }
+
+    return false;
+  };
+
   const pickVisibleSeamEdgeAtClientPoint = (
     clientX: number,
     clientY: number,
@@ -242,6 +268,8 @@ export function createSeamManager(
     let bestDistanceSq = maxDistancePx * maxDistancePx;
     seamLines.forEach((line, edgeId) => {
       if (!line.visible || !line.userData.isSeam) return;
+      // 只考虑朝向摄像机的边
+      if (!isEdgeFacingCamera(edgeId, camera)) return;
       const edgePositions = getEdgeWorldPositions(edgeId);
       if (!edgePositions) return;
       const [worldA, worldB] = edgePositions;
