@@ -5,7 +5,7 @@ import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { snapGeometryPositions, computeAdaptiveScale } from "./geometry";
-import { load3dppc, type PPCFile } from "./ppc";
+import { load3dppc, type PPCFile, type TextureMeta } from "./ppc";
 
 const objLoader = new OBJLoader();
 const fbxLoader = new FBXLoader();
@@ -21,6 +21,7 @@ export async function loadRawObject(
   importedSeting?: Object;
   importedEdgeJoinTypes?: [string, string][];
   suggestedScale?: number;
+  importedTextures?: TextureMeta[];
 }> {
   const url = URL.createObjectURL(file);
   try {
@@ -30,6 +31,7 @@ export async function loadRawObject(
     let importedSeting: Object | undefined;
     let importedEdgeJoinTypes: [string, string][] | undefined;
     let suggestedScale: number | undefined;
+    let importedTextures: TextureMeta[] | undefined;
 
     if (ext === "obj") {
       const loaded = await objLoader.loadAsync(url);
@@ -59,6 +61,7 @@ export async function loadRawObject(
       object = loaded.object;
       importedGroups = loaded.groups;
       importedColorCursor = loaded.colorCursor;
+      importedTextures = loaded.textures;
       if (loaded.annotations && typeof loaded.annotations.settings === "object") {
         importedSeting = loaded.annotations.settings??undefined;
       }
@@ -72,7 +75,7 @@ export async function loadRawObject(
         );
       }
     }
-    return { object, importedGroups, importedColorCursor, importedSeting, importedEdgeJoinTypes, suggestedScale };
+    return { object, importedGroups, importedColorCursor, importedSeting, importedEdgeJoinTypes, suggestedScale, importedTextures };
   } finally {
     URL.revokeObjectURL(url);
   }

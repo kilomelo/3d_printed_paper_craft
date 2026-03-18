@@ -1,10 +1,14 @@
 // 3dppc 格式处理：负责序列化/反序列化自定义 3dppc 文件，提供加载与下载工具。
 import { BufferGeometry, Float32BufferAttribute, Group, Mesh } from "three";
-import { collectGeometry } from "./geometry";
+import { collectGeometry, type PPCGeometry } from "./geometry";
 import { getCurrentProject } from "./project";
 import { getGroupColorCursor, exportGroupsData } from "./groups";
 import { getSettings } from "./settings";
 import { exportEdgeJoinTypes } from "./model";
+import { getTexturesForExport, type TextureData } from "./textureManager";
+
+// 贴图元数据（用于序列化到 meta 中）
+export type TextureMeta = Omit<TextureData, "data">;
 
 export type PPCFile = {
   version: string;
@@ -21,6 +25,8 @@ export type PPCFile = {
   };
   vertices: number[][];
   triangles: number[][];
+  // UV 坐标数据（可选，用于贴图）
+  uvs?: number[][];
   groups?: {
     id: number;
     color: string;
@@ -36,9 +42,11 @@ export type PPCFile = {
     edgeJoinTypes?: [string, string][];
     [key: string]: unknown;
   };
+  // 贴图数据
+  textures?: TextureMeta[];
 };
 
-const FORMAT_VERSION = "1.0";
+const FORMAT_VERSION = "1.1"; // 升级版本号以支持贴图
 const MAGIC = "3DPPCBIN";
 
 async function computeChecksum(payload: unknown): Promise<string> {
@@ -80,6 +88,18 @@ export async function build3dppcData(object: Group): Promise<PPCFile> {
     });
   });
 
+  // 获取贴图数据（只导出元数据，不包含二进制数据）
+  const texturesForExport = getTexturesForExport();
+  const textureMeta: TextureMeta[] = texturesForExport.map((tex) => ({
+    id: tex.id,
+    name: tex.name,
+    format: tex.format,
+    width: tex.width,
+    height: tex.height,
+    colorSpace: tex.colorSpace,
+    flipY: tex.flipY,
+  }));
+
   return {
     version: FORMAT_VERSION,
     meta: {
@@ -95,12 +115,14 @@ export async function build3dppcData(object: Group): Promise<PPCFile> {
     },
     vertices: exportVertices,
     triangles: exportTriangles,
+    uvs: collected.uvs,
     groupColorCursor: getGroupColorCursor(),
     groups: groupsData,
     annotations: {
       settings: getSettings(),
       edgeJoinTypes: exportEdgeJoinTypes(),
     },
+    textures: textureMeta,
   };
 }
 
@@ -112,15 +134,27 @@ function encodeBinaryPPC(data: PPCFile): ArrayBuffer {
     groups: data.groups,
     groupColorCursor: data.groupColorCursor,
     annotations: data.annotations,
+    textures: data.textures,
+    uvs: data.uvs,
   };
   const metaBytes = enc.encode(JSON.stringify(meta));
 
   const vertexCount = data.vertices.length;
   const triCount = data.triangles.length;
-  const headerSize = 24; // magic(8) + ver(2) + pad(2) + counts(3x4)
+
+  // 计算贴图数据大小
+  let textureDataSize = 0;
+  if (data.textures) {
+    for (const tex of data.textures) {
+      textureDataSize += 4; // 长度前缀
+      textureDataSize += tex.data.byteLength;
+    }
+  }
+
+  const headerSize = 28; // magic(8) + ver(2) + pad(2) + counts(4x4)
   const vSize = vertexCount * 3 * 4;
   const tSize = triCount * 3 * 4;
-  const total = headerSize + vSize + tSize + metaBytes.length;
+  const total = headerSize + vSize + tSize + metaBytes.length + textureDataSize;
   const buffer = new ArrayBuffer(total);
   const view = new DataView(buffer);
   let offset = 0;
@@ -135,6 +169,7 @@ function encodeBinaryPPC(data: PPCFile): ArrayBuffer {
   view.setUint32(offset, vertexCount, true); offset += 4;
   view.setUint32(offset, triCount, true); offset += 4;
   view.setUint32(offset, metaBytes.length, true); offset += 4;
+  view.setUint32(offset, textureDataSize, true); offset += 4; // texture data size
 
   // vertices
   const vArr = new Float32Array(buffer, offset, vertexCount * 3);
@@ -158,6 +193,18 @@ function encodeBinaryPPC(data: PPCFile): ArrayBuffer {
 
   // meta
   new Uint8Array(buffer, offset, metaBytes.length).set(metaBytes);
+  offset += metaBytes.length;
+
+  // texture data (每个贴图: 长度(4 bytes) + 数据)
+  if (data.textures) {
+    for (const tex of data.textures) {
+      view.setUint32(offset, tex.data.byteLength, true);
+      offset += 4;
+      const texData = new Uint8Array(tex.data);
+      new Uint8Array(buffer, offset, tex.data.byteLength).set(texData);
+      offset += tex.data.byteLength;
+    }
+  }
 
   return buffer;
 }
@@ -179,6 +226,19 @@ function decodeBinaryPPC(buffer: ArrayBuffer): PPCFile {
   const triCount = view.getUint32(offset, true); offset += 4;
   const metaLen = view.getUint32(offset, true); offset += 4;
 
+  // 检查是否为1.1及以上版本（支持贴图数据）
+  // 通过版本号判断，而不是 buffer 大小
+  const hasTextureSupport = major > 1 || (major === 1 && minor >= 1);
+  let textureDataSize = 0;
+  if (hasTextureSupport) {
+    textureDataSize = view.getUint32(offset, true); offset += 4;
+  }
+
+  // 安全检查：防止过大的 metaLen 导致崩溃
+  if (metaLen > buffer.byteLength || offset + metaLen > buffer.byteLength) {
+    throw new Error(`Invalid meta length: ${metaLen}`);
+  }
+
   const vArr = new Float32Array(buffer, offset, vertexCount * 3);
   offset += vertexCount * 3 * 4;
   const tArr = new Uint32Array(buffer, offset, triCount * 3);
@@ -187,6 +247,24 @@ function decodeBinaryPPC(buffer: ArrayBuffer): PPCFile {
   const metaBytes = new Uint8Array(buffer, offset, metaLen);
   const dec = new TextDecoder();
   const meta = JSON.parse(dec.decode(metaBytes));
+  offset += metaLen;
+
+  // 读取贴图数据（仅1.1及以上版本）
+  let textures: TextureData[] | undefined;
+  if (hasTextureSupport && meta.textures && meta.textures.length > 0 && textureDataSize > 0) {
+    textures = [];
+    for (const texMeta of meta.textures) {
+      const texDataLen = view.getUint32(offset, true);
+      offset += 4;
+      const texData = buffer.slice(offset, offset + texDataLen);
+      offset += texDataLen;
+
+      textures.push({
+        ...texMeta,
+        data: texData,
+      } as TextureData);
+    }
+  }
 
   const vertices: number[][] = [];
   for (let i = 0; i < vertexCount; i++) {
@@ -204,9 +282,11 @@ function decodeBinaryPPC(buffer: ArrayBuffer): PPCFile {
     meta: meta.meta,
     vertices,
     triangles,
+    uvs: meta.uvs,
     groups: meta.groups,
     groupColorCursor: meta.groupColorCursor,
     annotations: meta.annotations,
+    textures,
   };
 }
 
@@ -263,6 +343,16 @@ export async function load3dppc(url: string) {
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
+
+  // 恢复 UV 数据（如果有）
+  if (data.uvs && data.uvs.length > 0) {
+    const uvs: number[] = [];
+    data.uvs.forEach(([u, v]) => {
+      uvs.push(u, v);
+    });
+    geometry.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+  }
+
   geometry.computeVertexNormals();
 
   const mesh = new Mesh(geometry);
@@ -273,5 +363,12 @@ export async function load3dppc(url: string) {
       ? data.groupColorCursor
       : undefined;
 
-  return { object: group, groups: data.groups, colorCursor, annotations: data.annotations };
+  return {
+    object: group,
+    groups: data.groups,
+    colorCursor,
+    annotations: data.annotations,
+    textures: data.textures,
+    uvs: data.uvs,
+  };
 }

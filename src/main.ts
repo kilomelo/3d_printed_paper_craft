@@ -23,6 +23,7 @@ import { buildTabClip } from "./modules/replicad/replicadModeling";
 import { startNewProject, getCurrentProject } from "./modules/project";
 import { historyManager } from "./modules/history";
 import { loadRawObject } from "./modules/fileLoader";
+import { loadTextureFromFile, addTexture, getTextureCount, hasTextures, replaceTexture, createThreeTexture, getAllTextures } from "./modules/textureManager";
 import type { Snapshot, ProjectState } from "./types/historyTypes.js";
 import { exportGroupsData, getGroupColorCursor } from "./modules/groups";
 import { importSettings, getSettings, resetSettings, applySettings } from "./modules/settings";
@@ -358,6 +359,7 @@ app.innerHTML = `
     <div class="version-badge version-badge-global">v${VERSION}</div>
     <button class="btn sm ghost version-lang-toggle" id="lang-toggle-global" data-i18n="language.toggle">Language: ZH</button>
     <input id="file-input" type="file" accept=".obj,.fbx,.stl,.3dppc,application/json" style="display:none" autocomplete="off" />
+    <input id="texture-input" type="file" accept="image/png,image/jpeg,image/jpg,image/webp" style="display:none" autocomplete="off" />
 
     ${renderHomeSection()}
 
@@ -394,7 +396,9 @@ app.innerHTML = `
   <section class="editor-preview">
     <div class="preview-panel">
       <div class="preview-toolbar">
+        <button class="btn sm" id="load-texture-btn">载入贴图</button>
         <button class="btn sm" id="reset-view-btn" data-i18n="toolbar.l.resetView">重置视角</button>
+        <button class="btn sm toggle" id="texture-toggle">贴图：关</button>
         <button class="btn sm toggle active" id="light-toggle">光源：开</button>
         <button class="btn sm toggle" id="edges-toggle">线框：开</button>
         <button class="btn sm toggle" id="seams-toggle">拼接边：开</button>
@@ -702,6 +706,7 @@ const projectNameLabel = document.getElementById("project-name-label");
 const logListEl = document.querySelector<HTMLDivElement>("#log-list");
 const logPanelEl = document.querySelector<HTMLDivElement>("#log-panel");
 const fileInput = document.querySelector<HTMLInputElement>("#file-input");
+const textureInput = document.querySelector<HTMLInputElement>("#texture-input");
 const homeStartBtn = document.querySelector<HTMLButtonElement>("#home-start");
 const homeDemoBtn = document.querySelector<HTMLButtonElement>("#home-demo");
 const homeDemoOptionsEl = document.querySelector<HTMLDivElement>("#home-demo-options");
@@ -711,7 +716,9 @@ const exitPreviewBtn = document.querySelector<HTMLButtonElement>("#exit-preview-
 const menuOpenBtn = document.querySelector<HTMLButtonElement>("#menu-open");
 const menuBlocker = document.querySelector<HTMLDivElement>("#menu-blocker");
 const editorPreviewEl = document.querySelector<HTMLElement>(".editor-preview");
+const loadTextureBtn = document.querySelector<HTMLButtonElement>("#load-texture-btn");
 const resetViewBtn = document.querySelector<HTMLButtonElement>("#reset-view-btn");
+const textureToggle = document.querySelector<HTMLButtonElement>("#texture-toggle");
 const lightToggle = document.querySelector<HTMLButtonElement>("#light-toggle");
 const edgesToggle = document.querySelector<HTMLButtonElement>("#edges-toggle");
 const seamsToggle = document.querySelector<HTMLButtonElement>("#seams-toggle");
@@ -975,6 +982,7 @@ if (
   !editorPreviewEl ||
   !menuOpenBtn ||
   !resetViewBtn ||
+  !textureToggle ||
   !lightToggle ||
   !edgesToggle ||
   !seamsToggle ||
@@ -1397,10 +1405,16 @@ refreshToggleTextLabels = () => {
     { btn: edgesToggle, keyOn: "toolbar.left.wireframe.on", keyOff: "toolbar.left.wireframe.off", isOn: () => renderer3d.isEdgesEnabled() },
     { btn: seamsToggle, keyOn: "toolbar.left.seam.on", keyOff: "toolbar.left.seam.off", isOn: () => renderer3d.isSeamsEnabled() },
     { btn: facesToggle, keyOn: "toolbar.left.surface.on", keyOff: "toolbar.left.surface.off", isOn: () => renderer3d.isFacesEnabled() },
+    { btn: textureToggle, keyOn: "toolbar.left.texture.on", keyOff: "toolbar.left.texture.off", isOn: () => renderer3d.isTextureEnabled() },
     { btn: bboxToggle, keyOn: "toolbar.left.bbox.on", keyOff: "toolbar.left.bbox.off", isOn: () => renderer3d.getBBoxVisible() },
   ]);
 };
 refreshToggleTextLabels?.();
+textureToggle.addEventListener("click", () => {
+  const enabled = renderer3d.toggleTexture();
+  textureToggle.classList.toggle("active", enabled);
+  refreshToggleTextLabels?.();
+});
 bboxToggle.addEventListener("click", () => {
   const visible = renderer3d.toggleBBox();
   bboxToggle.classList.toggle("active", visible);
@@ -1410,6 +1424,8 @@ appEventBus.on("workspaceStateChanged", ({ current, previous }) => {
   const isPreview = current === "previewGroupModel";
   const enteringEditingSeam = current === "editingSeam" && previous !== "editingSeam";
   const leavingEditingSeam = previous === "editingSeam" && current !== "editingSeam";
+  const enterEditingGroup = current === "editingGroup" && previous !== "editingGroup";
+  const enterNormal = current === "normal" && previous !== "normal";
   if (enteringEditingSeam) {
     edgesEnabledBeforeEditingSeam = renderer3d.isEdgesEnabled();
     seamsEnabledBeforeEditingSeam = renderer3d.isSeamsEnabled();
@@ -1426,9 +1442,16 @@ appEventBus.on("workspaceStateChanged", ({ current, previous }) => {
     edgesEnabledBeforeEditingSeam = null;
     seamsEnabledBeforeEditingSeam = null;
   }
+  if (enterEditingGroup) {
+    renderer3d.setTextureEnabled(false);
+  }
+  if (enterNormal) {
+    renderer3d.setTextureEnabled(true);
+  }
   const disableEdgeControls = current === "editingSeam";
   edgesToggle.classList.toggle("active", renderer3d.isEdgesEnabled());
   seamsToggle.classList.toggle("active", renderer3d.isSeamsEnabled());
+  textureToggle.classList.toggle("active", renderer3d.isTextureEnabled());
   edgesToggle.disabled = disableEdgeControls;
   seamsToggle.disabled = disableEdgeControls;
   groupPreviewMask.classList.toggle("hidden", !disableEdgeControls);
@@ -1647,6 +1670,50 @@ menuOpenBtn.addEventListener("click", () => {
   showLoadingOverlay();
   fileInput.click();
 });
+// 贴图加载处理
+const handleTextureSelected = async () => {
+  const file = textureInput.files?.[0];
+  if (!file) return;
+
+  try {
+    const textureData = await loadTextureFromFile(file);
+    const existingTextures = getAllTextures();
+
+    if (existingTextures.length > 0) {
+      // 替换已有贴图（使用已有贴图的 ID）
+      const existingId = existingTextures[0].id;
+      replaceTexture(existingId, textureData);
+      log(t("log.texture.replaced", { filename: file.name, width: textureData.width, height: textureData.height }), "success");
+    } else {
+      // 首次加载贴图
+      addTexture(textureData);
+      log(t("log.texture.loaded", { filename: file.name, width: textureData.width, height: textureData.height }), "success");
+    }
+
+    // 将贴图数据转换为 Three.js Texture 并设置到渲染器
+    const textures = getAllTextures();
+    if (textures.length > 0) {
+      const threeTexture = await createThreeTexture(textures[0]);
+      renderer3d.setTexture(threeTexture);
+      // 加载贴图后自动开启贴图渲染
+      renderer3d.setTextureEnabled(true);
+      textureToggle?.classList.add("active");
+      refreshToggleTextLabels?.();
+    }
+  } catch (err) {
+    console.error("贴图加载失败", err);
+    log(t("log.texture.loadFailed"), "error");
+  }
+
+  textureInput.value = "";
+};
+
+textureInput.addEventListener("change", handleTextureSelected);
+
+loadTextureBtn.addEventListener("click", () => {
+  textureInput.click();
+});
+
 resetViewBtn.addEventListener("click", () => renderer3d.resetView());
 lightToggle.addEventListener("click", () => {
   const enabled = renderer3d.toggleLight();

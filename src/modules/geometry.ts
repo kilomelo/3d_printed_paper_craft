@@ -110,11 +110,13 @@ export class AngleIndex {
 export type PPCGeometry = {
   vertices: number[][];
   triangles: number[][];
+  uvs?: number[][]; // 可选的 UV 坐标
 };
 
 export function collectGeometry(object: Object3D): PPCGeometry {
   const vertices: number[][] = [];
   const triangles: number[][] = [];
+  const uvs: number[][] = [];
 
   object.traverse((child) => {
     if (!(child as Mesh).isMesh) return;
@@ -123,6 +125,9 @@ export function collectGeometry(object: Object3D): PPCGeometry {
     const geometry = mesh.geometry;
     const position = geometry.getAttribute("position");
     if (!position) return;
+
+    // 获取 UV 属性（第一套 UV）
+    const uvAttr = geometry.getAttribute("uv");
 
     const indexAttr = geometry.index;
     const indices: number[] = [];
@@ -141,6 +146,8 @@ export function collectGeometry(object: Object3D): PPCGeometry {
       const a = indices[i];
       const b = indices[i + 1];
       const c = indices[i + 2];
+
+      // 顶点
       const vaIdx = vertices.length;
       vertices.push([position.getX(a), position.getY(a), position.getZ(a)]);
       const vbIdx = vertices.length;
@@ -148,9 +155,32 @@ export function collectGeometry(object: Object3D): PPCGeometry {
       const vcIdx = vertices.length;
       vertices.push([position.getX(c), position.getY(c), position.getZ(c)]);
       triangles.push([vaIdx, vbIdx, vcIdx]);
+
+      // UV 坐标（如果有）
+      if (uvAttr) {
+        const uvBase = i;
+        uvs.push([
+          uvAttr.getX(indices[uvBase]),
+          uvAttr.getY(indices[uvBase]),
+        ]);
+        uvs.push([
+          uvAttr.getX(indices[uvBase + 1]),
+          uvAttr.getY(indices[uvBase + 1]),
+        ]);
+        uvs.push([
+          uvAttr.getX(indices[uvBase + 2]),
+          uvAttr.getY(indices[uvBase + 2]),
+        ]);
+      }
     }
   });
-  return { vertices, triangles };
+
+  // 只有当有 UV 数据时才返回
+  return {
+    vertices,
+    triangles,
+    ...(uvs.length > 0 ? { uvs } : {}),
+  };
 }
 
 export function filterLargestComponent(

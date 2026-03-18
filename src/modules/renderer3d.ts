@@ -27,7 +27,7 @@ import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeome
 import { getModel, setModel, setEdgeJoinType } from "./model";
 import { getSettings } from "./settings";
 import { createScene, fitCameraToObject } from "./scene";
-import { FACE_DEFAULT_COLOR, createPreviewMaterial, createEdgeMaterial, createHoverLineMaterial } from "./materials";
+import { FACE_DEFAULT_COLOR, createPreviewMaterial, createEdgeMaterial, createHoverLineMaterial, createFrontMaterial } from "./materials";
 import { initInteractionController } from "./interactions";
 import { type EdgeRecord, generateFunctionalMeshes } from "./model";
 import { createFaceColorService } from "./faceColorService";
@@ -74,8 +74,9 @@ export function createRenderer3D(
   let vertexKeyToPos = geometryIndex.getVertexKeyToPos();
   let gizmosVisible = true;
   let gizmosVisibleBeforePreview = false;
-  let seamEditModeActive = false;
-  
+  let textureEnabled = false;
+  let currentTexture: Texture | null = null;
+
   const { scene, camera, renderer, controls, ambient, dir, modelGroup, previewModelGroup, gizmosGroup } = createScene((getViewport().width), getViewport().height);
   normalSceneBackground = scene.background as Color | Texture | null;
   mountRenderer(renderer.domElement);
@@ -231,6 +232,8 @@ export function createRenderer3D(
     getGroupColor: groupApi.getGroupColor,
     getGroupVisibility: groupApi.getGroupVisibility,
     defaultColor: FACE_DEFAULT_COLOR,
+    isTextureEnabled: () => textureEnabled,
+    getWorkspaceState,
   });
 
   const axesScene = new Scene();
@@ -596,24 +599,7 @@ export function createRenderer3D(
       }
     });
   }
-  const repaintFacesForCurrentMode = () => {
-    if (!seamEditModeActive) {
-      faceColorService.repaintAllFaces();
-      return;
-    }
-    faceIndexMap.forEach((mapping, faceId) => {
-      const gid = groupApi.getFaceGroupMap().get(faceId) ?? null;
-      const baseColor = gid !== null ? (groupApi.getGroupColor(gid) ?? FACE_DEFAULT_COLOR) : FACE_DEFAULT_COLOR;
-      const visible = gid !== null ? groupApi.getGroupVisibility(gid) : true;
-      const faded = baseColor.clone();
-      const hsl = { h: 0, s: 0, l: 0 };
-      faded.getHSL(hsl);
-      faded.setHSL(hsl.h, hsl.s * 0.6, hsl.l * 0.1);
-      faceColorService.setFaceColor(mapping.mesh, mapping.localFace, faded, visible ? 1 : 0);
-    });
-  };
   const applySeamEditVisualMode = (active: boolean) => {
-    seamEditModeActive = active;
     seamManager.setEditingSeamMode(active);
     specialEdgeManager.setForceHidden(active);
     if (!active) {
@@ -623,7 +609,7 @@ export function createRenderer3D(
         groupApi.getGroupVisibility,
       );
     }
-    repaintFacesForCurrentMode();
+    faceColorService.repaintAllFaces();
   };
   function resizeRenderer3D() {
     const { width, height } = getViewport();
@@ -726,6 +712,65 @@ export function createRenderer3D(
     return facesVisible;
   };
 
+  // 应用或移除贴图到模型的所有 mesh
+  const applyTextureToMeshes = (texture: Texture | null, forceWhiteColor: boolean) => {
+    const model = getWorkspaceState() === "previewGroupModel" ? previewModelGroup : modelGroup;
+    if (!model) return;
+
+    model.traverse((child) => {
+      if (!(child as Mesh).isMesh) return;
+      const mesh = child as Mesh;
+      // 只处理正面材质
+      if (mesh.userData.functional && mesh.userData.functional !== "front") return;
+      const mat = mesh.material as MeshStandardMaterial;
+      if (!mat) return;
+
+      // 设置或移除贴图
+      mat.map = texture ?? null;
+      mat.needsUpdate = true;
+    });
+
+    // 开启贴图时设置所有顶点色为白色，关闭时恢复组颜色
+    if (forceWhiteColor) {
+      faceColorService.setAllVerticesWhite();
+    } else {
+      faceColorService.repaintAllFaces();
+    }
+  };
+
+  const toggleTexture = () => {
+    textureEnabled = !textureEnabled;
+    if (textureEnabled && currentTexture) {
+      applyTextureToMeshes(currentTexture, true);
+    } else {
+      applyTextureToMeshes(null, false);
+    }
+    return textureEnabled;
+  };
+
+  const isTextureEnabled = () => textureEnabled;
+
+  const setTextureEnabled = (enabled: boolean) => {
+    textureEnabled = enabled;
+    if (textureEnabled && currentTexture) {
+      applyTextureToMeshes(currentTexture, true);
+    } else {
+      applyTextureToMeshes(null, false);
+    }
+    return textureEnabled;
+  };
+
+  const setTexture = (texture: Texture | null) => {
+    // 释放旧的贴图资源
+    if (currentTexture) {
+      currentTexture.dispose();
+    }
+    currentTexture = texture;
+    if (textureEnabled && texture) {
+      applyTextureToMeshes(texture, true);
+    }
+  };
+
   const toggleBBox = () => {
     gizmosVisible = !gizmosVisible;
     gizmosGroup.visible = gizmosVisible;
@@ -814,22 +859,22 @@ export function createRenderer3D(
   appEventBus.on("settingsChanged", updateBBox);
   appEventBus.on("historyApplied", () => {
     updateBBox();
-    if (seamEditModeActive) repaintFacesForCurrentMode();
+    faceColorService.repaintAllFaces();
   });
   appEventBus.on("groupColorChanged", () => {
-    if (seamEditModeActive) repaintFacesForCurrentMode();
+    faceColorService.repaintAllFaces();
   });
   appEventBus.on("groupVisibilityChanged", () => {
-    if (seamEditModeActive) repaintFacesForCurrentMode();
+    faceColorService.repaintAllFaces();
   });
   appEventBus.on("groupFaceAdded", () => {
-    if (seamEditModeActive) repaintFacesForCurrentMode();
+    faceColorService.repaintAllFaces();
   });
   appEventBus.on("groupFaceRemoved", () => {
-    if (seamEditModeActive) repaintFacesForCurrentMode();
+    faceColorService.repaintAllFaces();
   });
   appEventBus.on("groupRemoved", () => {
-    if (seamEditModeActive) repaintFacesForCurrentMode();
+    faceColorService.repaintAllFaces();
   });
   appEventBus.on("edgeHover2D", ({ p1, p2 }) => {
     if (getWorkspaceState() === "editingSeam") {
@@ -1028,6 +1073,10 @@ export function createRenderer3D(
     toggleFaces,
     setFacesEnabled,
     isFacesEnabled,
+    toggleTexture,
+    isTextureEnabled,
+    setTextureEnabled,
+    setTexture,
     toggleBBox,
     setBBoxEnabled,
     getBBoxVisible,
@@ -1043,6 +1092,11 @@ export function createRenderer3D(
     isAxesInsetVisible,
     resizeRenderer3D,
     dispose: () => {
+      // 释放贴图资源
+      if (currentTexture) {
+        currentTexture.dispose();
+        currentTexture = null;
+      }
       interactionController?.dispose();
       el.removeEventListener("pointerdown", onCanvasPointerDown);
       el.removeEventListener("pointermove", updateSeamHoverFromPointer);

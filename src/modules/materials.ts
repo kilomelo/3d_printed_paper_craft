@@ -1,5 +1,5 @@
-// 材质工厂：提供前/背面、线框、hover 等 Three.js 材质实例生成，集中管理颜色与透明度。
 import * as THREE from "three";
+import type { Texture } from "three";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import type { EdgeJoinType } from "../types/geometryTypes";
 
@@ -17,7 +17,7 @@ const SEAM_LINE_EDIT_COLORS: Record<EdgeJoinType, { idle: number; hover: number 
   interlocking: { idle: 0x3be95d, hover: 0x9dedad },
 };
 
-export function createFrontMaterial(baseColor?: THREE.Color) {
+export function createFrontMaterial(baseColor?: THREE.Color, texture?: Texture | null) {
   return new THREE.MeshStandardMaterial({
     color: baseColor ?? FACE_DEFAULT_COLOR.clone(),
     metalness: 0.02,
@@ -29,6 +29,7 @@ export function createFrontMaterial(baseColor?: THREE.Color) {
     polygonOffsetFactor: 1,
     polygonOffsetUnits: 1,
     vertexColors: true,
+    map: texture ?? undefined,
   });
 }
 
