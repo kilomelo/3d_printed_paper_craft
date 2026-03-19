@@ -24,7 +24,8 @@ import {
   createWarnningMaterial,
   createUnfoldEdgeLineFoldinMaterial,
   createUnfoldEdgeLineFoldoutMaterial,
-  ensurePlanarUVWorldScale, ensurePlanarUVScreenSpaceCSS } from "./materials";
+  ensurePlanarUVWorldScale, ensurePlanarUVScreenSpaceCSS,
+  FACE_DEFAULT_COLOR } from "./materials";
 import type {
   Point2D,
   Point3D,
@@ -73,6 +74,8 @@ export function createUnfold2dManager(
   getEdgeKeyToId: () => Map<string, number>,
   getThirdVertexKeyOnFace: (edgeId: number, faceId: number) => string | undefined,
   getGroupPlaceAngle: (id: number) => number | undefined,
+  getTextureEnabled: () => boolean,
+  getTexture: () => THREE.Texture | null,
   log: (message: string | number, tone?: import("./log").LogTone) => void,
 ) {
   const transformStore: TransformStore = new Map();
@@ -89,8 +92,6 @@ export function createUnfold2dManager(
   const tmpC = new Vector3();
   const tmpD = new Vector3();
   const tmpE = new Vector3();
-  // const basisU = new Vector3();
-  // const basisV = new Vector3();
   const normal = new Vector3();
   const targetNormal = new Vector3(0, 0, 1);
   const quat = new Quaternion();
@@ -100,7 +101,7 @@ export function createUnfold2dManager(
   let lastBounds: { minX: number; maxX: number; minY: number; maxY: number } | null = null;
 
   const clearScene = () => {
-    disposeGroupDeep(renderer2d.root);
+    disposeGroupDeep(renderer2d.root, undefined, { disposeTextures: false });
     renderer2d.root.rotation.set(0, 0, 0);
     renderer2d.root.updateMatrixWorld(true);
     groupEdgesCache.clear();
@@ -416,27 +417,60 @@ export function createUnfold2dManager(
       return;
     }
     const positions: number[] = [];
-    const colors: number[] = [];
+    const colorsMain: number[] = [];
+    const colorsWarn: number[] = [];
+    const uvs: number[] = [];
     tris.forEach(({ faceId, tri, intersected }) => {
-      paintFace(groupId, faceId, tri, intersected, positions, colors);
+      paintFace(groupId, faceId, tri, intersected, positions, colorsMain, colorsWarn, uvs);
     });
     if (positions.length === 0) {
       renderer2d.bboxRuler.hide();
       return;
     }
-    const geom = new BufferGeometry();
-    geom.setAttribute("position", new Float32BufferAttribute(positions, 3));
-    geom.setAttribute("color", new Float32BufferAttribute(colors, 4));
+    const vertexCount = positions.length / 3;
+    const expectedUvCount = vertexCount * 2;
+
     const indices: number[] = [];
-    for (let i = 0; i < positions.length / 3; i += 3) {
+    for (let i = 0; i < vertexCount; i += 3) {
       indices.push(i, i + 1, i + 2);
     }
-    geom.setIndex(indices);
-    geom.computeVertexNormals();
-    const mesh = new Mesh(geom, createUnfoldFaceMaterial());
-    const meshIntersect = new Mesh(geom, createWarnningMaterial(4, Math.PI * 0.25 - (getGroupPlaceAngle(groupId)??0), 0.15));
+
+    const geomMain = new BufferGeometry();
+    geomMain.setAttribute("position", new Float32BufferAttribute(positions, 3));
+    geomMain.setAttribute("color", new Float32BufferAttribute(colorsMain, 4));
+    geomMain.setIndex(indices);
+    geomMain.computeVertexNormals();
+
+    if (uvs.length === expectedUvCount) {
+      geomMain.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+    }
+
+    const geomWarn = new BufferGeometry();
+    geomWarn.setAttribute("position", new Float32BufferAttribute(positions, 3));
+    geomWarn.setAttribute("color", new Float32BufferAttribute(colorsWarn, 4));
+    geomWarn.setIndex(indices);
+    geomWarn.computeVertexNormals();
+
+    const texture = getTextureEnabled() ? getTexture() : null;
+    const mesh = new Mesh(geomMain, createUnfoldFaceMaterial(undefined, texture));
+    const meshIntersect = new Mesh(
+      geomWarn,
+      createWarnningMaterial(
+        4,
+        Math.PI * 0.25 - (getGroupPlaceAngle(groupId) ?? 0),
+        0.15
+      )
+    );
+
     mesh.userData.groupId = groupId;
     mesh.userData.main = true;
+
+    meshIntersect.userData.groupId = groupId;
+    meshIntersect.userData.main = false;
+
+    mesh.renderOrder = 0;
+    meshIntersect.renderOrder = 1;
+
     renderer2d.root.add(mesh);
     renderer2d.root.add(meshIntersect);
 
@@ -536,7 +570,7 @@ export function createUnfold2dManager(
     renderer2d.root.updateMatrixWorld(true);
     const bounds = getMeshVertexBounds();
     const maxDim = Math.max(Math.abs(bounds.maxX - bounds.minX), Math.abs(bounds.maxY - bounds.minY));
-    ensurePlanarUVWorldScale(geom, maxDim / 15, "xy");
+    ensurePlanarUVWorldScale(geomWarn, Math.max(maxDim / 15, 1e-6), "xy");
     updateCamera(bounds.minX, bounds.maxX, bounds.minY, bounds.maxY);
     updateBBoxRuler(bounds.minX, bounds.maxX, bounds.minY, bounds.maxY);
   };
@@ -1182,49 +1216,88 @@ export function createUnfold2dManager(
   });
   type XY = { x: number; y: number };
 
+  // 获取面的 UV 坐标
+  const getFaceUVs = (faceId: number): [XY, XY, XY] | null => {
+    const mapping = getFaceIndexMap().get(faceId);
+    if (!mapping) return null;
+    const geometry = mapping.mesh.geometry;
+    const uvAttr = geometry.getAttribute("uv");
+    if (!uvAttr) return null;
+    const indices = getFaceVertexIndices(geometry, mapping.localFace);
+    if (!indices) return null;
+    return [
+      { x: uvAttr.getX(indices[0]), y: uvAttr.getY(indices[0]) },
+      { x: uvAttr.getX(indices[1]), y: uvAttr.getY(indices[1]) },
+      { x: uvAttr.getX(indices[2]), y: uvAttr.getY(indices[2]) },
+    ];
+  };
+
   const paintFace = (
     groupId: number,
     faceId: number,
     tri: [XY, XY, XY],
     intersected: boolean | undefined,
     positions: number[] | null,
-    colors: number[],
+    colorsMain: number[],
+    colorsWarn: number[] | null,
+    uvs: number[] | null
   ) => {
     const gid = getFaceGroupMap().get(faceId) ?? groupId;
-    const groupColor = getGroupColor(gid) ?? getGroupColor(groupId) ?? new Color(0xffffff);
+    const groupColor = getTextureEnabled()
+      ? FACE_DEFAULT_COLOR
+      : getGroupColor(gid) ?? getGroupColor(groupId) ?? new Color(0xffffff);
     const visible = getGroupVisibility(gid);
-    const color = visible ? groupColor : new Color(0x898e9c);
+    const color = visible ? groupColor : new Color(0x333333);
     const verts = tri;
-    verts.forEach((v) => {
+    const faceUVs = getFaceUVs(faceId);
+
+    verts.forEach((v, idx) => {
       if (positions) {
         positions.push(v.x, v.y, 0);
       }
-      colors.push(color.r, color.g, color.b, intersected ? 1 : 0);
+
+      colorsMain.push(color.r, color.g, color.b, intersected ? 0 : 1);
+
+      if (colorsWarn) {
+        colorsWarn.push(color.r, color.g, color.b, intersected ? 1 : 0);
+      }
+
+      if (uvs && faceUVs) {
+        uvs.push(faceUVs[idx].x, faceUVs[idx].y);
+      }
     });
   };
 
   const repaintGroupColor = (groupId: number) => {
     const cache = cachedSnapped;
     if (!cache || cache.groupId !== groupId) return false;
-    const colors: number[] = [];
+
+    const colorsMain: number[] = [];
+    const colorsWarn: number[] = [];
+
     cache.tris.forEach(({ faceId, tri, intersected }) => {
-      paintFace(groupId, faceId, tri, intersected, null, colors);
+      paintFace(groupId, faceId, tri, intersected, null, colorsMain, colorsWarn, null);
     });
+
     let painted = false;
     renderer2d.root.children.forEach((child) => {
       const mesh = child as Mesh;
       if (!(mesh as any).isMesh) return;
       if (mesh.userData.groupId !== groupId) return;
+
+      const targetColors = mesh.userData.main ? colorsMain : colorsWarn;
       const colorAttr = (mesh.geometry as BufferGeometry).getAttribute("color") as Float32BufferAttribute | undefined;
       if (!colorAttr) return;
-      if (colorAttr.count * 4 !== colors.length) return;
+      if (colorAttr.count * 4 !== targetColors.length) return;
+
       const arr = colorAttr.array as Float32Array;
-      for (let i = 0; i < colors.length; i++) {
-        arr[i] = colors[i];
+      for (let i = 0; i < targetColors.length; i++) {
+        arr[i] = targetColors[i];
       }
       colorAttr.needsUpdate = true;
       painted = true;
     });
+
     return painted;
   };
 
@@ -1279,6 +1352,45 @@ export function createUnfold2dManager(
     rebuildGroup2D(gid, true);
   });
 
+  // 监听贴图状态变化，更新2D视图的材质和颜色
+  appEventBus.on("textureStateChanged", ({ enabled, texture }) => {
+    // 根据 enabled 参数决定是否应用贴图
+    updateMeshMaterial(enabled ? texture : null);
+    repaintAllGroupColors();
+  });
+
+  // 恢复所有组的顶点颜色（只更新颜色，不重建几何体）
+  const repaintAllGroupColors = () => {
+    // 遍历所有有 mesh 的组，调用 repaintGroupColor 更新颜色
+    const processedGroups = new Set<number>();
+    renderer2d.root.children.forEach((child) => {
+      const mesh = child as Mesh;
+      if (!mesh.isMesh) return;
+      if (!mesh.userData.main) return;
+      if (mesh.userData.groupId === undefined) return;
+
+      const groupId = mesh.userData.groupId;
+      if (processedGroups.has(groupId)) return;
+      processedGroups.add(groupId);
+
+      // 使用与 groupColorChanged 事件相同的逻辑
+      repaintGroupColor(groupId);
+    });
+  };
+
+  // 更新2D视图中所有 mesh 的材质
+  const updateMeshMaterial = (texture: THREE.Texture | null) => {
+    renderer2d.root.children.forEach((child) => {
+      const mesh = child as Mesh;
+      if (!mesh.isMesh) return;
+      if (!mesh.userData.main) return;
+
+      const mat = mesh.material as THREE.MeshBasicMaterial;
+      mat.map = texture;
+      mat.needsUpdate = true;
+    });
+  };
+
   return {
     getGroupPolygonsData,
     getEdges2D: () => groupEdgesCache,
@@ -1287,6 +1399,7 @@ export function createUnfold2dManager(
       buildSnappedTris(groupId);
       return groupIntersected.get(groupId) ?? false;
     },
+    updateMeshMaterial,
   };
 }
 

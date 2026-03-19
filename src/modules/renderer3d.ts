@@ -563,9 +563,9 @@ export function createRenderer3D(
 
   function clearModel() {
     interactionController?.endBrush();
-    disposeGroupDeep(modelGroup);
-    disposeGroupDeep(previewModelGroup);
-    disposeGroupDeep(gizmosGroup);
+    disposeGroupDeep(modelGroup, undefined, { disposeTextures: true });
+    disposeGroupDeep(previewModelGroup, undefined, { disposeTextures: true });
+    disposeGroupDeep(gizmosGroup, undefined, { disposeTextures: true });
     previewModelGroup.visible = false;
     setModel(null);
     
@@ -745,6 +745,7 @@ export function createRenderer3D(
     } else {
       applyTextureToMeshes(null, false);
     }
+    appEventBus.emit("textureStateChanged", { enabled: textureEnabled, texture: currentTexture });
     return textureEnabled;
   };
 
@@ -757,6 +758,7 @@ export function createRenderer3D(
     } else {
       applyTextureToMeshes(null, false);
     }
+    appEventBus.emit("textureStateChanged", { enabled: textureEnabled, texture: currentTexture });
     return textureEnabled;
   };
 
@@ -769,7 +771,10 @@ export function createRenderer3D(
     if (textureEnabled && texture) {
       applyTextureToMeshes(texture, true);
     }
+    appEventBus.emit("textureStateChanged", { enabled: textureEnabled, texture: currentTexture });
   };
+
+  const getTexture = () => currentTexture;
 
   const toggleBBox = () => {
     gizmosVisible = !gizmosVisible;
@@ -958,7 +963,7 @@ export function createRenderer3D(
   }
 
   function loadPreviewModel(mesh: Mesh, angle: number) {
-    disposeGroupDeep(previewModelGroup);
+    disposeGroupDeep(previewModelGroup, undefined, { disposeTextures: true });
     mesh.material = createPreviewMaterial().clone();
     previewModelGroup.add(mesh);
     mesh.updateMatrixWorld(true);
@@ -1077,6 +1082,7 @@ export function createRenderer3D(
     isTextureEnabled,
     setTextureEnabled,
     setTexture,
+    getTexture,
     toggleBBox,
     setBBoxEnabled,
     getBBoxVisible,

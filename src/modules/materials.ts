@@ -29,7 +29,7 @@ export function createFrontMaterial(baseColor?: THREE.Color, texture?: Texture |
     polygonOffsetFactor: 1,
     polygonOffsetUnits: 1,
     vertexColors: true,
-    map: texture ?? undefined,
+    ...(texture ? { map: texture } : {}),
   });
 }
 
@@ -81,10 +81,13 @@ export function createEdgeMaterial() {
   });
 }
 
-export function createUnfoldFaceMaterial(baseColor?: THREE.Color) {
+export function createUnfoldFaceMaterial(baseColor?: THREE.Color, texture?: THREE.Texture | null) {
   return new THREE.MeshBasicMaterial({
     color: baseColor ?? FACE_DEFAULT_COLOR.clone(),
     vertexColors: true,
+    ...(texture ? { map: texture } : {}),
+    alphaTest: 0.001,
+    transparent: false,
   });
 }
 
@@ -221,7 +224,7 @@ export function createUnfoldEdgeLineFoldoutMaterial(resolution: { width: number;
       });
 }
 
-// 2D 视图中，用于表示“已被上游共面合并逻辑折叠掉的内部边”。
+// 2D 视图中，用于表示"已被上游共面合并逻辑折叠掉的内部边"。
 // 这类边仍保留渲染对象，便于用户感知原始三角划分，但用白色与真实折痕区分。
 export function createUnfoldEdgeLineCoplanarMaterial(resolution: { width: number; height: number }) {
   const mat = createLineMaterial({
@@ -370,35 +373,40 @@ export function makeZebraMaskTextureTileable(
   return tex;
 }
 
-
-export function createWarnningMaterial(cellsInTexture = 8, angleRed = 0, duty = 0.5) {
-  // const tex = makeCheckerMaskTexture(256, cellsInTexture);
-  const tex = makeZebraMaskTextureTileable(256, cellsInTexture, { angleRad: angleRed, duty: duty });
+export function createWarnningMaterial(
+  cellsInTexture = 8,
+  angleRed = 0,
+  duty = 0.5
+) {
+  const tex = makeZebraMaskTextureTileable(256, cellsInTexture, {
+    angleRad: angleRed,
+    duty,
+  });
 
   const mat = new THREE.MeshBasicMaterial({
-    color: 0xffffff,        // 必须白色，否则“反色”不是基于纯顶点色
-    map: tex,               // 用作 mask
-    vertexColors: true,     // 需要 RGBA 顶点色
-    transparent: true,      // 顶点 alpha 生效
+    color: 0xffffff,
+    map: tex,
+    vertexColors: true,
+    transparent: true,
+    alphaTest: 0.001,
+    depthWrite: false,
     polygonOffset: true,
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1,
   });
 
   mat.onBeforeCompile = (shader) => {
-    // 1) 把 map_fragment 改成只采样 mask，不乘到 diffuseColor 上
     shader.fragmentShader = shader.fragmentShader.replace(
       "#include <map_fragment>",
       `
       float checkerMask = 0.0;
       #ifdef USE_MAP
-        vec4 maskSample = texture2D( map, vMapUv );
-        checkerMask = maskSample.r; // 0..1（黑白）
+        vec4 maskSample = texture2D(map, vMapUv);
+        checkerMask = maskSample.r;
       #endif
       `
     );
 
-    // 2) 在 color_fragment 后，用 checkerMask 在 vColor 与 1-vColor 间切换
     shader.fragmentShader = shader.fragmentShader.replace(
       "#include <color_fragment>",
       `
@@ -412,8 +420,6 @@ export function createWarnningMaterial(cellsInTexture = 8, angleRed = 0, duty = 
 
       vec3 inv = vec3(1.0) - vc;
       vec3 mixed = mix(vc, inv, checkerMask);
-
-      // diffuse 是 material.color（这里设为白色）
       diffuseColor.rgb = diffuse * mixed;
       `
     );
@@ -481,13 +487,15 @@ export function ensurePlanarUVWorldScale(
   geometry: THREE.BufferGeometry,
   cellSize: number,
   axes: "xy" | "xz" | "yz" = "xy",
-  origin?: THREE.Vector3
+  attrName: "uv" | "uv2" = "uv",
+  origin?: THREE.Vector3,
+  force = false,
 ) {
-  if (geometry.getAttribute("uv")) return;
+  if (!force && geometry.getAttribute(attrName)) return;
 
   if (!origin) {
     geometry.computeBoundingBox();
-    origin = geometry.boundingBox!.min.clone(); // 用 bbox.min 做对齐原点（也可以用 [0,0,0]）
+    origin = geometry.boundingBox!.min.clone();
   }
 
   const pos = geometry.getAttribute("position") as THREE.BufferAttribute;
@@ -507,7 +515,7 @@ export function ensurePlanarUVWorldScale(
     uv[i * 2 + 1] = v;
   }
 
-  geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  geometry.setAttribute(attrName, new THREE.BufferAttribute(uv, 2));
 }
 
 /**

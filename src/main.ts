@@ -1174,7 +1174,7 @@ viewerModeControl = createSegmentedControl({
   ],
   onChange(value) {
     const nextState = segmentedItemValueToWorkspaceState(value);
-    console.log("[ViewerModeControl] mode changed:", value, "->", nextState);
+    // console.log("[ViewerModeControl] mode changed:", value, "->", nextState);
     changeWorkspaceState(nextState);
   },
 });
@@ -1775,6 +1775,8 @@ const unfold2d = createUnfold2dManager(
   () => geometryContext.geometryIndex.getEdgeKeyToId(),
   (edgeId, faceId) => geometryContext.geometryIndex.getThirdVertexKeyOnFace(edgeId, faceId),
   groupController.getGroupPlaceAngle,
+  renderer3d.isTextureEnabled,
+  () => renderer3d.getTexture(),
   log,
 );
 renderer2d.setEdgeQueryProviders({

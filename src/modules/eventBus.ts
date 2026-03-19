@@ -1,4 +1,5 @@
 // 全局事件总线：为模型加载、拼缝重建、组数据变更等提供订阅/发布机制，解耦模块间调用。
+import * as THREE from "three";
 import { type WorkspaceState } from "../types/workspaceState.js";
 import type { EdgeJoinType, Point3D } from "../types/geometryTypes.js";
 import type { MetaAction, Snapshot } from "../types/historyTypes.js";
@@ -65,6 +66,7 @@ export type AppEvents = {
     current: EdgeJoinType;
     affectedGroupIds: number[];
   };
+  textureStateChanged: { enabled: boolean; texture: THREE.Texture | null }; // 贴图状态变化
 };
 
 export const appEventBus = createEventBus<AppEvents>();
