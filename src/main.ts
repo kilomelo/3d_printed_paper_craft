@@ -1,4 +1,7 @@
 // 应用入口与编排层：负责初始化页面结构、事件总线订阅、组/拼缝控制器与渲染器的装配，并绑定 UI 交互。
+// 先导入组件 CSS（基础样式），再导入应用样式（可覆盖基础样式）
+import "./components/segmentedControl.css";
+import "./components/holdButton.css";
 import "./style.css";
 import packageJson from "../package.json";
 import { inject } from "@vercel/analytics";
@@ -23,7 +26,7 @@ import { buildTabClip } from "./modules/replicad/replicadModeling";
 import { startNewProject, getCurrentProject } from "./modules/project";
 import { historyManager } from "./modules/history";
 import { loadRawObject } from "./modules/fileLoader";
-import { loadTextureFromFile, addTexture, getTextureCount, hasTextures, replaceTexture, createThreeTexture, getAllTextures } from "./modules/textureManager";
+import { loadTextureFromFile, addTexture, getTextureCount, hasTextures, replaceTexture, createThreeTexture, getAllTextures, clearAllTextures } from "./modules/textureManager";
 import type { Snapshot, ProjectState } from "./types/historyTypes.js";
 import { exportGroupsData, getGroupColorCursor } from "./modules/groups";
 import { importSettings, getSettings, resetSettings, applySettings } from "./modules/settings";
@@ -36,8 +39,6 @@ import { loadHomeChangelog } from "./modules/homeChangelog";
 import { createGifCaptureController } from "./modules/gifCapture";
 import { createHoldButton } from "./components/createHoldButton";
 import { createSegmentedControl } from "./components/createSegmentedControl";
-import "./components/holdButton.css";
-import "./components/segmentedControl.css";
 import "./styles/home.css";
 import { renderHomeSection } from "./templates/homeMarkup";
 import { initI18n, t, getCurrentLang, setLanguage, onLanguageChanged } from "./modules/i18n";
@@ -230,6 +231,7 @@ const applyI18nTexts = () => {
     viewerModeControl.setItemLabel("view", t("workspace.mode.normal"));
     viewerModeControl.setItemLabel("group-edit", t("workspace.mode.editingGroup"));
     viewerModeControl.setItemLabel("seam-edit", t("workspace.mode.editingSeam"));
+    viewerModeControl.setItemLabel("texture-edit", t("workspace.mode.editingTexture"));
   }
   groupUI.render(buildGroupUIState());
   // 语言切换时刷新历史面板条目文本
@@ -396,7 +398,8 @@ app.innerHTML = `
   <section class="editor-preview">
     <div class="preview-panel">
       <div class="preview-toolbar">
-        <button class="btn sm" id="load-texture-btn">载入贴图</button>
+        <button class="btn sm" id="load-texture-btn" data-i18n="toolbar.l.loadTexture">载入贴图</button>
+        <button class="btn sm" id="clear-texture-btn" data-i18n="toolbar.l.clearTexture">清除贴图</button>
         <button class="btn sm" id="reset-view-btn" data-i18n="toolbar.l.resetView">重置视角</button>
         <button class="btn sm toggle" id="texture-toggle">贴图：关</button>
         <button class="btn sm toggle active" id="light-toggle">光源：开</button>
@@ -717,6 +720,7 @@ const menuOpenBtn = document.querySelector<HTMLButtonElement>("#menu-open");
 const menuBlocker = document.querySelector<HTMLDivElement>("#menu-blocker");
 const editorPreviewEl = document.querySelector<HTMLElement>(".editor-preview");
 const loadTextureBtn = document.querySelector<HTMLButtonElement>("#load-texture-btn");
+const clearTextureBtn = document.querySelector<HTMLButtonElement>("#clear-texture-btn");
 const resetViewBtn = document.querySelector<HTMLButtonElement>("#reset-view-btn");
 const textureToggle = document.querySelector<HTMLButtonElement>("#texture-toggle");
 const lightToggle = document.querySelector<HTMLButtonElement>("#light-toggle");
@@ -1065,7 +1069,10 @@ if (
   !settingPanelClip ||
   !settingPanelExperiment ||
   !settingsOpenBtn ||
-  !settingsContent
+  !settingsContent ||
+  !textureInput ||
+  !loadTextureBtn ||
+  !clearTextureBtn
 ) {
   throw new Error("初始化界面失败，缺少必要的元素");
 }
@@ -1117,21 +1124,30 @@ const seamEditModeIconSvg = `
 </svg>
 `;
 
+const textureEditModeIconSvg = `
+<?xml version="1.0" encoding="utf-8"?>
+<!-- License: MIT. Made by Neuicons: https://github.com/neuicons/neu -->
+<svg fill="#000000" width="800px" height="800px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M21,2H3A1,1,0,0,0,2,3V21a1,1,0,0,0,1,1H21a1,1,0,0,0,1-1V3A1,1,0,0,0,21,2ZM20,14l-3-3-5,5-2-2L4,20V4H20ZM6,8.5A2.5,2.5,0,1,1,8.5,11,2.5,2.5,0,0,1,6,8.5Z"/></svg>
+`;
+
 const segmentedItemValueToWorkspaceState = (value: string): WorkspaceState => {
   if (value === "group-edit") return "editingGroup";
   if (value === "seam-edit") return "editingSeam";
+  if (value === "texture-edit") return "editingTexture";
   return "normal";
 };
 
 const workspaceStateToSegmentedItemValue = (state: WorkspaceState): string => {
   if (state === "editingGroup") return "group-edit";
   if (state === "editingSeam") return "seam-edit";
+  if (state === "editingTexture") return "texture-edit";
   return "view";
 };
 
 const getWorkspaceStateDisplayName = (state: WorkspaceState): string => {
   if (state === "editingGroup") return t("workspace.mode.editingGroup");
   if (state === "editingSeam") return t("workspace.mode.editingSeam");
+  if (state === "editingTexture") return t("workspace.mode.editingTexture");
   return t("workspace.mode.normal");
 };
 
@@ -1171,10 +1187,20 @@ viewerModeControl = createSegmentedControl({
       textColor: "#dddddd",
       activeTextColor: "#ffffff",
     },
+    {
+      value: "texture-edit",
+      label: t("workspace.mode.editingTexture"),
+      iconSvg: textureEditModeIconSvg,
+      hoverBg: "rgba(168, 85, 247, 0.18)",
+      activeBg: "rgba(168, 85, 247, 0.68)",
+      textColor: "#dddddd",
+      activeTextColor: "#ffffff",
+    },
   ],
   onChange(value) {
     const nextState = segmentedItemValueToWorkspaceState(value);
     // console.log("[ViewerModeControl] mode changed:", value, "->", nextState);
+    renderer3d.setBBoxEnabled(false);
     changeWorkspaceState(nextState);
   },
 });
@@ -1420,12 +1446,49 @@ bboxToggle.addEventListener("click", () => {
   bboxToggle.classList.toggle("active", visible);
   refreshToggleTextLabels?.();
 });
+// 监听贴图变动事件
+// 监听贴图变动事件，统一处理贴图相关逻辑
+appEventBus.on("texturesChanged", async ({ textureData, action }) => {
+  if (action === "clear") {
+    // 清除贴图
+    renderer3d.setTexture(null);
+    textureToggle?.classList.remove("active");
+    textureToggle?.classList.add("hidden");
+    clearTextureBtn?.classList.add("hidden");
+    refreshToggleTextLabels?.();
+    log(t("log.texture.cleared"), "info");
+  } else if (textureData) {
+    // 添加/替换贴图：转换为 Three.js Texture 并设置到渲染器
+    const threeTexture = await createThreeTexture(textureData);
+    renderer3d.setTexture(threeTexture);
+    renderer3d.setTextureEnabled(true);
+    
+    // 更新 UI
+    clearTextureBtn?.classList.remove("hidden");
+    if (getWorkspaceState() !== "editingTexture") {
+      textureToggle?.classList.remove("hidden");
+    }
+    textureToggle?.classList.add("active");
+    refreshToggleTextLabels?.();
+    
+    // 输出日志
+    const logKey = action === "add" ? "log.texture.loaded" : "log.texture.replaced";
+    log(t(logKey, { filename: textureData.name, width: textureData.width, height: textureData.height }), "success");
+  }
+});
+
 appEventBus.on("workspaceStateChanged", ({ current, previous }) => {
   const isPreview = current === "previewGroupModel";
   const enteringEditingSeam = current === "editingSeam" && previous !== "editingSeam";
   const leavingEditingSeam = previous === "editingSeam" && current !== "editingSeam";
+  const enteringEditingTexture = current === "editingTexture" && previous !== "editingTexture";
   const enterEditingGroup = current === "editingGroup" && previous !== "editingGroup";
   const enterNormal = current === "normal" && previous !== "normal";
+  // 进入"贴图编辑"状态时总是打开面渲染和贴图渲染
+  if (enteringEditingTexture) {
+    renderer3d.setFacesEnabled(true);
+    renderer3d.setTextureEnabled(true);
+  }
   if (enteringEditingSeam) {
     edgesEnabledBeforeEditingSeam = renderer3d.isEdgesEnabled();
     seamsEnabledBeforeEditingSeam = renderer3d.isSeamsEnabled();
@@ -1446,16 +1509,35 @@ appEventBus.on("workspaceStateChanged", ({ current, previous }) => {
     renderer3d.setTextureEnabled(false);
   }
   if (enterNormal) {
-    renderer3d.setTextureEnabled(true);
+    if (hasTextures()) renderer3d.setTextureEnabled(true);
   }
-  const disableEdgeControls = current === "editingSeam";
+  // 根据工作模式显示/隐藏工具栏按钮
+  const isEditingTexture = current === "editingTexture";
+  const isEditingSeam = current === "editingSeam";
+  
+  // "载入贴图"按钮仅在"编辑贴图"状态下显示
+  loadTextureBtn.classList.toggle("hidden", !isEditingTexture);
+  // "清除贴图"按钮仅在"编辑贴图"状态下且已有贴图时显示
+  const hasTexture = hasTextures();
+  clearTextureBtn.classList.toggle("hidden", !isEditingTexture || !hasTexture);
+  // "贴图渲染"按钮在"贴图编辑"状态下隐藏
+  textureToggle.classList.toggle("hidden", isEditingTexture || !hasTexture);
+  // "包围盒"按钮在"贴图编辑"状态下隐藏
+  bboxToggle.classList.toggle("hidden", isEditingTexture || isPreview);
+  // "线框"、"拼接边"按钮在"拼接边编辑"状态下隐藏
+  edgesToggle.classList.toggle("hidden", isEditingSeam);
+  seamsToggle.classList.toggle("hidden", isEditingSeam);
+  // "面渲染"按钮在"贴图编辑"状态下隐藏
+  facesToggle.classList.toggle("hidden", isEditingTexture);
+  
+  const disableEdgeControls = isEditingSeam;
   edgesToggle.classList.toggle("active", renderer3d.isEdgesEnabled());
   seamsToggle.classList.toggle("active", renderer3d.isSeamsEnabled());
   textureToggle.classList.toggle("active", renderer3d.isTextureEnabled());
+  facesToggle.classList.toggle("active", renderer3d.isFacesEnabled());
   edgesToggle.disabled = disableEdgeControls;
   seamsToggle.disabled = disableEdgeControls;
   groupPreviewMask.classList.toggle("hidden", !disableEdgeControls);
-  bboxToggle.classList.toggle("hidden", isPreview);
   if (isPreview) {
     bboxToggle.classList.remove("active");
     refreshToggleTextLabels?.();
@@ -1482,6 +1564,8 @@ const projectLoaded = () => {
   historyManager.push(captureProjectState(), { name: "loadModel", timestamp: Date.now(), payload: {}});
   historyPanelUI?.render();
   refreshPreviewMeshCacheIndicator();
+  // 加载新项目时隐藏贴图开关
+  textureToggle?.classList.add("hidden");
 };
 
 const allowedExtensions = ["obj", "fbx", "stl", "3dppc"];
@@ -1547,11 +1631,13 @@ const handleFileSelectedFromFile = async (file: File) => {
     }
     isCurrentProjectDemo = false;
     // 重置工具栏开关状态到默认值（全部开启）
+    renderer3d.setTextureEnabled(false);
     renderer3d.setLightEnabled(true);
     renderer3d.setEdgesEnabled(true);
     renderer3d.setSeamsEnabled(true);
     renderer3d.setFacesEnabled(true);
     renderer3d.setBBoxEnabled(true);
+    textureToggle.classList.remove("active");
     lightToggle.classList.add("active");
     edgesToggle.classList.add("active");
     seamsToggle.classList.add("active");
@@ -1683,22 +1769,9 @@ const handleTextureSelected = async () => {
       // 替换已有贴图（使用已有贴图的 ID）
       const existingId = existingTextures[0].id;
       replaceTexture(existingId, textureData);
-      log(t("log.texture.replaced", { filename: file.name, width: textureData.width, height: textureData.height }), "success");
     } else {
       // 首次加载贴图
       addTexture(textureData);
-      log(t("log.texture.loaded", { filename: file.name, width: textureData.width, height: textureData.height }), "success");
-    }
-
-    // 将贴图数据转换为 Three.js Texture 并设置到渲染器
-    const textures = getAllTextures();
-    if (textures.length > 0) {
-      const threeTexture = await createThreeTexture(textures[0]);
-      renderer3d.setTexture(threeTexture);
-      // 加载贴图后自动开启贴图渲染
-      renderer3d.setTextureEnabled(true);
-      textureToggle?.classList.add("active");
-      refreshToggleTextLabels?.();
     }
   } catch (err) {
     console.error("贴图加载失败", err);
@@ -1712,6 +1785,10 @@ textureInput.addEventListener("change", handleTextureSelected);
 
 loadTextureBtn.addEventListener("click", () => {
   textureInput.click();
+});
+
+clearTextureBtn.addEventListener("click", () => {
+  clearAllTextures();
 });
 
 resetViewBtn.addEventListener("click", () => renderer3d.resetView());

@@ -39,6 +39,7 @@ import { getWorkspaceState } from "@/types/workspaceState";
 import { isSafari } from "./utils";
 import { disposeGroupDeep } from "./threeUtils";
 import { t } from "./i18n";
+import { clearAllTextures } from "./textureManager";
 
 export type GroupApi = {
   handleRemoveFace: (faceId: number) => boolean;
@@ -768,8 +769,9 @@ export function createRenderer3D(
       currentTexture.dispose();
     }
     currentTexture = texture;
-    if (textureEnabled && texture) {
-      applyTextureToMeshes(texture, true);
+    if (textureEnabled) {
+      // 无论 texture 是否为 null，都需要更新网格状态
+      applyTextureToMeshes(texture, !!texture);
     }
     appEventBus.emit("textureStateChanged", { enabled: textureEnabled, texture: currentTexture });
   };
@@ -862,6 +864,11 @@ export function createRenderer3D(
     }
   });
   appEventBus.on("settingsChanged", updateBBox);
+  // 项目更改时释放贴图
+  appEventBus.on("projectChanged", () => {
+    setTexture(null);
+    clearAllTextures();
+  });
   appEventBus.on("historyApplied", () => {
     updateBBox();
     faceColorService.repaintAllFaces();

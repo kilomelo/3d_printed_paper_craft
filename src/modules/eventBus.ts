@@ -67,6 +67,7 @@ export type AppEvents = {
     affectedGroupIds: number[];
   };
   textureStateChanged: { enabled: boolean; texture: THREE.Texture | null }; // 贴图状态变化
+  texturesChanged: { textureData: import("./textureManager.js").TextureData | null; action: "add" | "replace" | "clear" }; // 贴图数据变动
 };
 
 export const appEventBus = createEventBus<AppEvents>();

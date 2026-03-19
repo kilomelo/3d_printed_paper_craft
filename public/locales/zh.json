@@ -27,6 +27,8 @@
   "menu.project.settings": "项目设置",
 
   "toolbar.l.resetView": "重置视角",
+  "toolbar.l.loadTexture": "载入贴图",
+  "toolbar.l.clearTexture": "清除贴图",
   "toolbar.left.light.on": "光源：开",
   "toolbar.left.light.off": "光源：关",
   "toolbar.left.wireframe.on": "线框：开",
@@ -52,6 +54,7 @@
   "workspace.mode.normal": "观察模式",
   "workspace.mode.editingGroup": "展开组编辑",
   "workspace.mode.editingSeam": "拼接边编辑",
+  "workspace.mode.editingTexture": "贴图编辑",
 
   "about.loading": "加载中...",
   "about.close.btn": "返回",
@@ -139,6 +142,7 @@
   "log.texture.loaded": "贴图已加载 {filename} [{width} * {height}]",
   "log.texture.replaced": "贴图已替换为 {filename} [{width} * {height}]",
   "log.texture.loadFailed": "贴图加载失败，请检查图片格式是否正确。",
+  "log.texture.cleared": "贴图已清除",
   "log.history.rewind": "已回溯至 [{desc}] ({minutes}分钟前)",
   "log.export.none": "没有可导出的模型",
   "log.export.3dppc.start": "正在保存 .3dppc ...",

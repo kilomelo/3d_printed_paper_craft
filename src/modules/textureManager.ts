@@ -1,5 +1,6 @@
 // 贴图管理器：负责加载、存储、删除贴图数据，以及与 3dppc 文件的序列化交互。
 import * as THREE from "three";
+import { appEventBus } from "./eventBus";
 
 // 贴图格式类型
 export type TextureFormat = "png" | "jpg" | "jpeg" | "webp";
@@ -126,6 +127,8 @@ export async function loadTextureFromUrl(url: string, name?: string): Promise<Te
  */
 export function addTexture(texture: TextureData): void {
   projectTextures.set(texture.id, texture);
+  // 广播贴图变动事件，携带贴图数据
+  appEventBus.emit("texturesChanged", { textureData: texture, action: "add" });
 }
 
 /**
@@ -158,11 +161,14 @@ export function replaceTexture(id: string, newTexture: TextureData): boolean {
   }
   // 保留原有的 id 和名称，只更新数据
   const oldTexture = projectTextures.get(id)!;
-  projectTextures.set(id, {
+  const updatedTexture: TextureData = {
     ...newTexture,
     id: oldTexture.id,
     name: oldTexture.name,
-  });
+  };
+  projectTextures.set(id, updatedTexture);
+  // 广播贴图变动事件，携带更新后的贴图数据
+  appEventBus.emit("texturesChanged", { textureData: updatedTexture, action: "replace" });
   return true;
 }
 
@@ -193,6 +199,8 @@ export function updateTextureSettings(
  */
 export function clearAllTextures(): void {
   projectTextures.clear();
+  // 广播贴图清除事件
+  appEventBus.emit("texturesChanged", { textureData: null, action: "clear" });
 }
 
 /**

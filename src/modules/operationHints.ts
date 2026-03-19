@@ -60,6 +60,17 @@ const hintTable: Record<WorkspaceState, HintConfig> = {
     ],
     right: [],
   },
+  editingTexture: {
+    left: [
+      { key: "view-rotate", i18n: "op.view.rotate" },
+      { key: "view-zoom", i18n: "op.view.zoom" },
+      { key: "view-pan", i18n: "op.view.pan" },
+    ],
+    right: [
+      { key: "view-zoom", i18n: "op.view.zoom" },
+      { key: "view-pan", i18n: "op.view.pan" },
+    ],
+  },
 };
 
 type DOMRefs = {

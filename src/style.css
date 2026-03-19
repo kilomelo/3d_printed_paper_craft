@@ -603,12 +603,6 @@ textarea {
 
 .viewer-mode-control {
   pointer-events: auto;
-  --seg-bg: rgba(9, 14, 24, 0.74);
-  --seg-border: rgba(255, 255, 255, 0.08);
-  --seg-item-hover: rgba(255, 255, 255, 0.06);
-  --seg-item-active-bg: rgba(255, 255, 255, 0.14);
-  --seg-item-font-size: 10px;
-  --seg-item-pad-y: 7px;
   --seg-item-pad-x: 10px;
   backdrop-filter: blur(12px);
 }

@@ -27,6 +27,8 @@
   "menu.project.settings": "Project Settings",
 
   "toolbar.l.resetView": "Reset Camera",
+  "toolbar.l.loadTexture": "Load Texture",
+  "toolbar.l.clearTexture": "Clear Texture",
   "toolbar.left.light.on": "Lighting: On",
   "toolbar.left.light.off": "Lighting: Off",
   "toolbar.left.wireframe.on": "Wireframe: On",
@@ -52,6 +54,7 @@
   "workspace.mode.normal": "View Mode",
   "workspace.mode.editingGroup": "Group Edit",
   "workspace.mode.editingSeam": "Seam Edit",
+  "workspace.mode.editingTexture": "Texture Edit",
 
   "about.loading": "Loading...",
   "about.close.btn": "Back",
@@ -139,6 +142,7 @@
   "log.texture.loaded": "Texture loaded {filename} [{width} * {height}]",
   "log.texture.replaced": "Texture replaced with {filename} [{width} * {height}]",
   "log.texture.loadFailed": "Texture load failed. Please check the image format",
+  "log.texture.cleared": "Texture cleared",
   "log.history.rewind": "Rewound to [{desc}] ({minutes} minutes ago)",
   "log.export.none": "No model to export",
   "log.export.3dppc.start": "Saving .3dppc ...",

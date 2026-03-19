@@ -1,9 +1,11 @@
 /* Segmented control
    - 每项支持 SVG + 文字
    - 使用 CSS 变量暴露外观 token，方便局部覆写
+   - 在 :root 上定义默认值，在 .segmented-control 上允许外部覆盖
 */
 
-.segmented-control {
+/* 全局默认变量 */
+:root {
   --seg-bg: rgba(255, 255, 255, 0.04);
   --seg-border: rgba(255, 255, 255, 0.12);
   --seg-item-text: rgba(255, 255, 255, 0.76);
@@ -22,7 +24,10 @@
   --seg-item-font-weight: 400;
   --seg-icon-size: 16px;
   --seg-focus-ring: rgba(255, 255, 255, 0.18);
+}
 
+/* 容器样式，允许外部通过添加类来覆盖变量 */
+.segmented-control {
   display: inline-flex;
   align-items: stretch;
   gap: var(--seg-gap);
@@ -32,6 +37,7 @@
   box-shadow: var(--seg-shadow);
 }
 
+/* 项目样式 */
 .segmented-control__item {
   display: inline-flex;
   align-items: center;
