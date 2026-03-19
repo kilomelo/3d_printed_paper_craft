@@ -26,7 +26,7 @@ import { buildTabClip } from "./modules/replicad/replicadModeling";
 import { startNewProject, getCurrentProject } from "./modules/project";
 import { historyManager } from "./modules/history";
 import { loadRawObject } from "./modules/fileLoader";
-import { loadTextureFromFile, addTexture, getTextureCount, hasTextures, replaceTexture, createThreeTexture, getAllTextures, clearAllTextures } from "./modules/textureManager";
+import { loadTextureFromFile, addTexture, getTextureCount, hasTextures, replaceTexture, createThreeTexture, getAllTextures, clearAllTextures, generateUVTexture } from "./modules/textureManager";
 import type { Snapshot, ProjectState } from "./types/historyTypes.js";
 import { exportGroupsData, getGroupColorCursor } from "./modules/groups";
 import { importSettings, getSettings, resetSettings, applySettings } from "./modules/settings";
@@ -399,6 +399,7 @@ app.innerHTML = `
     <div class="preview-panel">
       <div class="preview-toolbar">
         <button class="btn sm" id="load-texture-btn" data-i18n="toolbar.l.loadTexture">载入贴图</button>
+        <button class="btn sm" id="generate-texture-btn" data-i18n="toolbar.l.generateTexture">生成贴图</button>
         <button class="btn sm" id="clear-texture-btn" data-i18n="toolbar.l.clearTexture">清除贴图</button>
         <button class="btn sm" id="export-texture-btn" data-i18n="toolbar.l.exportTexture">导出贴图</button>
         <button class="btn sm" id="reset-view-btn" data-i18n="toolbar.l.resetView">重置视角</button>
@@ -721,6 +722,7 @@ const menuOpenBtn = document.querySelector<HTMLButtonElement>("#menu-open");
 const menuBlocker = document.querySelector<HTMLDivElement>("#menu-blocker");
 const editorPreviewEl = document.querySelector<HTMLElement>(".editor-preview");
 const loadTextureBtn = document.querySelector<HTMLButtonElement>("#load-texture-btn");
+const generateTextureBtn = document.querySelector<HTMLButtonElement>("#generate-texture-btn");
 const clearTextureBtn = document.querySelector<HTMLButtonElement>("#clear-texture-btn");
 const exportTextureBtn = document.querySelector<HTMLButtonElement>("#export-texture-btn");
 const resetViewBtn = document.querySelector<HTMLButtonElement>("#reset-view-btn");
@@ -1451,11 +1453,17 @@ bboxToggle.addEventListener("click", () => {
 // 监听贴图变动事件
 // 监听贴图变动事件，统一处理贴图相关逻辑
 appEventBus.on("texturesChanged", async ({ textureData, action }) => {
+  const isEditingTexture = getWorkspaceState() === "editingTexture";
+  const hasTexture = textureData !== null;
+
   if (action === "clear") {
     // 清除贴图
     renderer3d.setTexture(null);
     textureToggle?.classList.remove("active");
     textureToggle?.classList.add("hidden");
+    // 根据状态更新按钮显示/隐藏
+    loadTextureBtn.classList.toggle("hidden", !isEditingTexture || hasTexture);
+    generateTextureBtn?.classList.toggle("hidden", !isEditingTexture || hasTexture);
     clearTextureBtn?.classList.add("hidden");
     exportTextureBtn?.classList.add("hidden");
     refreshToggleTextLabels?.();
@@ -1465,16 +1473,18 @@ appEventBus.on("texturesChanged", async ({ textureData, action }) => {
     const threeTexture = await createThreeTexture(textureData);
     renderer3d.setTexture(threeTexture);
     renderer3d.setTextureEnabled(true);
-    
-    // 更新 UI
-    clearTextureBtn?.classList.remove("hidden");
-    exportTextureBtn?.classList.remove("hidden");
-    if (getWorkspaceState() !== "editingTexture") {
+
+    // 根据状态更新按钮显示/隐藏
+    loadTextureBtn.classList.toggle("hidden", !isEditingTexture || hasTexture);
+    generateTextureBtn?.classList.toggle("hidden", !isEditingTexture || hasTexture);
+    clearTextureBtn?.classList.toggle("hidden", !isEditingTexture || !hasTexture);
+    exportTextureBtn?.classList.toggle("hidden", !isEditingTexture || !hasTexture);
+    if (!isEditingTexture) {
       textureToggle?.classList.remove("hidden");
     }
     textureToggle?.classList.add("active");
     refreshToggleTextLabels?.();
-    
+
     // 输出日志
     const logKey = action === "add" ? "log.texture.loaded" : "log.texture.replaced";
     log(t(logKey, { filename: textureData.name, width: textureData.width, height: textureData.height }), "success");
@@ -1518,11 +1528,13 @@ appEventBus.on("workspaceStateChanged", ({ current, previous }) => {
   // 根据工作模式显示/隐藏工具栏按钮
   const isEditingTexture = current === "editingTexture";
   const isEditingSeam = current === "editingSeam";
-  
-  // "载入贴图"按钮仅在"编辑贴图"状态下显示
-  loadTextureBtn.classList.toggle("hidden", !isEditingTexture);
-  // "清除贴图"按钮仅在"编辑贴图"状态下且已有贴图时显示
   const hasTexture = hasTextures();
+
+  // "载入贴图"按钮仅在"编辑贴图"状态下显示
+  loadTextureBtn.classList.toggle("hidden", !isEditingTexture || hasTexture);
+  // "生成贴图"按钮仅在"编辑贴图"状态下且没有贴图时显示
+  generateTextureBtn?.classList.toggle("hidden", !isEditingTexture || hasTexture);
+  // "清除贴图"按钮仅在"编辑贴图"状态下且已有贴图时显示
   clearTextureBtn.classList.toggle("hidden", !isEditingTexture || !hasTexture);
   // "导出贴图"按钮仅在"编辑贴图"状态下且已有贴图时显示
   exportTextureBtn?.classList.toggle("hidden", !isEditingTexture || !hasTexture);
@@ -1791,6 +1803,17 @@ textureInput.addEventListener("change", handleTextureSelected);
 
 loadTextureBtn.addEventListener("click", () => {
   textureInput.click();
+});
+
+generateTextureBtn?.addEventListener("click", async () => {
+  try {
+    const textureData = await generateUVTexture();
+    clearAllTextures();
+    addTexture(textureData);
+  } catch (err) {
+    console.error("生成贴图失败", err);
+    log(t("log.texture.generateFailed"), "error");
+  }
 });
 
 clearTextureBtn.addEventListener("click", () => {

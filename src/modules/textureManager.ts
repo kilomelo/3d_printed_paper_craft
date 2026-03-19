@@ -260,3 +260,173 @@ export function restoreTexturesFromPPC(textures: TextureData[]): void {
 export function getTexturesForExport(): TextureData[] {
   return getAllTextures();
 }
+
+// === 贴图生成功能 ===
+
+const UV_TEXTURE_SIZE = 2048;
+
+/**
+ * 生成更适合调试 UV 的纹理：
+ * - 大格子：每格不同底色，便于定位 UV 区域
+ * - 细网格：便于观察拉伸/压缩
+ * - 非对称角标：便于观察旋转/镜像
+ * - 轻微渐变：保留整体 U/V 方向感
+ */
+export async function generateUVTexture(width: number | undefined = UV_TEXTURE_SIZE, height: number | undefined = UV_TEXTURE_SIZE): Promise<TextureData> {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("无法创建 2D 上下文");
+  }
+
+  // ===== 参数 =====
+  const majorCells = 16;       // 大格子数量（每边）
+  const minorPerMajor = 4;     // 每个大格子里的小格子数
+  const majorW = width / majorCells;
+  const majorH = height / majorCells;
+  const minorW = majorW / minorPerMajor;
+  const minorH = majorH / minorPerMajor;
+
+  // ===== 背景：按大格子填不同颜色 =====
+  for (let cy = 0; cy < majorCells; cy++) {
+    for (let cx = 0; cx < majorCells; cx++) {
+      const x = cx * majorW;
+      const y = cy * majorH;
+
+      // 用 cell 坐标生成稳定但不同的颜色
+      const hue = ((cx * 37 + cy * 67) % 360);
+      const sat = 65;
+      const light = 56 + ((cx + cy) % 2) * 6;
+
+      ctx.fillStyle = `hsl(${hue}, ${sat}%, ${light}%)`;
+      ctx.fillRect(x, y, majorW, majorH);
+
+      // 左上角红三角（非对称标记）
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + majorW * 0.28, y);
+      ctx.lineTo(x, y + majorH * 0.28);
+      ctx.closePath();
+      ctx.fillStyle = "rgba(255, 64, 64, 0.95)";
+      ctx.fill();
+
+      // 右下角蓝三角（非对称标记）
+      ctx.beginPath();
+      ctx.moveTo(x + majorW, y + majorH);
+      ctx.lineTo(x + majorW - majorW * 0.28, y + majorH);
+      ctx.lineTo(x + majorW, y + majorH - majorH * 0.28);
+      ctx.closePath();
+      ctx.fillStyle = "rgba(64, 128, 255, 0.95)";
+      ctx.fill();
+
+      // 左边粗黑线
+      ctx.strokeStyle = "rgba(0,0,0,0.9)";
+      ctx.lineWidth = Math.max(2, Math.floor(width / 512));
+      ctx.beginPath();
+      ctx.moveTo(x + 0.5, y);
+      ctx.lineTo(x + 0.5, y + majorH);
+      ctx.stroke();
+
+      // 下边粗白线
+      ctx.strokeStyle = "rgba(255,255,255,0.9)";
+      ctx.lineWidth = Math.max(2, Math.floor(width / 512));
+      ctx.beginPath();
+      ctx.moveTo(x, y + majorH - 0.5);
+      ctx.lineTo(x + majorW, y + majorH - 0.5);
+      ctx.stroke();
+
+      // 可选：格子编号（分辨率足够时）
+      if (majorW >= 32 && majorH >= 24) {
+        ctx.fillStyle = "rgba(0,0,0,0.85)";
+        ctx.font = `${Math.max(10, Math.floor(majorH * 0.18))}px sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(`${cx},${majorCells - 1 - cy}`, x + majorW * 0.5, y + majorH * 0.5);
+      }
+    }
+  }
+
+  // ===== 细网格 =====
+  ctx.lineWidth = 1;
+
+  // 小网格
+  ctx.strokeStyle = "rgba(0,0,0,0.20)";
+  for (let i = 0; i <= majorCells * minorPerMajor; i++) {
+    const gx = i * minorW;
+    const gy = i * minorH;
+
+    ctx.beginPath();
+    ctx.moveTo(gx + 0.5, 0);
+    ctx.lineTo(gx + 0.5, height);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(0, gy + 0.5);
+    ctx.lineTo(width, gy + 0.5);
+    ctx.stroke();
+  }
+
+  // 大网格
+  ctx.strokeStyle = "rgba(255,255,255,0.65)";
+  ctx.lineWidth = Math.max(2, Math.floor(width / 512));
+  for (let i = 0; i <= majorCells; i++) {
+    const gx = i * majorW;
+    const gy = i * majorH;
+
+    ctx.beginPath();
+    ctx.moveTo(gx + 0.5, 0);
+    ctx.lineTo(gx + 0.5, height);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(0, gy + 0.5);
+    ctx.lineTo(width, gy + 0.5);
+    ctx.stroke();
+  }
+
+  // ===== 叠加一层轻微渐变，保留整体 UV 方向感 =====
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+
+  for (let y = 0; y < height; y++) {
+    const v = y / (height - 1);
+    for (let x = 0; x < width; x++) {
+      const u = x / (width - 1);
+      const i = (y * width + x) * 4;
+
+      // 低强度叠加：G 表示 V，B 表示 U
+      const overlayG = Math.round(v * 90);
+      const overlayB = Math.round(u * 90);
+
+      data[i + 1] = Math.min(255, data[i + 1] + overlayG);
+      data[i + 2] = Math.min(255, data[i + 2] + overlayB);
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+
+  // ===== 导出 PNG =====
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, "image/png")
+  );
+
+  if (!blob) {
+    throw new Error("无法生成纹理图像");
+  }
+
+  const arrayBuffer = await blob.arrayBuffer();
+
+  return {
+    id: generateTextureId(),
+    name: "generated_uv_debug_texture.png",
+    format: "png",
+    data: arrayBuffer,
+    width,
+    height,
+    colorSpace: "srgb",
+    flipY: true,
+  };
+}

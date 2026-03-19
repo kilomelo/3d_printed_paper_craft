@@ -28,6 +28,7 @@
 
   "toolbar.l.resetView": "Reset Camera",
   "toolbar.l.loadTexture": "Load Texture",
+  "toolbar.l.generateTexture": "Generate Texture",
   "toolbar.l.clearTexture": "Clear Texture",
   "toolbar.l.exportTexture": "Export Texture",
   "toolbar.left.light.on": "Lighting: On",
@@ -144,6 +145,7 @@
   "log.texture.replaced": "Texture replaced with {filename} [{width} * {height}]",
   "log.texture.loadFailed": "Texture load failed. Please check the image format",
   "log.texture.cleared": "Texture cleared",
+  "log.texture.generateFailed": "Failed to generate texture",
   "log.texture.noTextureToExport": "No texture to export",
   "log.texture.exported": "Texture exported: {fileName}",
   "log.history.rewind": "Rewound to [{desc}] ({minutes} minutes ago)",
