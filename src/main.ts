@@ -1807,7 +1807,18 @@ loadTextureBtn.addEventListener("click", () => {
 
 generateTextureBtn?.addEventListener("click", async () => {
   try {
-    const textureData = await generateUVTexture();
+    // 获取当前模型的几何体
+    const model = getModel();
+    let geometry: THREE.BufferGeometry | undefined;
+    if (model) {
+      model.traverse((child) => {
+        const mesh = child as { isMesh?: boolean; geometry?: THREE.BufferGeometry };
+        if (mesh.isMesh && mesh.geometry && !geometry) {
+          geometry = mesh.geometry;
+        }
+      });
+    }
+    const textureData = await generateUVTexture(geometry);
     clearAllTextures();
     addTexture(textureData);
   } catch (err) {

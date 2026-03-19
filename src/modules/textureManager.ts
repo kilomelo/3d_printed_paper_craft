@@ -265,154 +265,176 @@ export function getTexturesForExport(): TextureData[] {
 
 const UV_TEXTURE_SIZE = 2048;
 
+function drawBaseUVPattern(ctx: CanvasRenderingContext2D, width: number, height: number) {
+  const imageData = ctx.createImageData(width, height);
+  const data = imageData.data;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      data[i] = 0; // R
+      data[i + 1] = Math.round((y / (height - 1)) * 255); // G
+      data[i + 2] = Math.round((x / (width - 1)) * 255); // B
+      data[i + 3] = 255; // A
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+}
+
+function forEachUVTriangle(
+  geometry: THREE.BufferGeometry,
+  callback: (
+    u0: number, v0: number,
+    u1: number, v1: number,
+    u2: number, v2: number
+  ) => void
+) {
+  const uvAttr = geometry.getAttribute("uv") as THREE.BufferAttribute | undefined;
+  if (!uvAttr || uvAttr.itemSize < 2) {
+    throw new Error("geometry 没有可用的 uv 数据");
+  }
+
+  const index = geometry.getIndex();
+
+  if (index) {
+    for (let i = 0; i < index.count; i += 3) {
+      const i0 = index.getX(i);
+      const i1 = index.getX(i + 1);
+      const i2 = index.getX(i + 2);
+
+      callback(
+        uvAttr.getX(i0), uvAttr.getY(i0),
+        uvAttr.getX(i1), uvAttr.getY(i1),
+        uvAttr.getX(i2), uvAttr.getY(i2),
+      );
+    }
+  } else {
+    for (let i = 0; i < uvAttr.count; i += 3) {
+      callback(
+        uvAttr.getX(i), uvAttr.getY(i),
+        uvAttr.getX(i + 1), uvAttr.getY(i + 1),
+        uvAttr.getX(i + 2), uvAttr.getY(i + 2),
+      );
+    }
+  }
+}
+
+function clamp01(v: number) {
+  return Math.max(0, Math.min(1, v));
+}
+
 /**
- * 生成更适合调试 UV 的纹理：
- * - 大格子：每格不同底色，便于定位 UV 区域
- * - 细网格：便于观察拉伸/压缩
- * - 非对称角标：便于观察旋转/镜像
- * - 轻微渐变：保留整体 U/V 方向感
+ * 生成 UV 可视化纹理
+ * - 不传 geometry：整张都是调试纹理
+ * - 传 geometry：只在 geometry 的 UV 三角形覆盖区域内绘制调试纹理，其余区域为纯黑
+ *
+ * 注意：
+ * 这里为了让“导出的 PNG 直接看起来像 UV 展开图”，采用的是：
+ *   UV (0,0) -> 图片左下角
+ *   UV (1,1) -> 图片右上角
+ * 所以会把 v 转成 y = (1 - v) * (height - 1)
+ *
+ * 如果你想完全沿用你当前旧逻辑的上下方向，可以把 uvToPixel 中的 y 改回 v * (height - 1)，
+ * 同时根据你的纹理加载管线决定 flipY 应该保持 true 还是改成 false。
  */
-export async function generateUVTexture(width: number | undefined = UV_TEXTURE_SIZE, height: number | undefined = UV_TEXTURE_SIZE): Promise<TextureData> {
+export async function generateUVTexture(
+  geometry?: THREE.BufferGeometry
+): Promise<TextureData> {
+  const width = UV_TEXTURE_SIZE;
+  const height = UV_TEXTURE_SIZE;
+
+  // 先生成一张完整的基础调试图
+  const patternCanvas = document.createElement("canvas");
+  patternCanvas.width = width;
+  patternCanvas.height = height;
+  const patternCtx = patternCanvas.getContext("2d");
+  if (!patternCtx) {
+    throw new Error("无法创建 pattern 画布上下文");
+  }
+  drawBaseUVPattern(patternCtx, width, height);
+
+  // 输出画布
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
-
   const ctx = canvas.getContext("2d");
   if (!ctx) {
     throw new Error("无法创建 2D 上下文");
   }
 
-  // ===== 参数 =====
-  const majorCells = 16;       // 大格子数量（每边）
-  const minorPerMajor = 4;     // 每个大格子里的小格子数
-  const majorW = width / majorCells;
-  const majorH = height / majorCells;
-  const minorW = majorW / minorPerMajor;
-  const minorH = majorH / minorPerMajor;
+  // 先整张填黑
+  ctx.fillStyle = "#000000";
+  ctx.fillRect(0, 0, width, height);
 
-  // ===== 背景：按大格子填不同颜色 =====
-  for (let cy = 0; cy < majorCells; cy++) {
-    for (let cx = 0; cx < majorCells; cx++) {
-      const x = cx * majorW;
-      const y = cy * majorH;
+  // 不传 geometry 时，保持原行为：整张绘制
+  if (!geometry) {
+    ctx.drawImage(patternCanvas, 0, 0);
+  } else {
+    const uvToPixel = (u: number, v: number) => {
+      const uu = clamp01(u);
+      const vv = clamp01(v);
+      return {
+        x: uu * (width - 1),
+        y: vv * (height - 1), // 让导出的图直观看起来就是 UV 展开
+        // y: (1 - vv) * (height - 1), // 让导出的图直观看起来就是 UV 展开
+      };
+    };
 
-      // 用 cell 坐标生成稳定但不同的颜色
-      const hue = ((cx * 37 + cy * 67) % 360);
-      const sat = 65;
-      const light = 56 + ((cx + cy) % 2) * 6;
+    // 只把 UV 三角形覆盖到的区域画出来
+    forEachUVTriangle(geometry, (u0, v0, u1, v1, u2, v2) => {
+      const p0 = uvToPixel(u0, v0);
+      const p1 = uvToPixel(u1, v1);
+      const p2 = uvToPixel(u2, v2);
 
-      ctx.fillStyle = `hsl(${hue}, ${sat}%, ${light}%)`;
-      ctx.fillRect(x, y, majorW, majorH);
+      const minX = Math.max(0, Math.floor(Math.min(p0.x, p1.x, p2.x)));
+      const maxX = Math.min(width - 1, Math.ceil(Math.max(p0.x, p1.x, p2.x)));
+      const minY = Math.max(0, Math.floor(Math.min(p0.y, p1.y, p2.y)));
+      const maxY = Math.min(height - 1, Math.ceil(Math.max(p0.y, p1.y, p2.y)));
 
-      // 左上角红三角（非对称标记）
+      const drawW = maxX - minX + 1;
+      const drawH = maxY - minY + 1;
+      if (drawW <= 0 || drawH <= 0) return;
+
+      ctx.save();
       ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + majorW * 0.28, y);
-      ctx.lineTo(x, y + majorH * 0.28);
+      ctx.moveTo(p0.x, p0.y);
+      ctx.lineTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
       ctx.closePath();
-      ctx.fillStyle = "rgba(255, 64, 64, 0.95)";
-      ctx.fill();
+      ctx.clip();
 
-      // 右下角蓝三角（非对称标记）
+      // 只拷贝这个三角形包围盒区域，避免每个三角都整张 drawImage
+      ctx.drawImage(
+        patternCanvas,
+        minX, minY, drawW, drawH,
+        minX, minY, drawW, drawH
+      );
+
+      ctx.restore();
+    });
+
+    // 可选：再叠一层白色线框，能更直观看出每个三角形
+    ctx.strokeStyle = "rgba(255,255,255,0.9)";
+    ctx.lineWidth = Math.max(1, Math.floor(width / 512));
+
+    forEachUVTriangle(geometry, (u0, v0, u1, v1, u2, v2) => {
+      const p0 = uvToPixel(u0, v0);
+      const p1 = uvToPixel(u1, v1);
+      const p2 = uvToPixel(u2, v2);
+
       ctx.beginPath();
-      ctx.moveTo(x + majorW, y + majorH);
-      ctx.lineTo(x + majorW - majorW * 0.28, y + majorH);
-      ctx.lineTo(x + majorW, y + majorH - majorH * 0.28);
+      ctx.moveTo(p0.x, p0.y);
+      ctx.lineTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
       ctx.closePath();
-      ctx.fillStyle = "rgba(64, 128, 255, 0.95)";
-      ctx.fill();
-
-      // 左边粗黑线
-      ctx.strokeStyle = "rgba(0,0,0,0.9)";
-      ctx.lineWidth = Math.max(2, Math.floor(width / 512));
-      ctx.beginPath();
-      ctx.moveTo(x + 0.5, y);
-      ctx.lineTo(x + 0.5, y + majorH);
       ctx.stroke();
-
-      // 下边粗白线
-      ctx.strokeStyle = "rgba(255,255,255,0.9)";
-      ctx.lineWidth = Math.max(2, Math.floor(width / 512));
-      ctx.beginPath();
-      ctx.moveTo(x, y + majorH - 0.5);
-      ctx.lineTo(x + majorW, y + majorH - 0.5);
-      ctx.stroke();
-
-      // 可选：格子编号（分辨率足够时）
-      if (majorW >= 32 && majorH >= 24) {
-        ctx.fillStyle = "rgba(0,0,0,0.85)";
-        ctx.font = `${Math.max(10, Math.floor(majorH * 0.18))}px sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(`${cx},${majorCells - 1 - cy}`, x + majorW * 0.5, y + majorH * 0.5);
-      }
-    }
+    });
   }
 
-  // ===== 细网格 =====
-  ctx.lineWidth = 1;
-
-  // 小网格
-  ctx.strokeStyle = "rgba(0,0,0,0.20)";
-  for (let i = 0; i <= majorCells * minorPerMajor; i++) {
-    const gx = i * minorW;
-    const gy = i * minorH;
-
-    ctx.beginPath();
-    ctx.moveTo(gx + 0.5, 0);
-    ctx.lineTo(gx + 0.5, height);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(0, gy + 0.5);
-    ctx.lineTo(width, gy + 0.5);
-    ctx.stroke();
-  }
-
-  // 大网格
-  ctx.strokeStyle = "rgba(255,255,255,0.65)";
-  ctx.lineWidth = Math.max(2, Math.floor(width / 512));
-  for (let i = 0; i <= majorCells; i++) {
-    const gx = i * majorW;
-    const gy = i * majorH;
-
-    ctx.beginPath();
-    ctx.moveTo(gx + 0.5, 0);
-    ctx.lineTo(gx + 0.5, height);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(0, gy + 0.5);
-    ctx.lineTo(width, gy + 0.5);
-    ctx.stroke();
-  }
-
-  // ===== 叠加一层轻微渐变，保留整体 UV 方向感 =====
-  const imageData = ctx.getImageData(0, 0, width, height);
-  const data = imageData.data;
-
-  for (let y = 0; y < height; y++) {
-    const v = y / (height - 1);
-    for (let x = 0; x < width; x++) {
-      const u = x / (width - 1);
-      const i = (y * width + x) * 4;
-
-      // 低强度叠加：G 表示 V，B 表示 U
-      const overlayG = Math.round(v * 90);
-      const overlayB = Math.round(u * 90);
-
-      data[i + 1] = Math.min(255, data[i + 1] + overlayG);
-      data[i + 2] = Math.min(255, data[i + 2] + overlayB);
-    }
-  }
-
-  ctx.putImageData(imageData, 0, 0);
-
-  // ===== 导出 PNG =====
   const blob = await new Promise<Blob | null>((resolve) =>
     canvas.toBlob(resolve, "image/png")
   );
-
   if (!blob) {
     throw new Error("无法生成纹理图像");
   }
@@ -421,12 +443,15 @@ export async function generateUVTexture(width: number | undefined = UV_TEXTURE_S
 
   return {
     id: generateTextureId(),
-    name: "generated_uv_debug_texture.png",
+    name: geometry ? "generated_uv_layout_texture.png" : "generated_texture.png",
     format: "png",
     data: arrayBuffer,
     width,
     height,
     colorSpace: "srgb",
-    flipY: true,
+
+    // 这里建议先设成 false，因为我们输出的是“直接看上去像 UV 展开图”的图片
+    // 如果你项目里现有纹理导入链要求 generated texture 必须 flipY=true，再按你的加载链改回去。
+    flipY: false,
   };
 }
