@@ -44,6 +44,8 @@ export type PPCFile = {
   };
   // 贴图数据
   textures?: TextureMeta[];
+  // 贴图二进制数据（用于序列化，不存入 meta）
+  textureBinaries?: ArrayBuffer[];
 };
 
 const FORMAT_VERSION = "1.1"; // 升级版本号以支持贴图
@@ -123,6 +125,7 @@ export async function build3dppcData(object: Group): Promise<PPCFile> {
       edgeJoinTypes: exportEdgeJoinTypes(),
     },
     textures: textureMeta,
+    textureBinaries: texturesForExport.map((tex) => tex.data),
   };
 }
 
@@ -144,11 +147,10 @@ function encodeBinaryPPC(data: PPCFile): ArrayBuffer {
 
   // 计算贴图数据大小
   let textureDataSize = 0;
-  if (data.textures) {
-    for (const tex of data.textures) {
-      textureDataSize += 4; // 长度前缀
-      textureDataSize += tex.data.byteLength;
-    }
+  const textureBinaries = data.textureBinaries || [];
+  for (const texData of textureBinaries) {
+    textureDataSize += 4; // 长度前缀
+    textureDataSize += texData.byteLength;
   }
 
   const headerSize = 28; // magic(8) + ver(2) + pad(2) + counts(4x4)
@@ -196,14 +198,12 @@ function encodeBinaryPPC(data: PPCFile): ArrayBuffer {
   offset += metaBytes.length;
 
   // texture data (每个贴图: 长度(4 bytes) + 数据)
-  if (data.textures) {
-    for (const tex of data.textures) {
-      view.setUint32(offset, tex.data.byteLength, true);
-      offset += 4;
-      const texData = new Uint8Array(tex.data);
-      new Uint8Array(buffer, offset, tex.data.byteLength).set(texData);
-      offset += tex.data.byteLength;
-    }
+  for (const texData of textureBinaries) {
+    view.setUint32(offset, texData.byteLength, true);
+    offset += 4;
+    const texDataArray = new Uint8Array(texData);
+    new Uint8Array(buffer, offset, texData.byteLength).set(texDataArray);
+    offset += texData.byteLength;
   }
 
   return buffer;

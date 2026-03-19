@@ -2,7 +2,7 @@
 import { getSettings, applySettings, getDefaultSettings, SETTINGS_LIMITS } from "./settings";
 import { t } from "./i18n";
 
-type SettingsUIRefs = {
+export type SettingsUIRefs = {
   overlay: HTMLDivElement;
   content: HTMLDivElement;
   openBtn: HTMLButtonElement;
@@ -60,6 +60,79 @@ type SettingsUIRefs = {
   panelClip: HTMLDivElement;
   panelExperiment: HTMLDivElement;
 };
+
+// 获取设置面板的 DOM 元素并进行完整性验证
+export function getSettingsUIRefs(): SettingsUIRefs | null {
+  const get = <T extends Element>(selector: string): T => document.querySelector<T>(selector)!;
+
+  const refs: SettingsUIRefs = {
+    overlay: get<HTMLDivElement>("#settings-overlay"),
+    content: get<HTMLDivElement>(".settings-content"),
+    openBtn: get<HTMLButtonElement>("#settings-open-btn"),
+    cancelBtn: get<HTMLButtonElement>("#settings-cancel-btn"),
+    confirmBtn: get<HTMLButtonElement>("#settings-confirm-btn"),
+    joinTypeInterlockingBtn: get<HTMLButtonElement>("#setting-join-type-interlocking"),
+    joinTypeClipBtn: get<HTMLButtonElement>("#setting-join-type-clip"),
+    joinTypeResetBtn: get<HTMLButtonElement>("#setting-join-type-reset"),
+    scaleInput: get<HTMLInputElement>("#setting-scale"),
+    scaleResetBtn: get<HTMLButtonElement>("#setting-scale-reset"),
+    minFoldAngleThresholdInput: get<HTMLInputElement>("#setting-min-fold-angle-threshold"),
+    minFoldAngleThresholdResetBtn: get<HTMLButtonElement>("#setting-min-fold-angle-threshold-reset"),
+    clawInterlockingAngleInput: get<HTMLInputElement>("#setting-claw-interlocking-angle"),
+    clawInterlockingAngleResetBtn: get<HTMLButtonElement>("#setting-claw-interlocking-angle-reset"),
+    clawTargetRadiusInput: get<HTMLInputElement>("#setting-claw-target-radius"),
+    clawTargetRadiusResetBtn: get<HTMLButtonElement>("#setting-claw-target-radius-reset"),
+    clawRadiusAdaptiveOffBtn: get<HTMLButtonElement>("#setting-claw-radius-adaptive-off"),
+    clawRadiusAdaptiveOnBtn: get<HTMLButtonElement>("#setting-claw-radius-adaptive-on"),
+    clawRadiusAdaptiveResetBtn: get<HTMLButtonElement>("#setting-claw-radius-adaptive-reset"),
+    clawWidthInput: get<HTMLInputElement>("#setting-claw-width"),
+    clawWidthResetBtn: get<HTMLButtonElement>("#setting-claw-width-reset"),
+    clawFitGapInput: get<HTMLInputElement>("#setting-claw-fit-gap"),
+    clawFitGapResetBtn: get<HTMLButtonElement>("#setting-claw-fit-gap-reset"),
+    tabWidthInput: get<HTMLInputElement>("#setting-tab-width"),
+    tabWidthResetBtn: get<HTMLButtonElement>("#setting-tab-width-reset"),
+    tabThicknessInput: get<HTMLInputElement>("#setting-tab-thickness"),
+    tabThicknessResetBtn: get<HTMLButtonElement>("#setting-tab-thickness-reset"),
+    tabClipGapInput: get<HTMLInputElement>("#setting-tab-clip-gap"),
+    tabClipGapResetBtn: get<HTMLButtonElement>("#setting-tab-clip-gap-reset"),
+    clipGapAdjustNormalBtn: get<HTMLButtonElement>("#setting-clip-thickness-normal"),
+    clipGapAdjustNarrowBtn: get<HTMLButtonElement>("#setting-clip-thickness-narrow"),
+    clipGapAdjustResetBtn: get<HTMLButtonElement>("#setting-clip-thickness-reset"),
+    hollowOnBtn: get<HTMLButtonElement>("#setting-hollow-on"),
+    hollowOffBtn: get<HTMLButtonElement>("#setting-hollow-off"),
+    hollowResetBtn: get<HTMLButtonElement>("#setting-hollow-reset"),
+    wireframeThicknessInput: get<HTMLInputElement>("#setting-wireframe-thickness"),
+    wireframeThicknessResetBtn: get<HTMLButtonElement>("#setting-wireframe-thickness-reset"),
+    wireframeRow: get<HTMLDivElement>("#setting-wireframe-row"),
+    layerHeightInput: get<HTMLInputElement>("#setting-layer-height"),
+    layerHeightResetBtn: get<HTMLButtonElement>("#setting-layer-height-reset"),
+    connectionLayersDecBtn: get<HTMLButtonElement>("#setting-connection-layers-dec"),
+    connectionLayersIncBtn: get<HTMLButtonElement>("#setting-connection-layers-inc"),
+    connectionLayersValue: get<HTMLSpanElement>("#setting-connection-layers-value"),
+    connectionLayersResetBtn: get<HTMLButtonElement>("#setting-connection-layers-reset"),
+    bodyLayersDecBtn: get<HTMLButtonElement>("#setting-body-layers-dec"),
+    bodyLayersIncBtn: get<HTMLButtonElement>("#setting-body-layers-inc"),
+    bodyLayersValue: get<HTMLSpanElement>("#setting-body-layers-value"),
+    bodyLayersResetBtn: get<HTMLButtonElement>("#setting-body-layers-reset"),
+    navBasic: get<HTMLButtonElement>("#settings-nav-basic"),
+    navInterlocking: get<HTMLButtonElement>("#settings-nav-interlocking"),
+    navClip: get<HTMLButtonElement>("#settings-nav-clip"),
+    navExperiment: get<HTMLButtonElement>("#settings-nav-experiment"),
+    panelBasic: get<HTMLDivElement>("#settings-panel-basic"),
+    panelInterlocking: get<HTMLDivElement>("#settings-panel-interlocking"),
+    panelClip: get<HTMLDivElement>("#settings-panel-clip"),
+    panelExperiment: get<HTMLDivElement>("#settings-panel-experiment"),
+  };
+
+  // 验证所有元素是否存在
+  const values = Object.values(refs);
+  if (values.some((el) => !el)) {
+    console.error("Settings UI: Missing required elements", values.filter((el) => !el));
+    return null;
+  }
+
+  return refs;
+}
 
 type SettingsUIDeps = {
   log: (msg: string, tone?: "info" | "error" | "success" | "progress") => void;
@@ -634,4 +707,33 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
   };
 
   return { isOpen, close: closeSettings, dispose };
+}
+
+// 设置面板的 i18n 文本更新
+export function applySettingsI18n() {
+  const limits = SETTINGS_LIMITS;
+
+  const updateDesc = (selector: string, key: string, params?: Record<string, string | number>) => {
+    const el = document.querySelector<HTMLElement>(selector);
+    if (el) {
+      el.textContent = t(key, params);
+    }
+  };
+
+  updateDesc('[data-i18n="settings.layerHeight.desc"]', "settings.layerHeight.desc", { max: limits.layerHeight.max });
+  updateDesc('[data-i18n="settings.connectionLayers.desc"]', "settings.connectionLayers.desc", { min: limits.connectionLayers.min, max: limits.connectionLayers.max });
+  updateDesc('[data-i18n="settings.bodyLayers.desc"]', "settings.bodyLayers.desc", { min: limits.bodyLayers.min, max: limits.bodyLayers.max });
+  updateDesc('[data-i18n="settings.joinType.desc"]', "settings.joinType.desc");
+  updateDesc('[data-i18n="settings.clawInterlockingAngle.desc"]', "settings.clawInterlockingAngle.desc", { min: limits.clawInterlockingAngle.min, max: limits.clawInterlockingAngle.max });
+  updateDesc('[data-i18n="settings.clawTargetRadius.desc"]', "settings.clawTargetRadius.desc", { min: limits.clawTargetRadius.min, max: limits.clawTargetRadius.max });
+  updateDesc('[data-i18n="settings.clawRadiusAdaptive.desc"]', "settings.clawRadiusAdaptive.desc");
+  updateDesc('[data-i18n="settings.clawWidth.desc"]', "settings.clawWidth.desc", { min: limits.clawWidth.min, max: limits.clawWidth.max });
+  updateDesc('[data-i18n="settings.clawFitGap.desc"]', "settings.clawFitGap.desc", { min: limits.clawFitGap.min, max: limits.clawFitGap.max });
+  updateDesc('[data-i18n="settings.tabWidth.desc"]', "settings.tabWidth.desc", { min: limits.tabWidth.min, max: limits.tabWidth.max });
+  updateDesc('[data-i18n="settings.tabThickness.desc"]', "settings.tabThickness.desc", { min: limits.tabThickness.min, max: limits.tabThickness.max });
+  updateDesc('[data-i18n="settings.minFoldAngleThreshold.desc"]', "settings.minFoldAngleThreshold.desc");
+  updateDesc('[data-i18n="settings.tabClipGap.desc"]', "settings.tabClipGap.desc", { min: limits.tabClipGap.min, max: limits.tabClipGap.max });
+  updateDesc('[data-i18n="settings.clipGapAdjusts.desc"]', "settings.clipGapAdjusts.desc");
+  updateDesc('[data-i18n="settings.hollow.desc"]', "settings.hollow.desc");
+  updateDesc('[data-i18n="settings.wireframeThickness.desc"]', "settings.wireframeThickness.desc", { min: limits.wireframeThickness.min, max: limits.wireframeThickness.max });
 }
