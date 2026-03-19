@@ -159,12 +159,11 @@ export function replaceTexture(id: string, newTexture: TextureData): boolean {
   if (!projectTextures.has(id)) {
     return false;
   }
-  // 保留原有的 id 和名称，只更新数据
+  // 保留原有的 id，只更新数据（使用新贴图的名称）
   const oldTexture = projectTextures.get(id)!;
   const updatedTexture: TextureData = {
     ...newTexture,
     id: oldTexture.id,
-    name: oldTexture.name,
   };
   projectTextures.set(id, updatedTexture);
   // 广播贴图变动事件，携带更新后的贴图数据

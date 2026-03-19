@@ -400,6 +400,7 @@ app.innerHTML = `
       <div class="preview-toolbar">
         <button class="btn sm" id="load-texture-btn" data-i18n="toolbar.l.loadTexture">载入贴图</button>
         <button class="btn sm" id="clear-texture-btn" data-i18n="toolbar.l.clearTexture">清除贴图</button>
+        <button class="btn sm" id="export-texture-btn" data-i18n="toolbar.l.exportTexture">导出贴图</button>
         <button class="btn sm" id="reset-view-btn" data-i18n="toolbar.l.resetView">重置视角</button>
         <button class="btn sm toggle" id="texture-toggle">贴图：关</button>
         <button class="btn sm toggle active" id="light-toggle">光源：开</button>
@@ -721,6 +722,7 @@ const menuBlocker = document.querySelector<HTMLDivElement>("#menu-blocker");
 const editorPreviewEl = document.querySelector<HTMLElement>(".editor-preview");
 const loadTextureBtn = document.querySelector<HTMLButtonElement>("#load-texture-btn");
 const clearTextureBtn = document.querySelector<HTMLButtonElement>("#clear-texture-btn");
+const exportTextureBtn = document.querySelector<HTMLButtonElement>("#export-texture-btn");
 const resetViewBtn = document.querySelector<HTMLButtonElement>("#reset-view-btn");
 const textureToggle = document.querySelector<HTMLButtonElement>("#texture-toggle");
 const lightToggle = document.querySelector<HTMLButtonElement>("#light-toggle");
@@ -1455,6 +1457,7 @@ appEventBus.on("texturesChanged", async ({ textureData, action }) => {
     textureToggle?.classList.remove("active");
     textureToggle?.classList.add("hidden");
     clearTextureBtn?.classList.add("hidden");
+    exportTextureBtn?.classList.add("hidden");
     refreshToggleTextLabels?.();
     log(t("log.texture.cleared"), "info");
   } else if (textureData) {
@@ -1465,6 +1468,7 @@ appEventBus.on("texturesChanged", async ({ textureData, action }) => {
     
     // 更新 UI
     clearTextureBtn?.classList.remove("hidden");
+    exportTextureBtn?.classList.remove("hidden");
     if (getWorkspaceState() !== "editingTexture") {
       textureToggle?.classList.remove("hidden");
     }
@@ -1520,6 +1524,8 @@ appEventBus.on("workspaceStateChanged", ({ current, previous }) => {
   // "清除贴图"按钮仅在"编辑贴图"状态下且已有贴图时显示
   const hasTexture = hasTextures();
   clearTextureBtn.classList.toggle("hidden", !isEditingTexture || !hasTexture);
+  // "导出贴图"按钮仅在"编辑贴图"状态下且已有贴图时显示
+  exportTextureBtn?.classList.toggle("hidden", !isEditingTexture || !hasTexture);
   // "贴图渲染"按钮在"贴图编辑"状态下隐藏
   textureToggle.classList.toggle("hidden", isEditingTexture || !hasTexture);
   // "包围盒"按钮在"贴图编辑"状态下隐藏
@@ -1791,6 +1797,31 @@ clearTextureBtn.addEventListener("click", () => {
   clearAllTextures();
 });
 
+exportTextureBtn?.addEventListener("click", () => {
+  const textures = getAllTextures();
+  if (textures.length === 0) {
+    log(t("log.texture.noTextureToExport") || "没有可导出的贴图", "error");
+    return;
+  }
+  // 导出第一张贴图（通常只有一张）
+  const textureData = textures[0];
+  const blob = new Blob([textureData.data], { type: `image/${textureData.format}` });
+  const url = URL.createObjectURL(blob);
+  const base = getCurrentProject().name || "未命名工程";
+  const now = new Date();
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const stamp = `${pad(now.getFullYear() % 100)}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(
+    now.getHours(),
+  )}${pad(now.getMinutes())}`;
+  const fileName = `${base}_${stamp}.png`;
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  log(t("log.texture.exported", { fileName }), "info");
+});
+
 resetViewBtn.addEventListener("click", () => renderer3d.resetView());
 lightToggle.addEventListener("click", () => {
   const enabled = renderer3d.toggleLight();
@@ -1882,9 +1913,9 @@ const buildGroupUIState = () => {
   const previewGroupId = groupController.getPreviewGroupId();
   const faces = groupController.getGroupFaces(previewGroupId)?.size ?? 0;
   const placeholderKey =
-    getWorkspaceState() === "normal"
-      ? "preview.right.placeholder"
-      : "preview.right.placeholder.edit";
+    getWorkspaceState() === "editingGroup"
+      ? "preview.right.placeholder.edit"
+      : "preview.right.placeholder";
   if (groupPreviewEmpty.dataset.i18n !== placeholderKey) {
     groupPreviewEmpty.dataset.i18n = placeholderKey;
   }
