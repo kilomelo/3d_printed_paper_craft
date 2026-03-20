@@ -31,7 +31,6 @@ import {
   menu_open_IconSvg,
   menu_export_3dppc_IconSvg,
   menu_export_clip_IconSvg,
-  menu_export_stp_IconSvg,
   menu_export_stl_IconSvg,
   menu_preview_IconSvg,
   menu_setting_IconSvg,
@@ -42,14 +41,14 @@ import {
   seamEditModeIconSvg,
   textureEditModeIconSvg,
 } from "./templates/icons";
-import { renderSettingsOverlay, renderRenameDialog } from "./templates/settingsMarkup";
+import { renderSettingsOverlay, renderRenameDialog, renderExportDialog } from "./templates/PopupsMarkup";
 import type { Snapshot, ProjectState } from "./types/historyTypes.js";
 import { exportGroupsData, getGroupColorCursor } from "./modules/groups";
 import { importSettings, getSettings, resetSettings, applySettings } from "./modules/settings";
 import { createOperationHints } from "./modules/operationHints";
 import { createPreviewMeshCacheManager } from "./modules/previewMeshCache";
 import { bindHistorySystem } from "./modules/historyBindings";
-import { bindGroupPreviewActions } from "./modules/groupPreviewActions";
+import { bindGroupPreviewActions, createExportCallback } from "./modules/groupPreviewActions";
 import { downloadBlob } from "./modules/gifRecorder";
 import { loadHomeChangelog } from "./modules/homeChangelog";
 import { createGifCaptureController } from "./modules/gifCapture";
@@ -73,6 +72,7 @@ import {
 import { setToolbarElements, setRendererRef, createRefreshToggleTextLabels, refreshToggleTexts, handleWorkspaceStateChange, setHasTexturesRef, setRefreshToggleTextLabelsRef } from "./modules/toolbarState";
 import { initAboutDialog } from "./modules/aboutDialog";
 import { initRenameDialog } from "./modules/renameDialog";
+import { getExportUIRefs, createExportUI } from "./modules/exportUI";
 
 const VERSION = packageJson.version ?? "0.0.0.0";
 
@@ -225,8 +225,7 @@ app.innerHTML = `
         <button class="btn ghost hidden menu-btn-with-icon" id="exit-preview-btn"><span class="menu-btn-icon">${menu_exit_preview_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.preview.exit">退出预览</span></button>
         <button class="btn ghost menu-btn-with-icon" id="menu-open"><span class="menu-btn-icon">${menu_open_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.model.open">打开文件</span></button>
         <button class="btn ghost menu-btn-with-icon" id="export-3dppc-btn"><span class="menu-btn-icon">${menu_export_3dppc_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.save3dppc">保存工程</span></button>
-        <button class="btn ghost menu-btn-with-icon" id="export-group-step-btn"><span class="menu-btn-icon">${menu_export_stp_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.export.step">导出 STEP</span></button>
-        <button class="btn ghost menu-btn-with-icon" id="export-group-stl-btn"><span class="menu-btn-icon">${menu_export_stl_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.export.stl">导出 STL</span></button>
+        <button class="btn ghost menu-btn-with-icon" id="export-group-stl-btn"><span class="menu-btn-icon">${menu_export_stl_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.export.group">导出展开组</span></button>
         <button class="btn ghost menu-btn-with-icon" id="export-seam-clip-btn"><span class="menu-btn-icon">${menu_export_clip_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.export.seamClamp.stl">导出固定夹</span></button>
         <button class="btn ghost menu-btn-with-icon" id="preview-group-model-btn"><span class="menu-btn-icon">${menu_preview_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.preview.group">预览展开组模型</span></button>
         <button class="btn ghost menu-btn-with-icon" id="settings-open-btn"><span class="menu-btn-icon">${menu_setting_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.project.settings">项目设置</span></button>
@@ -313,6 +312,7 @@ app.innerHTML = `
 
   ${renderSettingsOverlay()}
   ${renderRenameDialog()}
+  ${renderExportDialog()}
 `;
 
 const viewer = document.querySelector<HTMLDivElement>("#viewer");
@@ -342,7 +342,6 @@ const edgesToggle = document.querySelector<HTMLButtonElement>("#edges-toggle");
 const seamsToggle = document.querySelector<HTMLButtonElement>("#seams-toggle");
 const facesToggle = document.querySelector<HTMLButtonElement>("#faces-toggle");
 const exportBtn = document.querySelector<HTMLButtonElement>("#export-3dppc-btn");
-const exportGroupStepBtn = document.querySelector<HTMLButtonElement>("#export-group-step-btn");
 const exportGroupStlBtn = document.querySelector<HTMLButtonElement>("#export-group-stl-btn");
 const exportTabClipBtn = document.querySelector<HTMLButtonElement>("#export-seam-clip-btn");
 const previewGroupModelBtn = document.querySelector<HTMLButtonElement>("#preview-group-model-btn");
@@ -396,9 +395,9 @@ if (
   !seamsToggle ||
   !facesToggle ||
   !exportBtn ||
-  !exportGroupStepBtn ||
   !exportGroupStlBtn ||
   !previewGroupModelBtn ||
+  !jumpLinkBtn ||
   !triCounter ||
   !groupTabsEl ||
   !groupAddBtn ||
@@ -567,6 +566,30 @@ if (!settingsRefs) {
 }
 
 const settingsUI = createSettingsUI(settingsRefs, { log });
+
+// 获取导出对话框的 DOM 元素
+const exportRefs = getExportUIRefs();
+if (!exportRefs) {
+  throw new Error("初始化导出对话框失败，缺少必要的元素");
+}
+
+// 创建导出回调函数
+const exportCallback = createExportCallback({
+  getPreviewGroupId: () => groupController.getPreviewGroupId(),
+  getPreviewGroupName: (groupId) => groupController.getGroupName(groupId),
+  getProjectName: () => getCurrentProject().name || "未命名工程",
+  getCurrentHistoryUid: () => historyManager.getCurrentSnapshotUid() ?? -1,
+  getGroupPlaceAngle: (groupId) => groupController.getGroupPlaceAngle(groupId) ?? 0,
+  hasGroupIntersection: (groupId) => unfold2d.hasGroupIntersection(groupId),
+  getGroupPolygonsData: (groupId) => unfold2d.getGroupPolygonsData(groupId),
+  previewMeshCacheManager,
+  onPreviewMeshCacheMutated: refreshPreviewMeshCacheIndicator,
+  log,
+  t,
+});
+
+// 创建导出对话框 UI
+const exportUI = createExportUI(exportRefs, { onExport: exportCallback });
 
 const geometryContext = createGeometryContext();
 const groupController = createGroupController(log, () => geometryContext.geometryIndex.getFaceAdjacency());
@@ -1033,7 +1056,7 @@ renderer2d.setEdgeQueryProviders({
   getFaceIdToEdges: () => geometryContext.geometryIndex.getFaceToEdges(),
   getPreviewGroupId: groupController.getPreviewGroupId,
 });
-const menuButtons = [menuOpenBtn, exportBtn, exportGroupStepBtn, exportGroupStlBtn, exportTabClipBtn, previewGroupModelBtn, settingsOpenBtn, aboutDialog.aboutBtn];
+const menuButtons = [menuOpenBtn, exportBtn, exportGroupStlBtn, exportTabClipBtn, previewGroupModelBtn, settingsOpenBtn, aboutDialog.aboutBtn];
 const updateMenuState = () => {
   const isPreview = getWorkspaceState() === "previewGroupModel";
   menuButtons.forEach((btn) => {
@@ -1045,6 +1068,7 @@ const updateMenuState = () => {
   groupPreviewPanel.classList.toggle("hidden", isPreview);
   settingsOpenBtn.classList.toggle("hidden", isPreview);
   editorPreviewEl.classList.toggle("single-col", isPreview);
+  jumpLinkBtn.classList.toggle("hidden", isPreview);
   requestAnimationFrame(() => renderer3d.resizeRenderer3D());
 };
 
@@ -1214,8 +1238,7 @@ document.addEventListener("keydown", (e) => {
   }
 });
 bindGroupPreviewActions({
-  exportGroupStepBtn,
-  exportGroupStlBtn,
+  exportGroupStlBtn: null as any,
   previewGroupModelBtn,
   getPreviewGroupId: () => groupController.getPreviewGroupId(),
   getPreviewGroupName: (groupId) => groupController.getGroupName(groupId),
@@ -1230,6 +1253,16 @@ bindGroupPreviewActions({
   onPreviewMeshCacheMutated: refreshPreviewMeshCacheIndicator,
   log,
   t,
+});
+
+// 导出 STL 按钮点击事件：打开导出对话框
+exportGroupStlBtn?.addEventListener("click", () => {
+  const groupId = groupController.getPreviewGroupId();
+  const groupName = groupController.getGroupName(groupId) || `展开组 ${groupId}`;
+  const faces = groupController.getGroupFaces(groupId);
+  const faceCount = faces ? faces.size : 0;
+  const projectName = getCurrentProject().name || "未命名工程";
+  exportUI.open(groupName, faceCount, projectName);
 });
 
 exportTabClipBtn?.addEventListener("click", async () => {

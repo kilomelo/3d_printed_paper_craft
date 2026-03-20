@@ -241,3 +241,57 @@ export const renderRenameDialog = () => `
     </div>
   </div>
 `;
+
+export const renderExportDialog = () => `
+  <div id="export-overlay" class="settings-overlay hidden">
+    <div class="settings-modal export-modal">
+      <div class="settings-header">
+        <div class="settings-title" data-i18n="export.title">导出展开组</div>
+      </div>
+      <div class="settings-body export-body">
+        <div class="export-content">
+          <div class="export-section export-meta-section">
+            <div class="export-row export-meta-row">
+              <span class="export-row-title" data-i18n="export.groupName">展开组名称</span>
+              <span id="export-group-name" class="export-row-info export-truncate"></span>
+            </div>
+            <div class="export-row export-meta-row">
+              <span class="export-row-title" data-i18n="export.faceCount">展开组面数</span>
+              <span id="export-face-count" class="export-row-info export-row-info-strong"></span>
+            </div>
+          </div>
+
+          <div class="export-section export-options-section">
+            <div id="export-stl-option" class="export-option-card is-selected">
+              <label for="export-stl-checkbox" class="export-option-header">
+                <input type="checkbox" id="export-stl-checkbox" class="export-row-checkbox export-checkbox-input" checked />
+                <span class="export-checkbox-visual" aria-hidden="true"></span>
+                <span class="export-option-label" data-i18n="export.exportStl">导出 STL</span>
+              </label>
+              <div class="export-row export-file-row">
+                <span class="export-row-title" data-i18n="export.stlFileName">STL 文件名</span>
+                <span id="export-stl-filename" class="export-row-info export-truncate"></span>
+              </div>
+            </div>
+
+            <div id="export-step-option" class="export-option-card">
+              <label for="export-step-checkbox" class="export-option-header">
+                <input type="checkbox" id="export-step-checkbox" class="export-row-checkbox export-checkbox-input" />
+                <span class="export-checkbox-visual" aria-hidden="true"></span>
+                <span class="export-option-label" data-i18n="export.exportStep">导出 STEP</span>
+              </label>
+              <div class="export-row export-file-row">
+                <span class="export-row-title" data-i18n="export.stepFileName">STEP 文件名</span>
+                <span id="export-step-filename" class="export-row-info export-truncate"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-footer">
+        <button id="export-cancel-btn" class="btn ghost settings-action" data-i18n="settings.cancel.btn">取消</button>
+        <button id="export-confirm-btn" class="btn primary settings-action" data-i18n="export.confirm.btn">导出</button>
+      </div>
+    </div>
+  </div>
+`;
