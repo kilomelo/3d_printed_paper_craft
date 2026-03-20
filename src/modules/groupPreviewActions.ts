@@ -161,6 +161,7 @@ export type ExportOptions = {
   exportStl: boolean;
   exportStep: boolean;
   exportPng: boolean;
+  pngFlipY: boolean;
 };
 
 // 导出回调函数类型

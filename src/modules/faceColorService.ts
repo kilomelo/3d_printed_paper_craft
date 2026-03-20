@@ -11,6 +11,7 @@ export type FaceColorDeps = {
   getGroupVisibility: (id: number) => boolean;
   defaultColor?: Color;
   isTextureEnabled?: () => boolean;
+  hasActiveTexture?: () => boolean;
   getWorkspaceState?: () => string;
 };
 
@@ -111,7 +112,7 @@ export function createFaceColorService(deps: FaceColorDeps) {
 
   // 获取有效的颜色：贴图模式时返回白色，否则返回组颜色，并根据工作状态调整 HSL
   function getEffectiveColor(groupId: number | null): Color {
-    const textureEnabled = deps.isTextureEnabled?.() ?? false;
+    const textureEnabled = deps.hasActiveTexture?.() ?? (deps.isTextureEnabled?.() ?? false);
     if (textureEnabled) {
       return getEffectiveDefaultColor();
     }

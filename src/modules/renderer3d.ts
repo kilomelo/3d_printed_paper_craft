@@ -234,6 +234,7 @@ export function createRenderer3D(
     getGroupVisibility: groupApi.getGroupVisibility,
     defaultColor: FACE_DEFAULT_COLOR,
     isTextureEnabled: () => textureEnabled,
+    hasActiveTexture: () => textureEnabled && !!currentTexture,
     getWorkspaceState,
   });
 
@@ -866,6 +867,7 @@ export function createRenderer3D(
   appEventBus.on("settingsChanged", () => updateBBox());
   // 项目更改时释放贴图
   appEventBus.on("projectChanged", () => {
+    setTextureEnabled(false);
     setTexture(null);
     clearAllTextures(false);
   });

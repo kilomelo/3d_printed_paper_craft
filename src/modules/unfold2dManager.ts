@@ -98,6 +98,7 @@ export function createUnfold2dManager(
   const anchor = new Vector3();
   const axis = new Vector3();
   const transformKey = (a: number, b: number) => `${a}->${b}`;
+  const hasActiveTexture = () => getTextureEnabled() && !!getTexture();
   let lastBounds: { minX: number; maxX: number; minY: number; maxY: number } | null = null;
 
   const clearScene = () => {
@@ -451,7 +452,7 @@ export function createUnfold2dManager(
     geomWarn.setIndex(indices);
     geomWarn.computeVertexNormals();
 
-    const texture = getTextureEnabled() ? getTexture() : null;
+    const texture = hasActiveTexture() ? getTexture() : null;
     const mesh = new Mesh(geomMain, createUnfoldFaceMaterial(undefined, texture));
     const meshIntersect = new Mesh(
       geomWarn,
@@ -1243,7 +1244,7 @@ export function createUnfold2dManager(
     uvs: number[] | null
   ) => {
     const gid = getFaceGroupMap().get(faceId) ?? groupId;
-    const groupColor = getTextureEnabled()
+    const groupColor = hasActiveTexture()
       ? FACE_DEFAULT_COLOR
       : getGroupColor(gid) ?? getGroupColor(groupId) ?? new Color(0xffffff);
     const visible = getGroupVisibility(gid);
@@ -1359,7 +1360,7 @@ export function createUnfold2dManager(
   // 监听贴图状态变化，更新2D视图的材质和颜色
   appEventBus.on("textureStateChanged", ({ enabled, texture }) => {
     // 根据 enabled 参数决定是否应用贴图
-    updateMeshMaterial(enabled ? texture : null);
+    updateMeshMaterial(enabled && texture ? texture : null);
     repaintAllGroupColors();
   });
 

@@ -26,7 +26,7 @@ import { buildTabClip } from "./modules/replicad/replicadModeling";
 import { startNewProject, getCurrentProject } from "./modules/project";
 import { historyManager } from "./modules/history";
 import { loadRawObject } from "./modules/fileLoader";
-import { loadTextureFromFile, addTexture, getTextureCount, hasTextures, replaceTexture, createThreeTexture, getAllTextures, clearAllTextures, generateUVTexture, ensureUVsForModel } from "./modules/textureManager";
+import { loadTextureFromFile, addTexture, getTextureCount, hasTextures, replaceTexture, createThreeTexture, getAllTextures, clearAllTextures, generateUVTexture, ensureUVsForModel, restoreTexturesFromPPC } from "./modules/textureManager";
 import {
   menu_open_IconSvg,
   menu_export_3dppc_IconSvg,
@@ -788,7 +788,7 @@ const handleFileSelectedFromFile = async (file: File) => {
   try {
     clearAppStates();
     await new Promise((resolve) => setTimeout(resolve, 200));
-    const { object, importedGroups, importedColorCursor, importedSeting, importedEdgeJoinTypes, suggestedScale } = await loadRawObject(file, ext);
+    const { object, importedGroups, importedColorCursor, importedSeting, importedEdgeJoinTypes, suggestedScale, importedTextures } = await loadRawObject(file, ext);
     const projectInfo = startNewProject(getProjectNameFromFile(file.name));
     if (importedSeting) {
       importSettings(importedSeting);
@@ -815,6 +815,10 @@ const handleFileSelectedFromFile = async (file: File) => {
     }
     appEventBus.emit("projectChanged", projectInfo);
     projectLoaded();
+    // 恢复贴图数据（如果有）
+    if (importedTextures && importedTextures.length > 0) {
+      restoreTexturesFromPPC(importedTextures);
+    }
     setProjectNameLabel(projectInfo.name);
     // 更新跳转链接按钮状态
     if (isCurrentProjectDemo && jumpLinkBtn) {

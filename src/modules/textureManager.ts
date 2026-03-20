@@ -254,6 +254,11 @@ export function restoreTexturesFromPPC(textures: TextureData[]): void {
   textures.forEach((tex) => {
     projectTextures.set(tex.id, tex);
   });
+  // 触发事件，让渲染器知道贴图已恢复
+  const firstTexture = textures[0];
+  if (firstTexture) {
+    appEventBus.emit("texturesChanged", { textureData: firstTexture, action: "add", userInitiated: false });
+  }
 }
 
 /**
@@ -378,8 +383,8 @@ export async function generateUVTexture(
       const vv = clamp01(v);
       return {
         x: uu * (width - 1),
-        y: vv * (height - 1), // 让导出的图直观看起来就是 UV 展开
-        // y: (1 - vv) * (height - 1), // 让导出的图直观看起来就是 UV 展开
+        // y: vv * (height - 1), // 让导出的图直观看起来就是 UV 展开
+        y: (1 - vv) * (height - 1), // 让导出的图直观看起来就是 UV 展开
       };
     };
 
@@ -454,7 +459,7 @@ export async function generateUVTexture(
 
     // 这里建议先设成 false，因为我们输出的是"直接看上去像 UV 展开图"的图片
     // 如果你项目里现有纹理导入链要求 generated texture 必须 flipY=true，再按你的加载链改回去。
-    flipY: false,
+    flipY: true,
   };
 }
 
