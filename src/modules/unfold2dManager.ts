@@ -51,7 +51,7 @@ import { getSettings } from "./settings";
 import { disposeGroupDeep } from "./threeUtils";
 import { t } from "./i18n";
 
-// 记录“3D → 2D”变换矩阵，后续将按组树关系进行累乘展开。
+// 记录"3D → 2D"变换矩阵，后续将按组树关系进行累乘展开。
 type TransformTree = Map<number, Matrix4>;
 type TransformStore = Map<number, TransformTree>;
 
@@ -599,14 +599,14 @@ export function createUnfold2dManager(
     renderer2d.bboxRuler.update(minX, maxX, minY, maxY, scale);
   }
 
-  // 新建模链路：按“共面连通块”输出多边形。
+  // 新建模链路：按"共面连通块"输出多边形。
   // 这里刻意复用单面边信息计算，再做边界合并，避免重复实现 tabAngle / joinSide 等规则。
   // scale 只在最终构造返回结果时应用，避免影响依赖原始坐标/顶点 key 的中间计算。
   const getGroupPolygonsData = (groupId: number): PolygonData[] => {
     const tris = buildSnappedTris(groupId);
     if (!tris.length) return [];
     const { scale, hollowStyle, minFoldAngleThreshold } = getSettings();
-    // 当前设置项的单位是“度”，表示与完全共面（180°）的允许偏差。
+    // 当前设置项的单位是"度"，表示与完全共面（180°）的允许偏差。
     // 偏差不超过该阈值的相邻三角面，会被视为共面并参与合并。
     const coplanarThresholdRad = (minFoldAngleThreshold * Math.PI) / 180;
     const seamContext = createSeamContext();
@@ -644,7 +644,7 @@ export function createUnfold2dManager(
       return Array.from(faceSeeds.values()).map((seed) =>
         finalizePolygonForExport(
           {
-            // 镂空模式下按你的约束，不做共面合并，退回到“三角形即 polygon”。
+            // 镂空模式下按你的约束，不做共面合并，退回到"三角形即 polygon"。
             points: seed.points.map((pt) => [...pt] as Point2D),
             edges: seed.edges.map(clonePolygonEdgeInfo),
           },
@@ -673,7 +673,7 @@ export function createUnfold2dManager(
           if (Math.abs(angle - Math.PI) > coplanarThresholdRad) return;
           edgeRec.faces.forEach((neighborFaceId) => {
             if (neighborFaceId === faceId || !faceIds.has(neighborFaceId) || visited.has(neighborFaceId)) return;
-            // 共面合并只用于“同一整片平面”聚合，不能跨 seam。
+            // 共面合并只用于"同一整片平面"聚合，不能跨 seam。
             // 即便二面角接近 180°，seam 依然必须保留为分界。
             if (sharedEdgeIsSeam(faceId, neighborFaceId)) return;
             visited.add(neighborFaceId);
@@ -710,12 +710,12 @@ export function createUnfold2dManager(
 
   // 最终导出给建模侧前，统一做两件事：
   // 1. 应用 scale（保持与旧逻辑一致：只在最后一步缩放）；
-  // 2. 计算“当前 polygon 自身边界顶点角度”。
+  // 2. 计算"当前 polygon 自身边界顶点角度"。
   //
   // 这层角度数据是为后续建模修复准备的：
   // - 它描述的是 polygon 语境下的相邻边夹角；
   // - 不依赖整个展开组总外轮廓；
-  // - 因此可覆盖那些“在局部 polygon 上是边界点，但并非全局外轮廓点”的情况。
+  // - 因此可覆盖那些"在局部 polygon 上是边界点，但并非全局外轮廓点"的情况。
   const finalizePolygonForExport = (polygon: PolygonData, scale: number): PolygonData => {
     const scaledPoints = polygon.points.map(([x, y]) => [x * scale, y * scale] as Point2D);
     return {
@@ -817,7 +817,7 @@ export function createUnfold2dManager(
       localOrder: [string, string];
     };
 
-    // 用“无向顶点对”统计边出现次数：
+    // 用"无向顶点对"统计边出现次数：
     // - 出现 2 次：组件内部共享边，应消除
     // - 出现 1 次：组件边界边，应保留
     const edgeCounts = new Map<string, BoundaryEdge[]>();
@@ -914,7 +914,7 @@ export function createUnfold2dManager(
       seamEdgeAngleMap: Map<string, number>;
     },
   ): PolygonEdgeInfo[] => {
-    // 这里定义“单个三角面上的边信息”。
+    // 这里定义"单个三角面上的边信息"。
     // 多边形模式只是复用该结果，再按边界顺序重排，不改变单边的几何定义。
     const faceIndexMap = getFaceIndexMap();
     const vertexKeyToPos = getVertexKeyToPos();
@@ -1327,11 +1327,15 @@ export function createUnfold2dManager(
 
   appEventBus.on("groupCurrentChanged", (groupId: number) => rebuildGroup2D(groupId));
 
-  appEventBus.on("settingsChanged", (changedItemCnt) => {
-    // 目前没有细粒度的“某个设置项发生变化”事件。
-    // 为了让 minFoldAngleThreshold 改动后立即反映到 2D 边线显示，
-    // 这里在任意设置变更时直接强制重建当前展开组。
-    // 这样 bbox 尺寸线、折痕线过滤、拼接线材质都会同步刷新。
+  // 影响 2D 视图渲染的设置项列表
+  const settingsAffecting2D = new Set([
+    "minFoldAngleThreshold",
+  ]);
+
+  appEventBus.on("settingsChanged", (changedItems) => {
+    // 检查是否有影响 2D 视图的设置项被修改
+    const affectedItems = changedItems.filter((item) => settingsAffecting2D.has(item));
+    if (affectedItems.length === 0) return;
     if (!lastBounds) return;
     const gid = getPreviewGroupId();
     rebuildGroup2D(gid, true);
@@ -1400,6 +1404,12 @@ export function createUnfold2dManager(
       return groupIntersected.get(groupId) ?? false;
     },
     updateMeshMaterial,
+    rebuildCurrentGroup: () => {
+      const groupId = getPreviewGroupId();
+      if (groupId !== undefined) {
+        rebuildGroup2D(groupId, true);
+      }
+    },
   };
 }
 

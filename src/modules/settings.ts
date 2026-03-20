@@ -333,15 +333,15 @@ const sanitizeImportedSettings = (imported: Partial<Record<keyof Settings, unkno
 export function applySettings(next: Partial<Settings>, emitEvent: boolean = true) {
   // 如果没有实际变化则直接返回
   const merged = { ...current, ...next };
-  let changedItemCnt = 0;
+  const changedItems: string[] = [];
   (Object.keys(next) as (keyof Settings)[]).forEach((key) => {
     if (current[key] !== merged[key]) {
-      changedItemCnt += 1;
+      changedItems.push(key);
     }
   });
-  if (changedItemCnt === 0) return;
+  if (changedItems.length === 0) return;
   current = { ...current, ...next };
-  if (emitEvent) appEventBus.emit("settingsChanged", changedItemCnt);
+  if (emitEvent) appEventBus.emit("settingsChanged", changedItems);
 }
 
 export function importSettings(imported: Partial<Record<keyof Settings, unknown>>) {

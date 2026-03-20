@@ -1,6 +1,8 @@
 // 贴图管理器：负责加载、存储、删除贴图数据，以及与 3dppc 文件的序列化交互。
 import * as THREE from "three";
+import type { Object3D } from "three";
 import { appEventBus } from "./eventBus";
+import { ensurePerTriangleUVsIfMissing } from "./geometry";
 
 // 贴图格式类型
 export type TextureFormat = "png" | "jpg" | "jpeg" | "webp";
@@ -195,11 +197,11 @@ export function updateTextureSettings(
 
 /**
  * 清空所有贴图
+ * @param userInitiated 是否由用户主动触发。用于决定是否输出日志
  */
-export function clearAllTextures(): void {
+export function clearAllTextures(userInitiated: boolean = false): void {
   projectTextures.clear();
-  // 广播贴图清除事件
-  appEventBus.emit("texturesChanged", { textureData: null, action: "clear" });
+  appEventBus.emit("texturesChanged", { textureData: null, action: "clear", userInitiated });
 }
 
 /**
@@ -248,7 +250,7 @@ export function getTextureCount(): number {
  * 从 3dppc 数据中恢复贴图
  */
 export function restoreTexturesFromPPC(textures: TextureData[]): void {
-  clearAllTextures();
+  clearAllTextures(false); // 自动恢复，不输出日志
   textures.forEach((tex) => {
     projectTextures.set(tex.id, tex);
   });
@@ -330,7 +332,7 @@ function clamp01(v: number) {
  * - 传 geometry：只在 geometry 的 UV 三角形覆盖区域内绘制调试纹理，其余区域为纯黑
  *
  * 注意：
- * 这里为了让“导出的 PNG 直接看起来像 UV 展开图”，采用的是：
+ * 这里为了让"导出的 PNG 直接看起来像 UV 展开图"，采用的是：
  *   UV (0,0) -> 图片左下角
  *   UV (1,1) -> 图片右上角
  * 所以会把 v 转成 y = (1 - v) * (height - 1)
@@ -450,8 +452,28 @@ export async function generateUVTexture(
     height,
     colorSpace: "srgb",
 
-    // 这里建议先设成 false，因为我们输出的是“直接看上去像 UV 展开图”的图片
+    // 这里建议先设成 false，因为我们输出的是"直接看上去像 UV 展开图"的图片
     // 如果你项目里现有纹理导入链要求 generated texture 必须 flipY=true，再按你的加载链改回去。
     flipY: false,
   };
+}
+
+/**
+ * 确保模型的所有 mesh 都有 UV 坐标。
+ * 如果模型没有 UV，会自动生成 per-triangle UV。
+ * 此函数应在首次生成贴图或加载外部贴图之前调用。
+ */
+export function ensureUVsForModel(model: Object3D | null): boolean {
+  if (!model) return false;
+
+  let hasModified = false;
+  model.traverse((child) => {
+    if ((child as THREE.Mesh).isMesh) {
+      const mesh = child as THREE.Mesh;
+      if (ensurePerTriangleUVsIfMissing(mesh)) {
+        hasModified = true;
+      }
+    }
+  });
+  return hasModified;
 }

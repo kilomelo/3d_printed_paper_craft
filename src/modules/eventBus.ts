@@ -46,7 +46,7 @@ export type AppEvents = {
   groupPlaceAngleRotateDone: { deltaAngle: number };
   groupPlaceAngleChanged: { groupId: number; newAngle: number; oldAngle: number };
   workerBusyChange: boolean; // 是否有正在运行的 worker 任务
-  settingsChanged: number; // 被修改的设置项数量
+  settingsChanged: string[]; // 被修改的设置项名称数组
   edgeHover2D: { groupId: number; edgeId: number; p1: Point3D; p2: Point3D };
   edgeHover2DClear: void;
   faceHover3D: number | null; // 被 hover 的面 ID
@@ -67,7 +67,7 @@ export type AppEvents = {
     affectedGroupIds: number[];
   };
   textureStateChanged: { enabled: boolean; texture: THREE.Texture | null }; // 贴图状态变化
-  texturesChanged: { textureData: import("./textureManager.js").TextureData | null; action: "add" | "replace" | "clear" }; // 贴图数据变动
+  texturesChanged: { textureData: import("./textureManager.js").TextureData | null; action: "add" | "replace" | "clear"; userInitiated?: boolean }; // 贴图数据变动
 };
 
 export const appEventBus = createEventBus<AppEvents>();

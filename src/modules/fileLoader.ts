@@ -4,7 +4,7 @@ import { Mesh } from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
-import { snapGeometryPositions, computeAdaptiveScale, ensurePerTriangleUVsIfMissing } from "./geometry";
+import { snapGeometryPositions, computeAdaptiveScale } from "./geometry";
 import { load3dppc, type PPCFile, type TextureMeta } from "./ppc";
 
 const objLoader = new OBJLoader();
@@ -38,7 +38,6 @@ export async function loadRawObject(
       loaded.traverse((child) => {
         if ((child as Mesh).isMesh) {
           snapGeometryPositions((child as Mesh).geometry);
-          ensurePerTriangleUVsIfMissing(child as Mesh);
         }
       });
       object = loaded;
@@ -48,7 +47,6 @@ export async function loadRawObject(
       loaded.traverse((child) => {
         if ((child as Mesh).isMesh) {
           snapGeometryPositions((child as Mesh).geometry);
-          ensurePerTriangleUVsIfMissing(child as Mesh);
         }
       });
       object = loaded;
@@ -57,7 +55,6 @@ export async function loadRawObject(
       const geometry = await stlLoader.loadAsync(url);
       snapGeometryPositions(geometry);
       object = new Mesh(geometry);
-      ensurePerTriangleUVsIfMissing(object as Mesh);
       suggestedScale = computeAdaptiveScale(object);
     } else {
       const loaded = await load3dppc(url);

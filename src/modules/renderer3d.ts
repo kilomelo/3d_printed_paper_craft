@@ -863,11 +863,11 @@ export function createRenderer3D(
       applyEdgeVisibility();
     }
   });
-  appEventBus.on("settingsChanged", updateBBox);
+  appEventBus.on("settingsChanged", () => updateBBox());
   // 项目更改时释放贴图
   appEventBus.on("projectChanged", () => {
     setTexture(null);
-    clearAllTextures();
+    clearAllTextures(false);
   });
   appEventBus.on("historyApplied", () => {
     updateBBox();

@@ -151,7 +151,7 @@ export function handleWorkspaceStateChange(
     r3d.setTextureEnabled(false);
   }
   if (enterNormal) {
-    if (hasTexturesRef?.()) r3d.setTextureEnabled(true);
+    r3d.setTextureEnabled(hasTexturesRef?.()??false);
   }
 
   // 根据工作模式显示/隐藏工具栏按钮
