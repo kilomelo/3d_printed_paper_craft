@@ -285,6 +285,18 @@ export const renderExportDialog = () => `
                 <span id="export-step-filename" class="export-row-info export-truncate"></span>
               </div>
             </div>
+
+            <div id="export-png-option" class="export-option-card">
+              <label for="export-png-checkbox" class="export-option-header">
+                <input type="checkbox" id="export-png-checkbox" class="export-row-checkbox export-checkbox-input" />
+                <span class="export-checkbox-visual" aria-hidden="true"></span>
+                <span class="export-option-label" data-i18n="export.exportPng">导出 PNG</span>
+              </label>
+              <div class="export-row export-file-row">
+                <span class="export-row-title" data-i18n="export.pngFileName">PNG 文件名</span>
+                <span id="export-png-filename" class="export-row-info export-truncate"></span>
+              </div>
+            </div>
           </div>
         </div>
       </div>

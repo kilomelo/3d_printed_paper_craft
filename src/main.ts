@@ -584,6 +584,8 @@ const exportCallback = createExportCallback({
   getGroupPolygonsData: (groupId) => unfold2d.getGroupPolygonsData(groupId),
   previewMeshCacheManager,
   onPreviewMeshCacheMutated: refreshPreviewMeshCacheIndicator,
+  getTexture: () => renderer3d.getTexture(),
+  getGroupFaceUVs: (groupId) => unfold2d.getGroupFaceUVs(groupId),
   log,
   t,
 });
@@ -1291,6 +1293,8 @@ bindGroupPreviewActions({
   loadPreviewModel: (mesh, angle) => renderer3d.loadPreviewModel(mesh, angle),
   changeWorkspaceState,
   onPreviewMeshCacheMutated: refreshPreviewMeshCacheIndicator,
+  getTexture: () => renderer3d.getTexture(),
+  getGroupFaceUVs: (groupId) => unfold2d.getGroupFaceUVs(groupId),
   log,
   t,
 });

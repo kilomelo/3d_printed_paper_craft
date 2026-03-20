@@ -75,6 +75,8 @@
   "export.stlFileName": "STL 文件名",
   "export.exportStep": "导出 STEP",
   "export.stepFileName": "STEP 文件名",
+  "export.exportPng": "导出 PNG",
+  "export.pngFileName": "PNG 文件名",
 
   "settings.nav.basic": "基础设置",
   "settings.nav.interlocking": "咬合拼接",
@@ -171,6 +173,7 @@
   "log.export.step.start": "正在导出展开组 STEP...",
   "log.export.step.success": "展开组 STEP 已导出：下载目录/{fileName}",
   "log.export.step.fail": "展开组 STEP 导出失败，请查看控制台日志。",
+  "log.export.png.success": "展开组 PNG 已导出：下载目录/{fileName}",
   "log.export.stl.start": "正在导出展开组 STL...",
   "log.export.stl.cached": "使用缓存 mesh 导出展开组 STL...",
   "log.export.stl.success": "展开组 STL 已导出：下载目录/{fileName}",

@@ -5,10 +5,13 @@ export type ExportUIRefs = {
   faceCountLabel: HTMLSpanElement;
   stlCheckbox: HTMLInputElement;
   stepCheckbox: HTMLInputElement;
+  pngCheckbox: HTMLInputElement;
   stlOption: HTMLDivElement;
   stepOption: HTMLDivElement;
+  pngOption: HTMLDivElement;
   stlFileNameLabel: HTMLSpanElement;
   stepFileNameLabel: HTMLSpanElement;
+  pngFileNameLabel: HTMLSpanElement;
   cancelBtn: HTMLButtonElement;
   confirmBtn: HTMLButtonElement;
 };
@@ -23,10 +26,13 @@ export function getExportUIRefs(): ExportUIRefs | null {
     faceCountLabel: get<HTMLSpanElement>("#export-face-count"),
     stlCheckbox: get<HTMLInputElement>("#export-stl-checkbox"),
     stepCheckbox: get<HTMLInputElement>("#export-step-checkbox"),
+    pngCheckbox: get<HTMLInputElement>("#export-png-checkbox"),
     stlOption: get<HTMLDivElement>("#export-stl-option"),
     stepOption: get<HTMLDivElement>("#export-step-option"),
+    pngOption: get<HTMLDivElement>("#export-png-option"),
     stlFileNameLabel: get<HTMLSpanElement>("#export-stl-filename"),
     stepFileNameLabel: get<HTMLSpanElement>("#export-step-filename"),
+    pngFileNameLabel: get<HTMLSpanElement>("#export-png-filename"),
     cancelBtn: get<HTMLButtonElement>("#export-cancel-btn"),
     confirmBtn: get<HTMLButtonElement>("#export-confirm-btn"),
   };
@@ -44,6 +50,7 @@ export function getExportUIRefs(): ExportUIRefs | null {
 export type ExportOptions = {
   exportStl: boolean;
   exportStep: boolean;
+  exportPng: boolean;
 };
 
 export type ExportUIDeps = {
@@ -61,6 +68,7 @@ export function createExportUI(refs: ExportUIRefs, deps: ExportUIDeps): ExportUI
   const syncOptionState = () => {
     refs.stlOption.classList.toggle("is-selected", refs.stlCheckbox.checked);
     refs.stepOption.classList.toggle("is-selected", refs.stepCheckbox.checked);
+    refs.pngOption.classList.toggle("is-selected", refs.pngCheckbox.checked);
   };
 
   const setTextWithTooltip = (el: HTMLElement, text: string) => {
@@ -69,7 +77,7 @@ export function createExportUI(refs: ExportUIRefs, deps: ExportUIDeps): ExportUI
   };
 
   const updateConfirmButton = () => {
-    const hasSelection = refs.stlCheckbox.checked || refs.stepCheckbox.checked;
+    const hasSelection = refs.stlCheckbox.checked || refs.stepCheckbox.checked || refs.pngCheckbox.checked;
     refs.confirmBtn.disabled = !hasSelection;
     syncOptionState();
   };
@@ -83,9 +91,11 @@ export function createExportUI(refs: ExportUIRefs, deps: ExportUIDeps): ExportUI
     const safeGroupName = groupName.replace(/[^a-zA-Z0-9一-龥]/g, "_");
     setTextWithTooltip(refs.stlFileNameLabel, `${projectName}-${safeGroupName}.stl`);
     setTextWithTooltip(refs.stepFileNameLabel, `${projectName}-${safeGroupName}.step`);
+    setTextWithTooltip(refs.pngFileNameLabel, `${projectName}-${safeGroupName}.png`);
     // 重置勾选框状态
     refs.stlCheckbox.checked = true;
     refs.stepCheckbox.checked = false;
+    refs.pngCheckbox.checked = false;
     updateConfirmButton();
     refs.overlay.classList.remove("hidden");
   };
@@ -102,6 +112,7 @@ export function createExportUI(refs: ExportUIRefs, deps: ExportUIDeps): ExportUI
     const options: ExportOptions = {
       exportStl: refs.stlCheckbox.checked,
       exportStep: refs.stepCheckbox.checked,
+      exportPng: refs.pngCheckbox.checked,
     };
     deps.onExport(options);
     closeExport();
@@ -122,6 +133,7 @@ export function createExportUI(refs: ExportUIRefs, deps: ExportUIDeps): ExportUI
   refs.confirmBtn.addEventListener("click", handleExport);
   refs.stlCheckbox.addEventListener("change", handleCheckboxChange);
   refs.stepCheckbox.addEventListener("change", handleCheckboxChange);
+  refs.pngCheckbox.addEventListener("change", handleCheckboxChange);
   refs.overlay.addEventListener("mousedown", handleOverlayMouseDown);
 
   return {
@@ -133,6 +145,7 @@ export function createExportUI(refs: ExportUIRefs, deps: ExportUIDeps): ExportUI
       refs.confirmBtn.removeEventListener("click", handleExport);
       refs.stlCheckbox.removeEventListener("change", handleCheckboxChange);
       refs.stepCheckbox.removeEventListener("change", handleCheckboxChange);
+      refs.pngCheckbox.removeEventListener("change", handleCheckboxChange);
       refs.overlay.removeEventListener("mousedown", handleOverlayMouseDown);
     },
   };

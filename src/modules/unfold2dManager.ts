@@ -1395,6 +1395,23 @@ export function createUnfold2dManager(
     });
   };
 
+  // 获取展开组用于贴图导出的三角形数据（保持原始三角形，不使用合并后的 polygon fan）
+  const getGroupFaceUVs = (
+    groupId: number,
+  ): Array<{ faceId: number; points: [[number, number], [number, number], [number, number]]; uv: [XY, XY, XY] | null }> => {
+    const tris = buildSnappedTris(groupId);
+    const { scale } = getSettings();
+    return tris.map(({ faceId, tri }) => ({
+      faceId,
+      points: [
+        [tri[0].x * scale, tri[0].y * scale],
+        [tri[1].x * scale, tri[1].y * scale],
+        [tri[2].x * scale, tri[2].y * scale],
+      ],
+      uv: getFaceUVs(faceId),
+    }));
+  };
+
   return {
     getGroupPolygonsData,
     getEdges2D: () => groupEdgesCache,
@@ -1410,6 +1427,7 @@ export function createUnfold2dManager(
         rebuildGroup2D(groupId, true);
       }
     },
+    getGroupFaceUVs,
   };
 }
 

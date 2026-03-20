@@ -1,6 +1,6 @@
 // 贴图管理器：负责加载、存储、删除贴图数据，以及与 3dppc 文件的序列化交互。
 import * as THREE from "three";
-import type { Object3D } from "three";
+import type { Object3D, Vector2, Texture as ThreeTexture } from "three";
 import { appEventBus } from "./eventBus";
 import { ensurePerTriangleUVsIfMissing } from "./geometry";
 
@@ -476,4 +476,188 @@ export function ensureUVsForModel(model: Object3D | null): boolean {
     }
   });
   return hasModified;
+}
+
+// === 展开组贴图生成 ===
+
+// 多边形数据类型
+type PolygonWithPoints = {
+  points: [number, number][];
+};
+
+// 展开组贴图三角形数据
+export type GroupTextureTriangle = {
+  faceId: number;
+  points: [number, number][];
+  uv: Vector2[] | null;
+};
+
+// 展开组贴图生成选项
+export type GroupTextureOptions = {
+  polygons: PolygonWithPoints[];
+  faceUVs: Map<number, Vector2[] | null> | GroupTextureTriangle[];
+  texture: ThreeTexture | null;
+  size?: number;
+};
+
+/**
+ * 生成展开组的 PNG 贴图
+ * - 三角形外区域透明
+ * - 有贴图时使用贴图映射，无贴图时使用不透明白色
+ */
+export async function generateGroupTexture(options: GroupTextureOptions): Promise<Blob> {
+  const { polygons, faceUVs, texture, size = 1024 } = options;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+
+  ctx.clearRect(0, 0, size, size);
+
+  const textureImage = texture?.image ? (texture.image as CanvasImageSource) : null;
+  const textureFlipY = texture?.flipY ?? true;
+  const defaultUV = [new THREE.Vector2(0, 0), new THREE.Vector2(0.5, 1), new THREE.Vector2(1, 0)];
+  const padding = 10;
+
+  type XY = { x: number; y: number };
+  type DrawTri = {
+    faceId: number;
+    points: [XY, XY, XY];
+    uv: [Vector2, Vector2, Vector2] | null;
+  };
+
+  const triangles: DrawTri[] = [];
+
+  if (Array.isArray(faceUVs)) {
+    faceUVs.forEach((tri) => {
+      if (!tri?.points || tri.points.length < 3) return;
+      const [p0, p1, p2] = tri.points;
+      const uv = tri.uv && tri.uv.length >= 3
+        ? [tri.uv[0], tri.uv[1], tri.uv[2]] as [Vector2, Vector2, Vector2]
+        : null;
+      triangles.push({
+        faceId: tri.faceId,
+        points: [
+          { x: p0[0], y: p0[1] },
+          { x: p1[0], y: p1[1] },
+          { x: p2[0], y: p2[1] },
+        ],
+        uv,
+      });
+    });
+  } else {
+    let triIndex = 0;
+    polygons.forEach((polygon) => {
+      const points = polygon.points;
+      if (!points || points.length < 3) return;
+      for (let i = 1; i < points.length - 1; i++) {
+        const uv = faceUVs.get(triIndex);
+        triangles.push({
+          faceId: triIndex,
+          points: [
+            { x: points[0][0], y: points[0][1] },
+            { x: points[i][0], y: points[i][1] },
+            { x: points[i + 1][0], y: points[i + 1][1] },
+          ],
+          uv: uv && uv.length >= 3
+            ? [uv[0], uv[1], uv[2]] as [Vector2, Vector2, Vector2]
+            : null,
+        });
+        triIndex++;
+      }
+    });
+  }
+
+  if (triangles.length === 0) {
+    const blankBlob = await new Promise<Blob>((resolve) => canvas.toBlob(resolve, "image/png"));
+    return blankBlob!;
+  }
+
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  triangles.forEach((tri) => {
+    tri.points.forEach((p) => {
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y);
+      maxY = Math.max(maxY, p.y);
+    });
+  });
+
+  const spanX = Math.max(maxX - minX, 1e-6);
+  const spanY = Math.max(maxY - minY, 1e-6);
+  const scale = Math.min((size - padding * 2) / spanX, (size - padding * 2) / spanY);
+  const offsetX = (size - spanX * scale) * 0.5;
+  const offsetY = (size - spanY * scale) * 0.5;
+
+  const toCanvas = (x: number, y: number): XY => ({
+    x: (x - minX) * scale + offsetX,
+    y: size - ((y - minY) * scale + offsetY),
+  });
+
+  const sourceWidth = textureImage ? Number((textureImage as any).width ?? 0) : 0;
+  const sourceHeight = textureImage ? Number((textureImage as any).height ?? 0) : 0;
+  const uvToImage = (uv: Vector2): XY => ({
+    x: uv.x * sourceWidth,
+    y: (textureFlipY ? (1 - uv.y) : uv.y) * sourceHeight,
+  });
+
+  const computeAffine = (src: [XY, XY, XY], dst: [XY, XY, XY]) => {
+    const [s0, s1, s2] = src;
+    const [d0, d1, d2] = dst;
+    const det = s0.x * (s1.y - s2.y) + s1.x * (s2.y - s0.y) + s2.x * (s0.y - s1.y);
+    if (Math.abs(det) < 1e-8) return null;
+
+    const a = (d0.x * (s1.y - s2.y) + d1.x * (s2.y - s0.y) + d2.x * (s0.y - s1.y)) / det;
+    const b = (d0.y * (s1.y - s2.y) + d1.y * (s2.y - s0.y) + d2.y * (s0.y - s1.y)) / det;
+    const c = (d0.x * (s2.x - s1.x) + d1.x * (s0.x - s2.x) + d2.x * (s1.x - s0.x)) / det;
+    const d = (d0.y * (s2.x - s1.x) + d1.y * (s0.x - s2.x) + d2.y * (s1.x - s0.x)) / det;
+    const e = (
+      d0.x * (s1.x * s2.y - s2.x * s1.y) +
+      d1.x * (s2.x * s0.y - s0.x * s2.y) +
+      d2.x * (s0.x * s1.y - s1.x * s0.y)
+    ) / det;
+    const f = (
+      d0.y * (s1.x * s2.y - s2.x * s1.y) +
+      d1.y * (s2.x * s0.y - s0.x * s2.y) +
+      d2.y * (s0.x * s1.y - s1.x * s0.y)
+    ) / det;
+
+    return { a, b, c, d, e, f };
+  };
+
+  triangles.forEach((tri) => {
+    const [p0, p1, p2] = tri.points.map((p) => toCanvas(p.x, p.y)) as [XY, XY, XY];
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(p0.x, p0.y);
+    ctx.lineTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.closePath();
+    ctx.clip();
+
+    if (textureImage) {
+      const uv = tri.uv ?? (defaultUV as [Vector2, Vector2, Vector2]);
+      const [uv0, uv1, uv2] = uv;
+      const s0 = uvToImage(uv0);
+      const s1 = uvToImage(uv1);
+      const s2 = uvToImage(uv2);
+      const m = computeAffine([s0, s1, s2], [p0, p1, p2]);
+      if (m) {
+        ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
+        ctx.drawImage(textureImage, 0, 0);
+      } else {
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fill();
+      }
+    } else {
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fill();
+    }
+
+    ctx.restore();
+  });
+
+  const blob = await new Promise<Blob>((resolve) => canvas.toBlob(resolve, "image/png"));
+  return blob!;
 }

@@ -1,4 +1,5 @@
 // 展开组 STEP/STL 导出与 3D 预览建模：收口 worker 调用、预览 mesh 缓存读写与下载流程。
+import * as THREE from "three";
 import { Mesh } from "three";
 import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
@@ -8,6 +9,8 @@ import {
   buildStlInWorker,
   buildMeshInWorker,
 } from "./replicad/replicadWorkerClient";
+import { generateGroupTexture } from "./textureManager";
+import type { GroupTextureOptions } from "./textureManager";
 import type { createPreviewMeshCacheManager } from "./previewMeshCache";
 import type { WorkspaceState } from "../types/workspaceState.js";
 
@@ -25,6 +28,8 @@ type BindGroupPreviewActionsOptions = {
   loadPreviewModel: (mesh: Mesh, angle: number) => void;
   changeWorkspaceState: (state: WorkspaceState) => void;
   onPreviewMeshCacheMutated?: () => void;
+  getTexture: () => THREE.Texture | null;
+  getGroupFaceUVs: (groupId: number) => GroupTextureOptions["faceUVs"];
   log: (msg: string | number, tone?: "info" | "success" | "error" | "progress") => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 };
@@ -155,6 +160,7 @@ export const bindGroupPreviewActions = (opts: BindGroupPreviewActionsOptions) =>
 export type ExportOptions = {
   exportStl: boolean;
   exportStep: boolean;
+  exportPng: boolean;
 };
 
 // 导出回调函数类型
@@ -171,6 +177,8 @@ export function createExportCallback(opts: {
   getGroupPolygonsData: (groupId: number) => any[];
   previewMeshCacheManager: ReturnType<typeof createPreviewMeshCacheManager>;
   onPreviewMeshCacheMutated?: () => void;
+  getTexture: () => THREE.Texture | null;
+  getGroupFaceUVs: (groupId: number) => GroupTextureOptions["faceUVs"];
   log: (msg: string | number, tone?: "info" | "success" | "error" | "progress") => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }): ExportCallback {
@@ -262,6 +270,22 @@ export function createExportCallback(opts: {
       );
       downloadBlob(blob, `${projectName}-${groupName}.step`);
       opts.log(opts.t("log.export.step.success", { fileName: `${projectName}-${groupName}.step` }), "success");
+    }
+
+    // 导出 PNG
+    if (options.exportPng) {
+      const projectName = opts.getProjectName() || "未命名工程";
+      const texture = opts.getTexture();
+      const faceUVs = opts.getGroupFaceUVs(targetGroupId);
+
+      // 调用 textureManager 的生成函数
+      const pngBlob = await generateGroupTexture({
+        polygons: polygonsWithAngles,
+        faceUVs,
+        texture,
+      });
+      downloadBlob(pngBlob, `${projectName}-${groupName}.png`);
+      opts.log(opts.t("log.export.png.success", { fileName: `${projectName}-${groupName}.png` }), "success");
     }
   };
 }
