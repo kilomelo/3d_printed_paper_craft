@@ -5,7 +5,7 @@ import "./components/holdButton.css";
 import "./style.css";
 import packageJson from "../package.json";
 import { inject } from "@vercel/analytics";
-import { Color } from "three";
+import { Color, Vector2 } from "three";
 import { type WorkspaceState, getWorkspaceState, setWorkspaceState } from "./types/workspaceState.js";
 import { createLog } from "./modules/log";
 import { createRenderer3D } from "./modules/renderer3d";
@@ -26,7 +26,7 @@ import { buildTabClip } from "./modules/replicad/replicadModeling";
 import { startNewProject, getCurrentProject } from "./modules/project";
 import { historyManager } from "./modules/history";
 import { loadRawObject } from "./modules/fileLoader";
-import { loadTextureFromFile, addTexture, getTextureCount, hasTextures, replaceTexture, createThreeTexture, getAllTextures, clearAllTextures, generateUVTexture, ensureUVsForModel, restoreTexturesFromPPC } from "./modules/textureManager";
+import { loadTextureFromFile, addTexture, getTextureCount, hasTextures, replaceTexture, createThreeTexture, getAllTextures, clearAllTextures, generateUVTexture, ensureUVsForModel, restoreTexturesFromPPC, type GroupTextureTriangle } from "./modules/textureManager";
 import {
   menu_open_IconSvg,
   menu_export_3dppc_IconSvg,
@@ -40,8 +40,9 @@ import {
   groupEditModeIconSvg,
   seamEditModeIconSvg,
   textureEditModeIconSvg,
+  menu_lumina_layers_IconSvg,
 } from "./templates/icons";
-import { renderSettingsOverlay, renderRenameDialog, renderExportDialog } from "./templates/PopupsMarkup";
+import { renderSettingsOverlay, renderRenameDialog, renderExportDialog, renderLuminaLayersDialog } from "./templates/PopupsMarkup";
 import type { Snapshot, ProjectState } from "./types/historyTypes.js";
 import { exportGroupsData, getGroupColorCursor } from "./modules/groups";
 import { importSettings, getSettings, resetSettings, applySettings } from "./modules/settings";
@@ -49,6 +50,7 @@ import { createOperationHints } from "./modules/operationHints";
 import { createPreviewMeshCacheManager } from "./modules/previewMeshCache";
 import { bindHistorySystem } from "./modules/historyBindings";
 import { bindGroupPreviewActions, createExportCallback } from "./modules/groupPreviewActions";
+import { getLuminaLayersRefs, createLuminaLayersTool } from "./modules/luminaLayersTool";
 import { downloadBlob } from "./modules/gifRecorder";
 import { loadHomeChangelog } from "./modules/homeChangelog";
 import { createGifCaptureController } from "./modules/gifCapture";
@@ -227,6 +229,7 @@ app.innerHTML = `
         <button class="btn ghost menu-btn-with-icon" id="export-3dppc-btn"><span class="menu-btn-icon">${menu_export_3dppc_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.save3dppc">保存工程</span></button>
         <button class="btn ghost menu-btn-with-icon" id="export-group-stl-btn"><span class="menu-btn-icon">${menu_export_stl_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.export.group">导出展开组</span></button>
         <button class="btn ghost menu-btn-with-icon" id="export-seam-clip-btn"><span class="menu-btn-icon">${menu_export_clip_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.export.seamClamp.stl">导出固定夹</span></button>
+        <button class="btn ghost menu-btn-with-icon" id="lumina-layers-btn"><span class="menu-btn-icon">${menu_lumina_layers_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.luminaLayers">叠色打印工具</span></button>
         <button class="btn ghost menu-btn-with-icon" id="preview-group-model-btn"><span class="menu-btn-icon">${menu_preview_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.preview.group">预览展开组模型</span></button>
         <button class="btn ghost menu-btn-with-icon" id="settings-open-btn"><span class="menu-btn-icon">${menu_setting_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.project.settings">项目设置</span></button>
         <a class="btn img-btn ghost hidden" id="jump-link-btn" target="_blank" rel="noopener noreferrer">
@@ -313,6 +316,7 @@ app.innerHTML = `
   ${renderSettingsOverlay()}
   ${renderRenameDialog()}
   ${renderExportDialog()}
+  ${renderLuminaLayersDialog()}
 `;
 
 const viewer = document.querySelector<HTMLDivElement>("#viewer");
@@ -344,6 +348,7 @@ const facesToggle = document.querySelector<HTMLButtonElement>("#faces-toggle");
 const exportBtn = document.querySelector<HTMLButtonElement>("#export-3dppc-btn");
 const exportGroupStlBtn = document.querySelector<HTMLButtonElement>("#export-group-stl-btn");
 const exportTabClipBtn = document.querySelector<HTMLButtonElement>("#export-seam-clip-btn");
+const luminaLayersBtn = document.querySelector<HTMLButtonElement>("#lumina-layers-btn");
 const previewGroupModelBtn = document.querySelector<HTMLButtonElement>("#preview-group-model-btn");
 const settingsOpenBtn = document.querySelector<HTMLButtonElement>("#settings-open-btn");
 const jumpLinkBtn = document.querySelector<HTMLAnchorElement>("#jump-link-btn");
@@ -585,13 +590,42 @@ const exportCallback = createExportCallback({
   previewMeshCacheManager,
   onPreviewMeshCacheMutated: refreshPreviewMeshCacheIndicator,
   getTexture: () => renderer3d.getTexture(),
-  getGroupFaceUVs: (groupId) => unfold2d.getGroupFaceUVs(groupId),
+  getGroupFaceUVs: (groupId) => {
+    const rawUVs = unfold2d.getGroupFaceUVs(groupId);
+    return rawUVs.map((item): GroupTextureTriangle => ({
+      faceId: item.faceId,
+      points: item.points as [number, number][],
+      uv: item.uv ? item.uv.map((xy) => new Vector2(xy.x, xy.y)) : null,
+    }));
+  },
   log,
   t,
 });
 
 // 创建导出对话框 UI
-const exportUI = createExportUI(exportRefs, { onExport: exportCallback });
+const exportUI = createExportUI(exportRefs, { onExport: exportCallback as (options: import("./modules/exportUI").ExportOptions) => void });
+
+// 创建叠色打印工具 UI
+const luminaLayersRefs = getLuminaLayersRefs();
+const luminaLayersTool = luminaLayersRefs
+  ? createLuminaLayersTool(luminaLayersRefs, {
+      getPreviewGroupId: () => groupController.getPreviewGroupId(),
+      getPreviewGroupName: (groupId) => groupController.getGroupName(groupId),
+      getProjectName: () => getCurrentProject().name || "未命名工程",
+      getGroupPolygonsData: (groupId) => unfold2d.getGroupPolygonsData(groupId),
+      getTexture: () => renderer3d.getTexture(),
+      getGroupFaceUVs: (groupId) => {
+        const rawUVs = unfold2d.getGroupFaceUVs(groupId);
+        return rawUVs.map((item): GroupTextureTriangle => ({
+          faceId: item.faceId,
+          points: item.points as [number, number][],
+          uv: item.uv ? item.uv.map((xy) => new Vector2(xy.x, xy.y)) : null,
+        }));
+      },
+      log,
+      t,
+    })
+  : null;
 
 const geometryContext = createGeometryContext();
 const groupController = createGroupController(log, () => geometryContext.geometryIndex.getFaceAdjacency());
@@ -1242,7 +1276,7 @@ onWorkerBusyChange((busy) => {
     menuBlocker.classList.toggle("active", busy);
   }
   viewerModeControl.setDisabled(isViewerModeControlDisabled(getWorkspaceState()));
-  if (busy && getWorkspaceState() === "editingGroup") {
+  if (busy && getWorkspaceState() !== "normal") {
     changeWorkspaceState("normal");
   }
 });
@@ -1298,7 +1332,14 @@ bindGroupPreviewActions({
   changeWorkspaceState,
   onPreviewMeshCacheMutated: refreshPreviewMeshCacheIndicator,
   getTexture: () => renderer3d.getTexture(),
-  getGroupFaceUVs: (groupId) => unfold2d.getGroupFaceUVs(groupId),
+  getGroupFaceUVs: (groupId) => {
+    const rawUVs = unfold2d.getGroupFaceUVs(groupId);
+    return rawUVs.map((item): GroupTextureTriangle => ({
+      faceId: item.faceId,
+      points: item.points as [number, number][],
+      uv: item.uv ? item.uv.map((xy) => new Vector2(xy.x, xy.y)) : null,
+    }));
+  },
   log,
   t,
 });
@@ -1339,6 +1380,21 @@ exportTabClipBtn?.addEventListener("click", async () => {
   } finally {
     exportTabClipBtn.disabled = false;
   }
+});
+
+// 叠色打印工具按钮点击事件
+luminaLayersBtn?.addEventListener("click", () => {
+  const groupId = groupController.getPreviewGroupId();
+  if (groupId === undefined) {
+    log(t("log.export.noGroup"), "error");
+    return;
+  }
+  const groupName = groupController.getGroupName(groupId) || `展开组 ${groupId}`;
+  const faces = groupController.getGroupFaces(groupId);
+  const faceCount = faces ? faces.size : 0;
+  const projectName = getCurrentProject().name || "未命名工程";
+  const pngFileName = `${projectName}-${groupName}.png`;
+  luminaLayersTool?.open(groupName, faceCount, projectName, pngFileName);
 });
 
 exitPreviewBtn.addEventListener("click", () => {

@@ -486,7 +486,7 @@ export function ensureUVsForModel(model: Object3D | null): boolean {
 // === 展开组贴图生成 ===
 
 // 多边形数据类型
-type PolygonWithPoints = {
+export type PolygonWithPoints = {
   points: [number, number][];
 };
 
@@ -574,8 +574,10 @@ export async function generateGroupTexture(options: GroupTextureOptions): Promis
   }
 
   if (triangles.length === 0) {
-    const blankBlob = await new Promise<Blob>((resolve) => canvas.toBlob(resolve, "image/png"));
-    return blankBlob!;
+    const blankBlob = await new Promise<Blob>((resolve) => {
+      canvas.toBlob((blob) => resolve(blob || new Blob([], { type: "image/png" })), "image/png");
+    });
+    return blankBlob;
   }
 
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -663,6 +665,8 @@ export async function generateGroupTexture(options: GroupTextureOptions): Promis
     ctx.restore();
   });
 
-  const blob = await new Promise<Blob>((resolve) => canvas.toBlob(resolve, "image/png"));
-  return blob!;
+  const blob = await new Promise<Blob>((resolve) => {
+    canvas.toBlob((b) => resolve(b || new Blob([], { type: "image/png" })), "image/png");
+  });
+  return blob;
 }

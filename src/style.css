@@ -1373,3 +1373,326 @@ textarea {
     grid-template-rows: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Lumina-Layers dialog */
+.lumina-layers-modal {
+  width: min(760px, calc(100vw - 32px));
+  max-width: 760px;
+  max-height: calc(100vh - 32px);
+}
+
+.lumina-layers-body {
+  padding: 14px;
+  overflow: auto;
+}
+
+.lumina-layers-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+
+.lumina-hero-card,
+.lumina-info-card,
+.lumina-meta-card,
+.lumina-action-card {
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.03));
+  border-radius: 14px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+}
+
+.lumina-hero-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+}
+
+.lumina-hero-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 128px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.16), rgba(34, 197, 94, 0.12));
+  color: #dff6ff;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.lumina-hero-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lumina-hero-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.lumina-hero-desc {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.lumina-info-grid,
+.lumina-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.lumina-info-card,
+.lumina-action-card,
+.lumina-meta-card {
+  padding: 16px;
+}
+
+.lumina-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.lumina-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.lumina-card-subtitle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.lumina-link-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(56, 189, 248, 0.26);
+  background: rgba(56, 189, 248, 0.08);
+  color: #dff6ff;
+  text-decoration: none;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.lumina-link-pill:hover {
+  border-color: rgba(56, 189, 248, 0.58);
+  background: rgba(56, 189, 248, 0.14);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+}
+
+.lumina-link-main {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.lumina-link-cta {
+  flex: 0 0 auto;
+  font-size: 14px;
+}
+
+.lumina-step-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lumina-step-item {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.lumina-step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.16);
+  border: 1px solid rgba(56, 189, 248, 0.24);
+  color: #dff6ff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.lumina-step-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.lumina-meta-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lumina-meta-row {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.lumina-meta-title {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.lumina-meta-info {
+  min-width: 0;
+  font-size: 14px;
+  color: var(--text);
+  text-align: left;
+}
+
+.lumina-meta-info-strong {
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.lumina-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lumina-action-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 188px;
+}
+
+.lumina-action-btn {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: auto;
+  text-align: left;
+}
+
+.lumina-action-btn-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.lumina-action-filename {
+  width: 100%;
+  font-size: 12px;
+  color: rgba(229, 231, 235, 0.82);
+}
+
+.lumina-drop-zone {
+  margin-top: auto;
+  min-height: 108px;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.lumina-drop-zone:hover,
+.lumina-drop-zone:focus-visible {
+  outline: none;
+  border-color: rgba(56, 189, 248, 0.58);
+  background: rgba(56, 189, 248, 0.08);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+}
+
+.lumina-drop-icon {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  color: #dff6ff;
+  font-size: 20px;
+  font-family: Arial, sans-serif;
+}
+
+.lumina-drop-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lumina-drop-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.lumina-drop-hint {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+@media (max-width: 780px) {
+  .lumina-layers-modal {
+    width: min(720px, calc(100vw - 20px));
+    max-height: calc(100vh - 20px);
+  }
+
+  .lumina-hero-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .lumina-info-grid,
+  .lumina-action-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lumina-meta-row {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+}

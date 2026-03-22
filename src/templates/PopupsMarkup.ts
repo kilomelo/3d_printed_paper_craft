@@ -307,3 +307,113 @@ export const renderExportDialog = () => `
     </div>
   </div>
 `;
+
+export const renderLuminaLayersDialog = () => `
+  <div id="lumina-layers-overlay" class="settings-overlay hidden">
+    <div class="settings-modal lumina-layers-modal">
+      <div class="settings-header">
+        <div class="settings-title" data-i18n="luminaLayers.title">叠色打印工具</div>
+      </div>
+      <div class="settings-body lumina-layers-body">
+        <div class="lumina-layers-content">
+          <section class="lumina-hero-card">
+            <div class="lumina-hero-copy">
+            <div class="lumina-hero-desc" data-i18n="luminaLayers.purpose">该工具用于创建可直接载入切片软件的叠色3mf文件</div>
+            <a
+              class="lumina-link-pill"
+              href="https://github.com/MOVIBALE/Lumina-Layers"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="https://github.com/MOVIBALE/Lumina-Layers"
+            >
+              <span class="lumina-link-main">https://github.com/MOVIBALE/Lumina-Layers</span>
+              <span class="lumina-link-cta" aria-hidden="true">↗</span>
+            </a>
+            </div>
+          </section>
+
+          <section class="lumina-info-grid">
+            <article class="lumina-info-card lumina-steps-card">
+              <div class="lumina-card-head">
+                <div class="lumina-card-title" data-i18n="luminaLayers.usage">简要使用说明</div>
+              </div>
+              <ol class="lumina-step-list">
+                <li class="lumina-step-item">
+                  <span class="lumina-step-index">1</span>
+                  <span class="lumina-step-text" data-i18n="luminaLayers.step1">步骤一：点击下方[导出图片]按钮导出当前展开组的贴图</span>
+                </li>
+                <li class="lumina-step-item">
+                  <span class="lumina-step-index">2</span>
+                  <span class="lumina-step-text" data-i18n="luminaLayers.step2">步骤二：将导出的图片导入Lumina-Layers，输出叠色打印3mf文件</span>
+                </li>
+                <li class="lumina-step-item">
+                  <span class="lumina-step-index">3</span>
+                  <span class="lumina-step-text" data-i18n="luminaLayers.step3">步骤三：将Lumina-Layers输出的3mf文件拖入下方的文件拖拽区域，即可生成可拼接的叠色展开组3mf文件至下载目录</span>
+                </li>
+              </ol>
+            </article>
+
+            <article class="lumina-info-card lumina-link-card">
+              <div class="lumina-card-head">
+                <div class="lumina-card-title" data-i18n="luminaLayers.videoLink">详细使用方法请参考该视频：</div>
+                <div class="lumina-card-subtitle">Bilibili</div>
+              </div>
+              <div class="video">
+                <iframe
+                  id="lumina-layers-video-iframe"
+                  data-src="//player.bilibili.com/player.html?isOutside=true&aid=116085248493480&bvid=BV1cAZkBeEZ6&cid=36120365789&p=1&t=0&autoplay=0"
+                  src=""
+                  scrolling="no"
+                  border="0"
+                  frameborder="no"
+                  framespacing="0"
+                  allowfullscreen="true">
+                </iframe>
+              </div>
+              <!-- 即将发布 -->
+            </article>
+          </section>
+
+          <section class="lumina-meta-card">
+            <div class="lumina-meta-row">
+              <span class="lumina-meta-title" data-i18n="export.groupName">展开组名称</span>
+              <span id="lumina-layers-group-name" class="lumina-meta-info lumina-truncate"></span>
+            </div>
+            <div class="lumina-meta-row">
+              <span class="lumina-meta-title" data-i18n="export.faceCount">展开组面数</span>
+              <span id="lumina-layers-face-count" class="lumina-meta-info lumina-meta-info-strong"></span>
+            </div>
+          </section>
+
+          <section class="lumina-action-grid">
+            <article class="lumina-action-card">
+              <div class="lumina-card-head">
+                <div class="lumina-card-title" data-i18n="luminaLayers.exportTexture.title">导出展开组贴图</div>
+              </div>
+              <span id="lumina-layers-png-filename" class="lumina-action-filename lumina-truncate"></span>
+              <button id="lumina-layers-export-png-btn" class="btn primary lumina-action-btn">
+                <span class="lumina-action-btn-label" data-i18n="luminaLayers.exportTexture.btn">导出展开组贴图</span>
+              </button>
+            </article>
+
+            <article class="lumina-action-card lumina-drop-card">
+              <div class="lumina-card-head">
+                <div class="lumina-card-title">处理 Lumina-Layers 输出的 3mf 文件</div>
+              </div>
+              <div id="lumina-layers-drop-zone" class="lumina-drop-zone" role="button" tabindex="0">
+                <div class="lumina-drop-icon" aria-hidden="true">+</div>
+                <div class="lumina-drop-copy">
+                  <div class="lumina-drop-title" data-i18n="luminaLayers.dropZone">接受文件拖拽（.3mf）</div>
+                  <div class="lumina-drop-hint">拖入 Lumina-Layers 输出的 3MF 文件</div>
+                </div>
+              </div>
+            </article>
+          </section>
+        </div>
+      </div>
+      <div class="settings-footer">
+        <button id="lumina-layers-close-btn" class="btn ghost settings-action" data-i18n="luminaLayers.close.btn">关闭</button>
+      </div>
+    </div>
+  </div>
+`;

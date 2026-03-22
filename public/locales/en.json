@@ -22,6 +22,7 @@
   "menu.save3dppc": "Save Project",
   "menu.export.group": "Export Unfold Group",
   "menu.export.seamClamp.stl": "Export Seam Clip",
+  "menu.luminaLayers": "Lumina-Layers Tool",
   "menu.preview.group": "Preview Group",
   "menu.project.settings": "Project Settings",
 
@@ -77,6 +78,18 @@
   "export.stepFileName": "STEP Filename",
   "export.exportPng": "Export PNG",
   "export.pngFileName": "PNG Filename",
+
+  "luminaLayers.title": "Lumina-Layers Tool",
+  "luminaLayers.close.btn": "Close",
+  "luminaLayers.exportTexture.title": "导出用于输入 Lumina-Layers 的展开组图片",
+  "luminaLayers.exportTexture.btn": "Export Group Texture",
+  "luminaLayers.dropZone": "Drop .3mf file here",
+  "luminaLayers.videoLink": "For detailed usage, please refer to this video:",
+  "luminaLayers.usage": "Brief Usage Guide",
+  "luminaLayers.purpose": "This tool is used to create multi-color 3mf files that can be directly loaded into slicing software.",
+  "luminaLayers.step1": "Step 1: Click [Export Image] button below to export the current group's texture",
+  "luminaLayers.step2": "Step 2: Import the exported image into Lumina-Layers to output multi-color 3mf file",
+  "luminaLayers.step3": "Step 3: Drag the Lumina-Layers output 3mf file into the drop zone below to generate a printable multi-color 3mf file to the download directory",
 
   "settings.nav.basic": "General",
   "settings.nav.interlocking": "Interlocking",

@@ -22,6 +22,7 @@
   "menu.save3dppc": "保存工程",
   "menu.export.group": "导出展开组",
   "menu.export.seamClamp.stl": "导出固定夹",
+  "menu.luminaLayers": "叠色打印工具",
   "menu.preview.group": "预览展开组模型",
   "menu.project.settings": "项目设置",
 
@@ -77,6 +78,18 @@
   "export.stepFileName": "STEP 文件名",
   "export.exportPng": "导出 PNG",
   "export.pngFileName": "PNG 文件名",
+
+  "luminaLayers.title": "叠色打印工具",
+  "luminaLayers.close.btn": "关闭",
+  "luminaLayers.exportTexture.title": "导出用于输入 Lumina-Layers 的展开组图片",
+  "luminaLayers.exportTexture.btn": "导出图片",
+  "luminaLayers.dropZone": "接受文件拖拽（.3mf）",
+  "luminaLayers.videoLink": "详细使用方法请参考该视频：",
+  "luminaLayers.usage": "简要使用说明",
+  "luminaLayers.purpose": "该工具用于配合 Lumina-layers 处理叠色 3mf 文件",
+  "luminaLayers.step1": "步骤一：点击下方 [导出图片] 按钮导出当前展开组的贴图。",
+  "luminaLayers.step2": "步骤二：将导出的图片导入 Lumina-Layers，修改参数，生成并下载 3mf 文件。",
+  "luminaLayers.step3": "步骤三：将 Lumina-Layers 输出的3mf文件拖入下方的文件拖拽区域，即可生成该展开组的 3mf 文件至下载目录。",
 
   "settings.nav.basic": "基础设置",
   "settings.nav.interlocking": "咬合拼接",

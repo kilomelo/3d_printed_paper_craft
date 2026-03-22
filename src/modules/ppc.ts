@@ -368,7 +368,7 @@ export async function load3dppc(url: string) {
     groups: data.groups,
     colorCursor,
     annotations: data.annotations,
-    textures: data.textures,
+    textures: data.textures as TextureData[] | undefined,
     uvs: data.uvs,
   };
 }

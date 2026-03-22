@@ -19,9 +19,34 @@ export const menu_export_3dppc_IconSvg = `
 `;
 
 export const menu_export_clip_IconSvg = `
-<?xml version="1.0" encoding="utf-8"?>
-<!-- License: PD. Made by stephenhutchings: https://github.com/stephenhutchings/microns -->
-<svg fill="#000000" width="800px" height="800px" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" ><title>download</title><path d="M232 64L280 64 280 214 277 270 300 242 356 189 388 221 256 353 124 221 156 189 212 242 235 270 232 214 232 64ZM64 400L448 400 448 448 64 448 64 400Z" /></svg>
+<!-- License: CC Attribution. Made by FortAwesome: https://github.com/FortAwesome/Font-Awesome -->
+<svg width="512px" height="512px" viewBox="-32 0 512 512" xmlns="http://www.w3.org/2000/svg"><path d="M448 80v352c0 26.51-21.49 48-48 48H48c-26.51 0-48-21.49-48-48V80c0-26.51 21.49-48 48-48h352c26.51 0 48 21.49 48 48zm-112 48h-32c-8.837 0-16 7.163-16 16v80H160v-80c0-8.837-7.163-16-16-16h-32c-8.837 0-16 7.163-16 16v224c0 8.837 7.163 16 16 16h32c8.837 0 16-7.163 16-16v-80h128v80c0 8.837 7.163 16 16 16h32c8.837 0 16-7.163 16-16V144c0-8.837-7.163-16-16-16z"/></svg>
+`;
+
+export const menu_lumina_layers_IconSvg = `
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!-- Generator: Adobe Illustrator 19.0.0, SVG Export Plug-In . SVG Version: 6.00 Build 0)  -->
+<!-- License: CC0. Made by SVG Repo: https://www.svgrepo.com/svg/34540/color -->
+<svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+	 viewBox="0 0 496 496" style="enable-background:new 0 0 496 496;" xml:space="preserve">
+<path style="fill:#FF2970;" d="M496,465.6c0,16.8-13.6,30.4-30.4,30.4h-208c-16.8,0-30.4-13.6-30.4-30.4v-208
+	c0-16.8,13.6-30.4,30.4-30.4h208c16.8,0,30.4,13.6,30.4,30.4V465.6z"/>
+<path style="fill:#D10257;" d="M465.6,227.2c16.8,0,30.4,13.6,30.4,30.4v208c0,16.8-13.6,30.4-30.4,30.4h-208
+	c-16.8,0-30.4-13.6-30.4-30.4"/>
+<path style="fill:#fff49f;" d="M382.4,352c0,16.8-13.6,30.4-30.4,30.4H144c-16.8,0-30.4-13.6-30.4-30.4V144
+	c0-16.8,13.6-30.4,30.4-30.4h208c16.8,0,30.4,13.6,30.4,30.4V352z"/>
+<g>
+	<path style="fill:#ffea46;" d="M171.2,113.6l-57.6,57.6V292h148c16.8,0,30.4-13.6,30.4-30.4v-148H171.2z"/>
+	<path style="fill:#ffea46;" d="M352,113.6c16.8,0,30.4,13.6,30.4,30.4v208c0,16.8-13.6,30.4-30.4,30.4H144
+		c-16.8,0-30.4-13.6-30.4-30.4"/>
+</g>
+<path style="fill:#D10257;" d="M274.4,227.2l-47.2,47.2v126.4h143.2c16.8,0,30.4-13.6,30.4-30.4V227.2H274.4z"/>
+<path style="fill:#ffac0e;" d="M257.6,227.2c-16.8,0-30.4,13.6-30.4,30.4v124.8H352c16.8,0,30.4-13.6,30.4-30.4V227.2H257.6z"/>
+<path style="fill:#2EB9FF;" d="M268.8,238.4c0,16.8-13.6,30.4-30.4,30.4h-208C13.6,268.8,0,255.2,0,238.4v-208C0,13.6,13.6,0,30.4,0
+	h208c16.8,0,30.4,13.6,30.4,30.4V238.4z"/>
+<path style="fill:#0097F4;" d="M238.4,0c16.8,0,30.4,13.6,30.4,30.4v208c0,16.8-13.6,30.4-30.4,30.4h-208
+	C13.6,268.8,0,255.2,0,238.4"/>
+</svg>
 `;
 
 export const menu_export_stp_IconSvg = `
