@@ -6,7 +6,7 @@ import JSZip from "jszip";
  * 1、只包含一个盘
  * 2、唯一的盘里只有一个模型对象
  * 3、模型对象是组合对象
- * 4、组合对象至少有五个子对象
+ * 4、组合对象至少有两个子对象
  * 5、子对象里有且仅有一个名称为 Backing
  * 
  * 注意：以上要求可能会随着Lumina-Layers的更新而变化
@@ -545,10 +545,10 @@ export async function validateExpectedThreeMfStructure(
     );
   }
 
-  if (componentElements.length < 5) {
+  if (componentElements.length < 2) {
     return fail(
       ThreeMfExpectedStructureErrorCode.COMPONENT_COUNT_TOO_SMALL,
-      `组合对象子对象数量不足，预期至少 5 个，实际为 ${componentElements.length} 个。`,
+      `组合对象子对象数量不足，预期至少 2 个，实际为 ${componentElements.length} 个。`,
       { primaryModelPath, rootObjectId, componentCount: componentElements.length },
     );
   }

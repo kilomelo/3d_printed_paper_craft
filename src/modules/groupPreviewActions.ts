@@ -278,12 +278,14 @@ export function createExportCallback(opts: {
       const projectName = opts.getProjectName() || "未命名工程";
       const texture = opts.getTexture();
       const faceUVs = opts.getGroupFaceUVs(targetGroupId);
+      const groupAngle = opts.getGroupPlaceAngle(targetGroupId);
 
       // 调用 textureManager 的生成函数
       const pngBlob = await generateGroupTexture({
         polygons: polygonsWithAngles,
         faceUVs,
         texture,
+        groupAngle,
       });
       downloadBlob(pngBlob, `${projectName}-${groupName}.png`);
       opts.log(opts.t("log.export.png.success", { fileName: `${projectName}-${groupName}.png` }), "success");

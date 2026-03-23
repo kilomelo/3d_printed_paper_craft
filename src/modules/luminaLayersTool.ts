@@ -116,6 +116,7 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
     const texture = deps.getTexture();
     const faceUVs = deps.getGroupFaceUVs(groupId);
     const polygons = deps.getGroupPolygonsData(groupId);
+    const groupAngle = deps.getGroupPlaceAngle(groupId);
 
     deps.log(deps.t("log.export.png.start"), "info");
 
@@ -124,6 +125,7 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
         polygons,
         faceUVs,
         texture,
+        groupAngle,
       });
       downloadBlob(pngBlob, `${projectName}-${groupName}.png`);
       deps.log(deps.t("log.export.png.success", { fileName: `${projectName}-${groupName}.png` }), "success");
@@ -136,7 +138,6 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
   // 处理 3MF 文件的通用函数
   const process3mfFile = async (file: File) => {
     console.log(`已载入 ${file.name}`);
-    try {
       // 获取当前展开组的缓存 mesh
       const groupId = deps.getPreviewGroupId();
       if (groupId === undefined) {
@@ -165,36 +166,47 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
         }
 
         deps.log("正在生成 STL 模型...", "info");
-        const { blob } = await buildStlInWorker(
-          polygons as PolygonWithEdgeInfo[],
-          (progress) => deps.log(progress, "progress"),
-          (msg, tone) => deps.log(msg, tone as "info" | "success" | "error" | "progress"),
-        );
 
-        const buffer = await blob.arrayBuffer();
-        const stlLoader = new STLLoader();
-        const geometry = stlLoader.parse(buffer);
+        try {
+            const { blob } = await buildStlInWorker(
+              polygons as PolygonWithEdgeInfo[],
+              (progress) => deps.log(progress, "progress"),
+              (msg, tone) => deps.log(msg, tone as "info" | "success" | "error" | "progress"),
+            );
 
-        // 修正 geometry 位置
-        geometry.computeBoundingBox();
-        const min = geometry.boundingBox!.min;
-        geometry.translate(-(min.x ?? 0), -(min.y ?? 0), -(min.z ?? 0));
+            const buffer = await blob.arrayBuffer();
+            const stlLoader = new STLLoader();
+            const geometry = stlLoader.parse(buffer);
 
-        const mesh = new THREE.Mesh(geometry);
-        mesh.name = "Replicad Mesh";
+            // 修正 geometry 位置
+            geometry.computeBoundingBox();
+            const min = geometry.boundingBox!.min;
+            geometry.translate(-(min.x ?? 0), -(min.y ?? 0), -(min.z ?? 0));
 
-        // 添加到缓存
-        deps.previewMeshCacheManager.addCachedPreviewMesh(groupId, mesh, currentHistoryUid);
+            const mesh = new THREE.Mesh(geometry);
+            mesh.name = "Replicad Mesh";
 
+            // 添加到缓存
+            deps.previewMeshCacheManager.addCachedPreviewMesh(groupId, mesh, currentHistoryUid);
+
+        } catch (err) {
+          console.error("生成展开组模型失败:", err);
+          deps.log("生成展开组模型失败", "error");
+        }
         // 重新获取缓存
         cachedMesh = deps.previewMeshCacheManager.getCachedPreviewMesh(groupId, currentHistoryUid, groupAngle);
         if (!cachedMesh || !cachedMesh.mesh.geometry) {
-          deps.log("模型生成失败", "error");
+          deps.log("生成展开组模型失败", "error");
           return;
         }
       }
 
-      const geometry = cachedMesh.mesh.geometry;
+      const geometry = cachedMesh.mesh.geometry.clone();
+
+      // 应用展开组旋转角度
+      if (groupAngle && Math.abs(groupAngle) > 1e-9) {
+        geometry.rotateZ(-groupAngle);
+      }
 
       // 返回结果式
       const result = await validateExpectedThreeMfStructure(file);
@@ -202,21 +214,26 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
         console.error(result.code, result.message, result.details);
         // 这里根据 result.code 给用户弹提示
       } else {
-        const doc = await processThreeMf(file, [
-          ThreeMfDocument.processors.removeChildObjectsByName("Backing"),
-          ThreeMfDocument.processors.addChildObjectFromGeometry({
-            childName: groupName || "NewPart",
-            geometry: geometry as THREE.BufferGeometry,
-          }),
-        ]);
-        await doc.download("modified.3mf");
+        try {
 
+          const doc = await processThreeMf(file, [
+            ThreeMfDocument.processors.removeChildObjectsByName("Backing"),
+            ThreeMfDocument.processors.addChildObjectFromGeometry({
+              childName: groupName || "NewPart",
+              geometry: geometry as THREE.BufferGeometry,
+            }),
+          ]);
+          await doc.download("modified.3mf");
+        }
+        catch (err) {
+          console.error("处理 3MF 失败:", err);
+          deps.log("处理 3MF 失败", "error");
+        }
+        finally {
+          geometry.dispose();
+        }
         deps.log("3MF 文件处理完成，已下载", "success");
       }
-    } catch (err) {
-      console.error("处理 3MF 失败:", err);
-      deps.log("处理 3MF 失败", "error");
-    }
   };
 
   const handleDropZoneClick = () => {

@@ -503,6 +503,8 @@ export type GroupTextureOptions = {
   faceUVs: Map<number, Vector2[] | null> | GroupTextureTriangle[];
   texture: ThreeTexture | null;
   size?: number;
+  /** 展开组旋转角度（弧度），会先旋转多边形再计算包围盒 */
+  groupAngle?: number;
 };
 
 /**
@@ -511,18 +513,11 @@ export type GroupTextureOptions = {
  * - 有贴图时使用贴图映射，无贴图时使用不透明白色
  */
 export async function generateGroupTexture(options: GroupTextureOptions): Promise<Blob> {
-  const { polygons, faceUVs, texture, size = 1024 } = options;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d")!;
-
-  ctx.clearRect(0, 0, size, size);
+  const { polygons, faceUVs, texture, size = 1024, groupAngle = 0 } = options;
 
   const textureImage = texture?.image ? (texture.image as CanvasImageSource) : null;
   const textureFlipY = texture?.flipY ?? true;
   const defaultUV = [new THREE.Vector2(0, 0), new THREE.Vector2(0.5, 1), new THREE.Vector2(1, 0)];
-  const padding = 10;
 
   type XY = { x: number; y: number };
   type DrawTri = {
@@ -573,13 +568,19 @@ export async function generateGroupTexture(options: GroupTextureOptions): Promis
     });
   }
 
-  if (triangles.length === 0) {
-    const blankBlob = await new Promise<Blob>((resolve) => {
-      canvas.toBlob((blob) => resolve(blob || new Blob([], { type: "image/png" })), "image/png");
+  // 先旋转再计算包围盒（与 unfold2dManager.ts 中 updateBBoxRuler 逻辑一致）
+  if (Math.abs(groupAngle) > 1e-9) {
+    const cos = Math.cos(groupAngle);
+    const sin = Math.sin(groupAngle);
+    triangles.forEach((tri) => {
+      tri.points = tri.points.map((p) => ({
+        x: p.x * cos - p.y * sin,
+        y: p.x * sin + p.y * cos,
+      })) as [XY, XY, XY];
     });
-    return blankBlob;
   }
 
+  // 计算旋转后的包围盒
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   triangles.forEach((tri) => {
     tri.points.forEach((p) => {
@@ -590,15 +591,40 @@ export async function generateGroupTexture(options: GroupTextureOptions): Promis
     });
   });
 
+  // 根据包围盒尺寸动态设置画布分辨率
+  const PIXELS_PER_UNIT = 10;
+  const MIN_SIZE = 64;
+  const MAX_SIZE = 4096;
+  const rawWidth = Math.ceil((maxX - minX) * PIXELS_PER_UNIT);
+  const rawHeight = Math.ceil((maxY - minY) * PIXELS_PER_UNIT);
+  const canvasWidth = Math.max(MIN_SIZE, Math.min(MAX_SIZE, rawWidth));
+  const canvasHeight = Math.max(MIN_SIZE, Math.min(MAX_SIZE, rawHeight));
+  console.log(`[generateGroupTexture] canvas size: ${canvasWidth}x${canvasHeight}`)
+
+  const canvas = document.createElement("canvas");
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
+  const ctx = canvas.getContext("2d")!;
+  ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+  if (triangles.length === 0) {
+    const blankBlob = await new Promise<Blob>((resolve) => {
+      canvas.toBlob((blob) => resolve(blob || new Blob([], { type: "image/png" })), "image/png");
+    });
+    return blankBlob;
+  }
+
+  // 计算缩放和偏移，将多边形居中画入画布（预留 5% 边距）
+  const padding = 0;//0.05;
   const spanX = Math.max(maxX - minX, 1e-6);
   const spanY = Math.max(maxY - minY, 1e-6);
-  const scale = Math.min((size - padding * 2) / spanX, (size - padding * 2) / spanY);
-  const offsetX = (size - spanX * scale) * 0.5;
-  const offsetY = (size - spanY * scale) * 0.5;
+  const scale = Math.min((canvasWidth * (1 - padding * 2)) / spanX, (canvasHeight * (1 - padding * 2)) / spanY);
+  const offsetX = (canvasWidth - spanX * scale) * 0.5;
+  const offsetY = (canvasHeight - spanY * scale) * 0.5;
 
   const toCanvas = (x: number, y: number): XY => ({
     x: (x - minX) * scale + offsetX,
-    y: size - ((y - minY) * scale + offsetY),
+    y: canvasHeight - ((y - minY) * scale + offsetY),
   });
 
   const sourceWidth = textureImage ? Number((textureImage as any).width ?? 0) : 0;
