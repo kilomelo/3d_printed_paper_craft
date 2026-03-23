@@ -44,8 +44,8 @@ export const syncHomeDemoCoverDisplaySize = () => {
   if (optionsWidth <= 0) return;
   const optionsStyle = window.getComputedStyle(homeDemoOptionsEl);
   const columnGap = parseFloat(optionsStyle.columnGap || optionsStyle.gap || "8") || 8;
-  const optionOuterWidth = Math.max(1, Math.floor((optionsWidth - columnGap) / 2));
-  homeDemoOptionsEl.style.gridTemplateColumns = `repeat(2, ${optionOuterWidth}px)`;
+  const optionOuterWidth = Math.max(1, Math.floor((optionsWidth - columnGap * 2) / 3));
+  homeDemoOptionsEl.style.gridTemplateColumns = `repeat(3, ${optionOuterWidth}px)`;
   homeDemoOptionsEl.style.justifyContent = "space-between";
   const sampleOption = homeDemoOptionsEl.querySelector<HTMLElement>(".home-demo-option");
   const sampleOptionStyle = sampleOption ? window.getComputedStyle(sampleOption) : null;
