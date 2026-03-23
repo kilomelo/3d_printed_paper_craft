@@ -69,6 +69,28 @@ export type AddChildObjectFromGeometryOptions = {
   geometry: BufferGeometry;
 };
 
+export type ThreeMfVector3 = {
+  x: number;
+  y: number;
+  z: number;
+};
+
+export type ThreeMfBoundingBox = {
+  min: ThreeMfVector3;
+  max: ThreeMfVector3;
+  size: ThreeMfVector3;
+  center: ThreeMfVector3;
+};
+
+export type CompositeChildrenUnionBoundingBoxOptions = {
+  /**
+   * 是否把主 build/item 的 transform 也计入结果。
+   * 默认 false：返回唯一组合对象局部坐标系中的包围盒。
+   * 当你准备把新子对象直接挂到这个组合对象下时，通常应保持 false。
+   */
+  includeBuildItemTransform?: boolean;
+};
+
 type DisplayNameInfo = {
   name: string;
   source: string;
@@ -81,6 +103,206 @@ type ResolvedComponentObject = {
   objectEl: Element;
   resolutionSource: string;
 };
+
+
+type InternalBoundingBox = {
+  minX: number;
+  minY: number;
+  minZ: number;
+  maxX: number;
+  maxY: number;
+  maxZ: number;
+};
+
+const IDENTITY_TRANSFORM_12: readonly number[] = Object.freeze([
+  1, 0, 0,
+  0, 1, 0,
+  0, 0, 1,
+  0, 0, 0,
+]);
+
+function identityTransform12(): number[] {
+  return [...IDENTITY_TRANSFORM_12];
+}
+
+function getTransform12OrIdentity(transform: string | null | undefined, context: string): number[] {
+  if (!transform || !transform.trim()) return identityTransform12();
+  const parsed = parseTransform12(transform);
+  if (!parsed) {
+    throw new Error(`非法 transform（${context}）: ${transform}`);
+  }
+  return parsed;
+}
+
+function multiplyTransform12(parent: number[], local: number[]): number[] {
+  const a00 = parent[0], a01 = parent[1], a02 = parent[2];
+  const a10 = parent[3], a11 = parent[4], a12 = parent[5];
+  const a20 = parent[6], a21 = parent[7], a22 = parent[8];
+  const atx = parent[9], aty = parent[10], atz = parent[11];
+
+  const b00 = local[0], b01 = local[1], b02 = local[2];
+  const b10 = local[3], b11 = local[4], b12 = local[5];
+  const b20 = local[6], b21 = local[7], b22 = local[8];
+  const btx = local[9], bty = local[10], btz = local[11];
+
+  return [
+    a00 * b00 + a01 * b10 + a02 * b20,
+    a00 * b01 + a01 * b11 + a02 * b21,
+    a00 * b02 + a01 * b12 + a02 * b22,
+
+    a10 * b00 + a11 * b10 + a12 * b20,
+    a10 * b01 + a11 * b11 + a12 * b21,
+    a10 * b02 + a11 * b12 + a12 * b22,
+
+    a20 * b00 + a21 * b10 + a22 * b20,
+    a20 * b01 + a21 * b11 + a22 * b21,
+    a20 * b02 + a21 * b12 + a22 * b22,
+
+    a00 * btx + a01 * bty + a02 * btz + atx,
+    a10 * btx + a11 * bty + a12 * btz + aty,
+    a20 * btx + a21 * bty + a22 * btz + atz,
+  ];
+}
+
+function transformPointBy12(m: number[], x: number, y: number, z: number): ThreeMfVector3 {
+  return {
+    x: m[0] * x + m[1] * y + m[2] * z + m[9],
+    y: m[3] * x + m[4] * y + m[5] * z + m[10],
+    z: m[6] * x + m[7] * y + m[8] * z + m[11],
+  };
+}
+
+function unionBoundingBoxes(a: InternalBoundingBox | null, b: InternalBoundingBox | null): InternalBoundingBox | null {
+  if (!a) return b ? { ...b } : null;
+  if (!b) return { ...a };
+  return {
+    minX: Math.min(a.minX, b.minX),
+    minY: Math.min(a.minY, b.minY),
+    minZ: Math.min(a.minZ, b.minZ),
+    maxX: Math.max(a.maxX, b.maxX),
+    maxY: Math.max(a.maxY, b.maxY),
+    maxZ: Math.max(a.maxZ, b.maxZ),
+  };
+}
+
+function transformBoundingBox(bbox: InternalBoundingBox, transform: number[]): InternalBoundingBox {
+  const xs = [bbox.minX, bbox.maxX];
+  const ys = [bbox.minY, bbox.maxY];
+  const zs = [bbox.minZ, bbox.maxZ];
+
+  let out: InternalBoundingBox | null = null;
+  for (const x of xs) {
+    for (const y of ys) {
+      for (const z of zs) {
+        const p = transformPointBy12(transform, x, y, z);
+        const pointBox: InternalBoundingBox = {
+          minX: p.x, maxX: p.x,
+          minY: p.y, maxY: p.y,
+          minZ: p.z, maxZ: p.z,
+        };
+        out = unionBoundingBoxes(out, pointBox);
+      }
+    }
+  }
+
+  if (!out) {
+    throw new Error("无法变换空包围盒");
+  }
+  return out;
+}
+
+function toPublicBoundingBox(bbox: InternalBoundingBox): ThreeMfBoundingBox {
+  const size = {
+    x: bbox.maxX - bbox.minX,
+    y: bbox.maxY - bbox.minY,
+    z: bbox.maxZ - bbox.minZ,
+  };
+
+  return {
+    min: { x: bbox.minX, y: bbox.minY, z: bbox.minZ },
+    max: { x: bbox.maxX, y: bbox.maxY, z: bbox.maxZ },
+    size,
+    center: {
+      x: bbox.minX + size.x * 0.5,
+      y: bbox.minY + size.y * 0.5,
+      z: bbox.minZ + size.z * 0.5,
+    },
+  };
+}
+
+function getMeshBoundingBoxFromObject(objectEl: Element): InternalBoundingBox | null {
+  const meshEl = getFirstDirectChildByLocalName(objectEl, "mesh");
+  if (!meshEl) return null;
+
+  const verticesEl = getFirstDirectChildByLocalName(meshEl, "vertices");
+  if (!verticesEl) return null;
+
+  const vertexEls = getElementsByLocalName(verticesEl, "vertex");
+  let bbox: InternalBoundingBox | null = null;
+
+  for (const vertexEl of vertexEls) {
+    const x = Number(vertexEl.getAttribute("x"));
+    const y = Number(vertexEl.getAttribute("y"));
+    const z = Number(vertexEl.getAttribute("z"));
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+      continue;
+    }
+
+    const pointBox: InternalBoundingBox = {
+      minX: x, maxX: x,
+      minY: y, maxY: y,
+      minZ: z, maxZ: z,
+    };
+    bbox = unionBoundingBoxes(bbox, pointBox);
+  }
+
+  return bbox;
+}
+
+function computeObjectBoundingBoxRecursive(
+  objectEl: Element,
+  currentModelPath: string,
+  modelParts: Map<string, XmlDocEntry>,
+  stack: Set<string> = new Set(),
+): InternalBoundingBox | null {
+  const objectId = (objectEl.getAttribute("id") ?? "").trim();
+  const stackKey = `${normalizeZipPath(currentModelPath)}#${objectId || "unknown-object"}`;
+  if (stack.has(stackKey)) {
+    throw new Error(`检测到组件循环引用: ${stackKey}`);
+  }
+  stack.add(stackKey);
+
+  try {
+    let bbox = getMeshBoundingBoxFromObject(objectEl);
+
+    const componentEls = getElementsByLocalName(objectEl, "component");
+    for (const componentEl of componentEls) {
+      const resolved = resolveComponentObject(componentEl, objectEl, normalizeZipPath(currentModelPath), modelParts);
+      if (!resolved) {
+        const unresolvedObjectId = (componentEl.getAttribute("objectid") ?? "").trim();
+        throw new Error(`无法解析 component 指向的对象: objectid=${unresolvedObjectId || "<empty>"}`);
+      }
+
+      const childBox = computeObjectBoundingBoxRecursive(
+        resolved.objectEl,
+        resolved.partPath,
+        modelParts,
+        stack,
+      );
+      if (!childBox) continue;
+
+      const componentTransform = getTransform12OrIdentity(
+        componentEl.getAttribute("transform"),
+        `component objectid=${resolved.objectId}`,
+      );
+      bbox = unionBoundingBoxes(bbox, transformBoundingBox(childBox, componentTransform));
+    }
+
+    return bbox;
+  } finally {
+    stack.delete(stackKey);
+  }
+}
 
 function parseXml(text: string, pathForError: string): XMLDocument {
   const doc = new DOMParser().parseFromString(text, "application/xml");
@@ -636,6 +858,78 @@ export class ThreeMfDocument {
     return this.modelSettingsDoc;
   }
 
+  /**
+   * 计算主 3D/3dmodel.model 中唯一组合对象的所有子对象（递归展开后的并集）包围盒。
+   * 默认返回组合对象局部坐标系中的结果；若 includeBuildItemTransform=true，
+   * 则会把唯一 build/item 的 transform 也一起乘进去。
+   */
+  getCompositeChildrenUnionBoundingBox(
+    options: CompositeChildrenUnionBoundingBoxOptions = {},
+  ): ThreeMfBoundingBox {
+    if (!this.primaryModelPath) {
+      throw new Error("未找到主 model part，无法计算组合模型包围盒");
+    }
+
+    const primaryEntry = this.modelParts.get(normalizeZipPath(this.primaryModelPath));
+    if (!primaryEntry) {
+      throw new Error(`主 model part 不存在：${this.primaryModelPath}`);
+    }
+
+    const primaryDoc = primaryEntry.doc;
+    const rootObjects = getElementsByLocalName(primaryDoc, "object");
+    const buildItems = getElementsByLocalName(primaryDoc, "item");
+    if (rootObjects.length !== 1 || buildItems.length !== 1) {
+      throw new Error(`预期主 model 中只有 1 个 object 和 1 个 build/item，实际 object=${rootObjects.length}, item=${buildItems.length}`);
+    }
+
+    const rootObject = rootObjects[0];
+    const componentEls = getElementsByLocalName(rootObject, "component");
+    if (componentEls.length === 0) {
+      throw new Error("唯一模型对象不是组合对象（未找到任何 component）");
+    }
+
+    let bbox: InternalBoundingBox | null = null;
+    for (const componentEl of componentEls) {
+      const resolved = resolveComponentObject(
+        componentEl,
+        rootObject,
+        normalizeZipPath(this.primaryModelPath),
+        this.modelParts,
+      );
+      if (!resolved) {
+        const unresolvedObjectId = (componentEl.getAttribute("objectid") ?? "").trim();
+        throw new Error(`无法解析主组合对象中的 component: objectid=${unresolvedObjectId || "<empty>"}`);
+      }
+
+      const childBox = computeObjectBoundingBoxRecursive(
+        resolved.objectEl,
+        resolved.partPath,
+        this.modelParts,
+      );
+      if (!childBox) continue;
+
+      const componentTransform = getTransform12OrIdentity(
+        componentEl.getAttribute("transform"),
+        `root component objectid=${resolved.objectId}`,
+      );
+      bbox = unionBoundingBoxes(bbox, transformBoundingBox(childBox, componentTransform));
+    }
+
+    if (!bbox) {
+      throw new Error("未能从唯一组合对象的子对象中计算出有效包围盒");
+    }
+
+    if (options.includeBuildItemTransform) {
+      const buildItemTransform = getTransform12OrIdentity(
+        buildItems[0].getAttribute("transform"),
+        "build/item",
+      );
+      bbox = transformBoundingBox(bbox, buildItemTransform);
+    }
+
+    return toPublicBoundingBox(bbox);
+  }
+
   async apply(processor: ThreeMfProcessor): Promise<this> {
     await processor(this);
     return this;
@@ -998,6 +1292,15 @@ export async function addChildObjectFromGeometryAndDownload(
     ThreeMfDocument.processors.addChildObjectFromGeometry({ childName, geometry }),
   ]);
   await doc.download(outputFileName);
+}
+
+
+export async function getCompositeChildrenUnionBoundingBoxFrom3mf(
+  input: File | Blob | ArrayBuffer | Uint8Array,
+  options: CompositeChildrenUnionBoundingBoxOptions = {},
+): Promise<ThreeMfBoundingBox> {
+  const doc = await parseThreeMf(input);
+  return doc.getCompositeChildrenUnionBoundingBox(options);
 }
 
 export function downloadBlob(blob: Blob, fileName: string) {

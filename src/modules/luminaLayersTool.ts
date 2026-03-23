@@ -138,102 +138,105 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
   // 处理 3MF 文件的通用函数
   const process3mfFile = async (file: File) => {
     console.log(`已载入 ${file.name}`);
-      // 获取当前展开组的缓存 mesh
-      const groupId = deps.getPreviewGroupId();
-      if (groupId === undefined) {
-        deps.log("没有预览的展开组", "error");
-        return;
-      }
-
-      const groupName = deps.getPreviewGroupName(groupId);
-      const currentHistoryUid = deps.getCurrentHistoryUid();
-      const groupAngle = deps.getGroupPlaceAngle(groupId);
-
-      let cachedMesh = deps.previewMeshCacheManager.getCachedPreviewMesh(groupId, currentHistoryUid, groupAngle);
-
-      // 缓存中没有模型，先生成并缓存
-      if (!cachedMesh || !cachedMesh.mesh.geometry) {
-        // 检查是否有自相交
-        if (deps.hasGroupIntersection(groupId)) {
-          deps.log("展开组存在自相交，无法生成模型", "error");
-          return;
-        }
-
-        const polygons = deps.getGroupPolygonsData(groupId);
-        if (!polygons.length) {
-          deps.log("展开组没有面数据", "error");
-          return;
-        }
-
-        deps.log("正在生成 STL 模型...", "info");
-
-        try {
-            const { blob } = await buildStlInWorker(
-              polygons as PolygonWithEdgeInfo[],
-              (progress) => deps.log(progress, "progress"),
-              (msg, tone) => deps.log(msg, tone as "info" | "success" | "error" | "progress"),
-            );
-
-            const buffer = await blob.arrayBuffer();
-            const stlLoader = new STLLoader();
-            const geometry = stlLoader.parse(buffer);
-
-            // 修正 geometry 位置
-            geometry.computeBoundingBox();
-            const min = geometry.boundingBox!.min;
-            geometry.translate(-(min.x ?? 0), -(min.y ?? 0), -(min.z ?? 0));
-
-            const mesh = new THREE.Mesh(geometry);
-            mesh.name = "Replicad Mesh";
-
-            // 添加到缓存
-            deps.previewMeshCacheManager.addCachedPreviewMesh(groupId, mesh, currentHistoryUid);
-
-        } catch (err) {
-          console.error("生成展开组模型失败:", err);
-          deps.log("生成展开组模型失败", "error");
-        }
-        // 重新获取缓存
-        cachedMesh = deps.previewMeshCacheManager.getCachedPreviewMesh(groupId, currentHistoryUid, groupAngle);
-        if (!cachedMesh || !cachedMesh.mesh.geometry) {
-          deps.log("生成展开组模型失败", "error");
-          return;
-        }
-      }
-
-      const geometry = cachedMesh.mesh.geometry.clone();
-
-      // 应用展开组旋转角度
-      if (groupAngle && Math.abs(groupAngle) > 1e-9) {
-        geometry.rotateZ(-groupAngle);
-      }
-
+    try {
       // 返回结果式
       const result = await validateExpectedThreeMfStructure(file);
       if (!result.ok) {
         console.error(result.code, result.message, result.details);
         // 这里根据 result.code 给用户弹提示
-      } else {
-        try {
-
-          const doc = await processThreeMf(file, [
-            ThreeMfDocument.processors.removeChildObjectsByName("Backing"),
-            ThreeMfDocument.processors.addChildObjectFromGeometry({
-              childName: groupName || "NewPart",
-              geometry: geometry as THREE.BufferGeometry,
-            }),
-          ]);
-          await doc.download("modified.3mf");
-        }
-        catch (err) {
-          console.error("处理 3MF 失败:", err);
-          deps.log("处理 3MF 失败", "error");
-        }
-        finally {
-          geometry.dispose();
-        }
-        deps.log("3MF 文件处理完成，已下载", "success");
+        return;
       }
+    } catch (err) {
+      console.error("处理 3MF 失败:", err);
+    }
+      
+    // 获取当前展开组的缓存 mesh
+    const groupId = deps.getPreviewGroupId();
+    if (groupId === undefined) {
+      deps.log("没有预览的展开组", "error");
+      return;
+    }
+    const groupName = deps.getPreviewGroupName(groupId);
+    const currentHistoryUid = deps.getCurrentHistoryUid();
+    const groupAngle = deps.getGroupPlaceAngle(groupId);
+
+    let cachedMesh = deps.previewMeshCacheManager.getCachedPreviewMesh(groupId, currentHistoryUid, groupAngle);
+
+    // 缓存中没有模型，先生成并缓存
+    if (!cachedMesh || !cachedMesh.mesh.geometry) {
+      // 检查是否有自相交
+      if (deps.hasGroupIntersection(groupId)) {
+        deps.log("展开组存在自相交，无法生成模型", "error");
+        return;
+      }
+
+      const polygons = deps.getGroupPolygonsData(groupId);
+      if (!polygons.length) {
+        deps.log("展开组没有面数据", "error");
+        return;
+      }
+      deps.log("正在生成 STL 模型...", "info");
+
+      try {
+          const { blob } = await buildStlInWorker(
+            polygons as PolygonWithEdgeInfo[],
+            (progress) => deps.log(progress, "progress"),
+            (msg, tone) => deps.log(msg, tone as "info" | "success" | "error" | "progress"),
+          );
+
+          const buffer = await blob.arrayBuffer();
+          const stlLoader = new STLLoader();
+          const geometry = stlLoader.parse(buffer);
+
+          // 修正 geometry 位置
+          geometry.computeBoundingBox();
+          const min = geometry.boundingBox!.min;
+          geometry.translate(-(min.x ?? 0), -(min.y ?? 0), -(min.z ?? 0));
+
+          const mesh = new THREE.Mesh(geometry);
+          mesh.name = "Replicad Mesh";
+
+          // 添加到缓存
+          deps.previewMeshCacheManager.addCachedPreviewMesh(groupId, mesh, currentHistoryUid);
+      } catch (err) {
+        console.error("生成展开组模型失败:", err);
+        deps.log("生成展开组模型失败", "error");
+      }
+      // 重新获取缓存
+      cachedMesh = deps.previewMeshCacheManager.getCachedPreviewMesh(groupId, currentHistoryUid, groupAngle);
+      if (!cachedMesh || !cachedMesh.mesh.geometry) {
+        deps.log("生成展开组模型失败", "error");
+        return;
+      }
+    }
+
+    const geometry = cachedMesh.mesh.geometry.clone();
+
+    const bbox = await getCompositeChildrenUnionBoundingBoxFrom3mf(file, { includeBuildItemTransform: true,});
+    console.log('[LuminaLayersTool] bbox of model in 3mf ', bbox)
+    // 应用展开组旋转角度
+    if (groupAngle && Math.abs(groupAngle) > 1e-9) {
+      geometry.rotateZ(-groupAngle);
+    }
+    
+    try {
+      const doc = await processThreeMf(file, [
+        ThreeMfDocument.processors.removeChildObjectsByName("Backing"),
+        ThreeMfDocument.processors.addChildObjectFromGeometry({
+          childName: groupName || "NewPart",
+          geometry: geometry as THREE.BufferGeometry,
+        }),
+      ]);
+      await doc.download("modified.3mf");
+    }
+    catch (err) {
+      console.error("处理 3MF 失败:", err);
+      deps.log("处理 3MF 失败", "error");
+    }
+    finally {
+      geometry.dispose();
+    }
+    deps.log("3MF 文件处理完成，已下载", "success");
   };
 
   const handleDropZoneClick = () => {
