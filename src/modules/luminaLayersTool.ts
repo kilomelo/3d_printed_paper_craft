@@ -2,6 +2,12 @@
 import { type GroupTextureTriangle, generateGroupTexture } from "./textureManager";
 import { downloadBlob } from "./gifRecorder";
 import type { PolygonWithPoints } from "./textureManager";
+import { processThreeMf, ThreeMfDocument } from "./threeMF/threeMfProcessor";
+import {
+  validateExpectedThreeMfStructure,
+  assertExpectedThreeMfStructure,
+  ThreeMfExpectedStructureErrorCode,
+} from "./threeMF/threeMfStructureValidator";
 
 export type LuminaLayersDeps = {
   getPreviewGroupId: () => number | undefined;
@@ -23,7 +29,7 @@ export type LuminaLayersRefs = {
   exportPngBtn: HTMLButtonElement;
   dropZone: HTMLDivElement;
   closeBtn: HTMLButtonElement;
-  videoIframe: HTMLIFrameElement;
+  // videoIframe: HTMLIFrameElement;
 };
 
 export function getLuminaLayersRefs(): LuminaLayersRefs | null {
@@ -37,7 +43,7 @@ export function getLuminaLayersRefs(): LuminaLayersRefs | null {
     exportPngBtn: get<HTMLButtonElement>("#lumina-layers-export-png-btn"),
     dropZone: get<HTMLDivElement>("#lumina-layers-drop-zone"),
     closeBtn: get<HTMLButtonElement>("#lumina-layers-close-btn"),
-    videoIframe: get<HTMLIFrameElement>("#lumina-layers-video-iframe"),
+    // videoIframe: get<HTMLIFrameElement>("#lumina-layers-video-iframe"),
   };
 
   const values = Object.values(refs);
@@ -69,16 +75,16 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
     setTextWithTooltip(refs.faceCountLabel, faceCount.toString());
     setTextWithTooltip(refs.pngFileNameLabel, `文件名：${pngFileName}`);
     // 延迟加载视频
-    const dataSrc = refs.videoIframe.getAttribute("data-src");
-    if (dataSrc) {
-      refs.videoIframe.setAttribute("src", dataSrc);
-    }
+    // const dataSrc = refs.videoIframe.getAttribute("data-src");
+    // if (dataSrc) {
+    //   refs.videoIframe.setAttribute("src", dataSrc);
+    // }
     refs.overlay.classList.remove("hidden");
   };
 
   const close = () => {
     // 清空视频 src 停止播放
-    refs.videoIframe.src = "";
+    // refs.videoIframe.src = "";
     refs.overlay.classList.add("hidden");
   };
 
@@ -116,15 +122,39 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
     }
   };
 
+  // 处理 3MF 文件的通用函数
+  const process3mfFile = async (file: File) => {
+    console.log(`已载入 ${file.name}`);
+    try {
+      // 返回结果式
+      const result = await validateExpectedThreeMfStructure(file);
+      if (!result.ok) {
+        console.error(result.code, result.message, result.details);
+        // 这里根据 result.code 给用户弹提示
+      } else {
+        const doc = await processThreeMf(file, [
+          ThreeMfDocument.processors.removeChildObjectsByName("Backing"),
+          ThreeMfDocument.processors.scaleAllModelInstances200Percent(),
+        ]);
+        await doc.download("removed-backing-scaled-200.3mf");
+        
+        deps.log("3MF 文件处理完成，已下载", "success");
+      }
+    } catch (err) {
+      console.error("处理 3MF 失败:", err);
+      deps.log("处理 3MF 失败", "error");
+    }
+  };
+
   const handleDropZoneClick = () => {
     // 创建文件输入元素
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".3mf";
-    input.onchange = () => {
+    input.onchange = async () => {
       const file = input.files?.[0];
       if (file && file.name.endsWith(".3mf")) {
-        console.log(`已载入 ${file.name}`);
+        await process3mfFile(file);
       }
     };
     input.click();
@@ -144,7 +174,7 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
     refs.dropZone.style.background = "";
   };
 
-  const handleDropZoneDrop = (event: DragEvent) => {
+  const handleDropZoneDrop = async (event: DragEvent) => {
     event.preventDefault();
     event.stopPropagation();
     refs.dropZone.style.borderColor = "#ccc";
@@ -152,7 +182,7 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
 
     const file = event.dataTransfer?.files?.[0];
     if (file && file.name.endsWith(".3mf")) {
-      console.log(`已载入 ${file.name}`);
+      await process3mfFile(file);
     }
   };
 

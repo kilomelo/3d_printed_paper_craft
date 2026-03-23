@@ -11,6 +11,7 @@
   "dependencies": {
     "@vercel/analytics": "^1.6.1",
     "gif.js": "^0.2.0",
+    "jszip": "^3.10.1",
     "replicad": "^0.20.5",
     "replicad-opencascadejs": "^0.20.2",
     "three": "^0.160.0"

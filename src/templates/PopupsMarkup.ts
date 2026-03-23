@@ -358,6 +358,7 @@ export const renderLuminaLayersDialog = () => `
                 <div class="lumina-card-title" data-i18n="luminaLayers.videoLink">详细使用方法请参考该视频：</div>
                 <div class="lumina-card-subtitle">Bilibili</div>
               </div>
+              <!--
               <div class="video">
                 <iframe
                   id="lumina-layers-video-iframe"
@@ -370,7 +371,8 @@ export const renderLuminaLayersDialog = () => `
                   allowfullscreen="true">
                 </iframe>
               </div>
-              <!-- 即将发布 -->
+              -->
+              即将发布
             </article>
           </section>
 
