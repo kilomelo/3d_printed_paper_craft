@@ -1,4 +1,5 @@
 import JSZip from "jszip";
+import type { BufferGeometry } from "three";
 
 /**
  * 面向浏览器前端的 3MF 处理工具：
@@ -46,6 +47,26 @@ export type RemoveChildByNameOptions = {
   removeModelSettingsPart?: boolean;
   /** 默认 true：同步删除被引用 .model part 里的对应 <object id="...">。 */
   removeReferencedObject?: boolean;
+};
+
+/** 向后兼容旧命名 */
+export type RemoveBackingOptions = RemoveChildByNameOptions;
+
+export type ThreeMfMeshData = {
+  positions: ArrayLike<number>;
+  indices: ArrayLike<number>;
+  uvs?: ArrayLike<number>;
+  name?: string;
+};
+
+export type AddChildObjectOptions = {
+  childName: string;
+  mesh: ThreeMfMeshData;
+};
+
+export type AddChildObjectFromGeometryOptions = {
+  childName: string;
+  geometry: BufferGeometry;
 };
 
 type DisplayNameInfo = {
@@ -333,6 +354,188 @@ function findPartElementInModelSettings(
   return partEls.find((partEl) => (partEl.getAttribute("id") ?? "").trim() === partId) ?? null;
 }
 
+function nextNumericIdFromElements(elements: Element[], attrName = "id"): number {
+  let maxId = 0;
+  for (const el of elements) {
+    const raw = (el.getAttribute(attrName) ?? "").trim();
+    const n = Number(raw);
+    if (Number.isInteger(n) && n > maxId) maxId = n;
+  }
+  return maxId + 1;
+}
+
+function formatXmlNumber(v: number): string {
+  const n = Math.abs(v) < 1e-12 ? 0 : v;
+  const s = Number(n).toFixed(9);
+  return s.replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+}
+
+function getFirstDirectChildByLocalName(parent: Element, localName: string): Element | null {
+  for (const child of Array.from(parent.children)) {
+    const childLocal = child.localName || child.tagName.split(":").pop() || child.tagName;
+    if (childLocal === localName) return child;
+  }
+  return null;
+}
+
+function getOrCreateResourcesElement(doc: XMLDocument): Element {
+  const modelEl = getElementsByLocalName(doc, "model")[0] || doc.documentElement;
+  const existing = getFirstDirectChildByLocalName(modelEl, "resources");
+  if (existing) return existing;
+
+  const resourcesEl = doc.createElementNS(modelEl.namespaceURI, "resources");
+  const buildEl = getFirstDirectChildByLocalName(modelEl, "build");
+  if (buildEl) modelEl.insertBefore(resourcesEl, buildEl);
+  else modelEl.appendChild(resourcesEl);
+  return resourcesEl;
+}
+
+function setOrCreateMetadataValue(parentEl: Element, key: string, value: string) {
+  const metadataEls = getElementsByLocalName(parentEl, "metadata");
+  const hit = metadataEls.find((m) => ((getAttrOneOf(m, ["key", "name"]) ?? "").trim().toLowerCase() === key.toLowerCase()));
+  if (hit) {
+    if (hit.hasAttribute("value")) hit.setAttribute("value", value);
+    else hit.textContent = value;
+    return;
+  }
+  const doc = parentEl.ownerDocument!;
+  const newEl = doc.createElementNS(parentEl.namespaceURI || doc.documentElement.namespaceURI, "metadata");
+  newEl.setAttribute("key", key);
+  newEl.setAttribute("value", value);
+  parentEl.appendChild(newEl);
+}
+
+function getMetadataValue(parentEl: Element, key: string): string {
+  const metadataEls = getElementsByLocalName(parentEl, "metadata");
+  const hit = metadataEls.find((m) => ((getAttrOneOf(m, ["key", "name"]) ?? "").trim().toLowerCase() === key.toLowerCase()));
+  return ((hit && getAttrOneOf(hit, ["value"])) ?? hit?.textContent ?? "").trim();
+}
+
+function updateOrCreateMeshStatFaceCount(partEl: Element, faceCount: number) {
+  const meshStatEls = getElementsByLocalName(partEl, "mesh_stat");
+  const meshStat = meshStatEls[0];
+  if (meshStat) {
+    meshStat.setAttribute("face_count", String(faceCount));
+    return;
+  }
+  const doc = partEl.ownerDocument!;
+  const newEl = doc.createElementNS(partEl.namespaceURI || doc.documentElement.namespaceURI, "mesh_stat");
+  newEl.setAttribute("face_count", String(faceCount));
+  newEl.setAttribute("edges_fixed", "0");
+  newEl.setAttribute("degenerate_facets", "0");
+  newEl.setAttribute("facets_removed", "0");
+  newEl.setAttribute("facets_reversed", "0");
+  newEl.setAttribute("backwards_edges", "0");
+  partEl.appendChild(newEl);
+}
+
+function normalizeMeshData(mesh: ThreeMfMeshData): { positions: Float32Array; indices: Uint32Array } {
+  const positions = Float32Array.from(Array.from(mesh.positions, Number));
+  const indices = Uint32Array.from(Array.from(mesh.indices, Number));
+
+  if (positions.length === 0 || positions.length % 3 !== 0) {
+    throw new Error(`非法 mesh.positions 长度: ${positions.length}`);
+  }
+  if (indices.length === 0 || indices.length % 3 !== 0) {
+    throw new Error(`非法 mesh.indices 长度: ${indices.length}`);
+  }
+
+  const vertexCount = positions.length / 3;
+  for (let i = 0; i < indices.length; i++) {
+    if (!Number.isInteger(indices[i]) || indices[i] < 0 || indices[i] >= vertexCount) {
+      throw new Error(`mesh.indices[${i}] 越界: ${indices[i]} / vertexCount=${vertexCount}`);
+    }
+  }
+
+  return { positions, indices };
+}
+
+export function meshDataFromBufferGeometry(geometry: BufferGeometry, name?: string): ThreeMfMeshData {
+  const positionAttr = geometry.getAttribute("position") as any;
+  if (!positionAttr || positionAttr.itemSize !== 3) {
+    throw new Error("geometry 缺少合法的 position attribute");
+  }
+
+  const positions = Float32Array.from(Array.from(positionAttr.array as ArrayLike<number>, Number));
+  let indices: Uint32Array;
+
+  const indexAttr = geometry.getIndex() as any;
+  if (indexAttr) {
+    indices = Uint32Array.from(Array.from(indexAttr.array as ArrayLike<number>, Number));
+  } else {
+    const vertexCount = positionAttr.count as number;
+    if (vertexCount % 3 !== 0) {
+      throw new Error(`non-indexed geometry 顶点数不是 3 的倍数: ${vertexCount}`);
+    }
+    indices = new Uint32Array(vertexCount);
+    for (let i = 0; i < vertexCount; i++) indices[i] = i;
+  }
+
+  return { positions, indices, name };
+}
+
+function createObjectElementFromMesh(
+  doc: XMLDocument,
+  objectId: number,
+  mesh: { positions: Float32Array; indices: Uint32Array },
+  childName: string,
+): Element {
+  const ns = doc.documentElement.namespaceURI;
+  const objectEl = doc.createElementNS(ns, "object");
+  objectEl.setAttribute("id", String(objectId));
+  objectEl.setAttribute("type", "model");
+  objectEl.setAttribute("name", childName);
+
+  const meshEl = doc.createElementNS(ns, "mesh");
+  const verticesEl = doc.createElementNS(ns, "vertices");
+  const trianglesEl = doc.createElementNS(ns, "triangles");
+
+  for (let i = 0; i < mesh.positions.length; i += 3) {
+    const vertexEl = doc.createElementNS(ns, "vertex");
+    vertexEl.setAttribute("x", formatXmlNumber(mesh.positions[i + 0]));
+    vertexEl.setAttribute("y", formatXmlNumber(mesh.positions[i + 1]));
+    vertexEl.setAttribute("z", formatXmlNumber(mesh.positions[i + 2]));
+    verticesEl.appendChild(vertexEl);
+  }
+
+  for (let i = 0; i < mesh.indices.length; i += 3) {
+    const triEl = doc.createElementNS(ns, "triangle");
+    triEl.setAttribute("v1", String(mesh.indices[i + 0]));
+    triEl.setAttribute("v2", String(mesh.indices[i + 1]));
+    triEl.setAttribute("v3", String(mesh.indices[i + 2]));
+    trianglesEl.appendChild(triEl);
+  }
+
+  meshEl.appendChild(verticesEl);
+  meshEl.appendChild(trianglesEl);
+  objectEl.appendChild(meshEl);
+  return objectEl;
+}
+
+function makeComponentFromTemplate(templateEl: Element, newObjectId: number): Element {
+  const newEl = templateEl.cloneNode(false) as Element;
+  for (const attr of Array.from(newEl.attributes)) {
+    const local = attr.localName || attr.name.split(":").pop() || attr.name;
+    if (local.toLowerCase().includes("uuid")) {
+      newEl.removeAttribute(attr.name);
+    }
+  }
+  newEl.setAttribute("objectid", String(newObjectId));
+  return newEl;
+}
+
+function computeNextSourceVolumeId(modelSettingsRootObjectEl: Element | null): number {
+  if (!modelSettingsRootObjectEl) return 0;
+  let maxId = -1;
+  const partEls = getElementsByLocalName(modelSettingsRootObjectEl, "part");
+  for (const partEl of partEls) {
+    const raw = getMetadataValue(partEl, "source_volume_id");
+    const n = Number(raw);
+    if (Number.isInteger(n) && n > maxId) maxId = n;
+  }
+  return maxId + 1;
+}
+
 export class ThreeMfDocument {
   private constructor(
     private readonly zip: JSZip,
@@ -550,6 +753,107 @@ export class ThreeMfDocument {
     return this;
   }
 
+  addChildObject(options: AddChildObjectOptions): this {
+    const childName = options.childName.trim();
+    if (!childName) throw new Error("childName 不能为空");
+
+    const mesh = normalizeMeshData(options.mesh);
+
+    if (!this.primaryModelPath) {
+      throw new Error("未找到主 model part，无法添加子对象");
+    }
+
+    const primaryEntry = this.modelParts.get(normalizeZipPath(this.primaryModelPath));
+    if (!primaryEntry) {
+      throw new Error(`主 model part 不存在：${this.primaryModelPath}`);
+    }
+
+    const primaryDoc = primaryEntry.doc;
+    const rootObjects = getElementsByLocalName(primaryDoc, "object");
+    const buildItems = getElementsByLocalName(primaryDoc, "item");
+    if (rootObjects.length !== 1 || buildItems.length !== 1) {
+      throw new Error(`预期主 model 中只有 1 个 object 和 1 个 build/item，实际 object=${rootObjects.length}, item=${buildItems.length}`);
+    }
+
+    const rootObject = rootObjects[0];
+    const rootObjectId = (rootObject.getAttribute("id") ?? "").trim();
+    if (!rootObjectId) throw new Error("主组合对象缺少 id");
+
+    const componentElements = getElementsByLocalName(rootObject, "component");
+    if (componentElements.length === 0) {
+      throw new Error("唯一模型对象不是组合对象（未找到任何 component）");
+    }
+
+    const resolvedComponents = componentElements
+      .map((componentEl) => resolveComponentObject(componentEl, rootObject, normalizeZipPath(this.primaryModelPath!), this.modelParts))
+      .filter(Boolean) as ResolvedComponentObject[];
+
+    if (resolvedComponents.length !== componentElements.length) {
+      throw new Error("存在无法解析到目标 object 的 component，无法安全添加新子对象");
+    }
+
+    const distinctPartPaths = Array.from(new Set(resolvedComponents.map((r) => normalizeZipPath(r.partPath))));
+    if (distinctPartPaths.length !== 1) {
+      throw new Error(`预期所有 component 都指向同一个子 model part，实际为: ${distinctPartPaths.join(", ")}`);
+    }
+
+    const targetPartPath = distinctPartPaths[0];
+    const targetEntry = this.modelParts.get(targetPartPath);
+    if (!targetEntry) {
+      throw new Error(`未找到被组合对象引用的子 model part: ${targetPartPath}`);
+    }
+
+    const targetDoc = targetEntry.doc;
+    const targetResourcesEl = getOrCreateResourcesElement(targetDoc);
+    const existingTargetObjects = getElementsByLocalName(targetDoc, "object");
+    const newObjectId = nextNumericIdFromElements(existingTargetObjects, "id");
+
+    const newObjectEl = createObjectElementFromMesh(targetDoc, newObjectId, mesh, childName);
+    targetResourcesEl.appendChild(newObjectEl);
+
+    const templateComponentEl = componentElements[0];
+    const newComponentEl = makeComponentFromTemplate(templateComponentEl, newObjectId);
+    rootObject.appendChild(newComponentEl);
+
+    const modelSettingsRootObjectEl = getModelSettingsObjectElement(this.modelSettingsDoc, rootObjectId);
+    if (modelSettingsRootObjectEl) {
+      const partEls = getElementsByLocalName(modelSettingsRootObjectEl, "part");
+      const templatePartEl = partEls[0] ?? null;
+      const newPartEl = templatePartEl
+        ? (templatePartEl.cloneNode(true) as Element)
+        : this.modelSettingsDoc!.createElement("part");
+
+      newPartEl.setAttribute("id", String(newObjectId));
+      if (!newPartEl.getAttribute("subtype")) newPartEl.setAttribute("subtype", "normal_part");
+
+      setOrCreateMetadataValue(newPartEl, "name", childName);
+      setOrCreateMetadataValue(newPartEl, "source_volume_id", String(computeNextSourceVolumeId(modelSettingsRootObjectEl)));
+      updateOrCreateMeshStatFaceCount(newPartEl, mesh.indices.length / 3);
+
+      modelSettingsRootObjectEl.appendChild(newPartEl);
+
+      const rootFaceCountMeta = getElementsByLocalName(modelSettingsRootObjectEl, "metadata").find((m) => m.hasAttribute("face_count"));
+      if (rootFaceCountMeta) {
+        const current = Number(rootFaceCountMeta.getAttribute("face_count") ?? "0");
+        if (Number.isFinite(current)) {
+          rootFaceCountMeta.setAttribute("face_count", String(current + mesh.indices.length / 3));
+        }
+      }
+    }
+
+    return this;
+  }
+
+  addChildObjectFromGeometry(options: AddChildObjectFromGeometryOptions): this {
+    const mesh = meshDataFromBufferGeometry(options.geometry, options.childName);
+    return this.addChildObject({ childName: options.childName, mesh });
+  }
+
+  /** 向后兼容旧接口：删除名称为 Backing 的子对象 */
+  removeBackingChildObject(options: RemoveBackingOptions = {}): this {
+    return this.removeChildObjectsByName("Backing", options);
+  }
+
   static processors = {
     scaleAllModelInstances200Percent:
       (options: Omit<ScaleProcessorOptions, "factor"> = {}): ThreeMfProcessor =>
@@ -561,6 +865,24 @@ export class ThreeMfDocument {
       (targetName: string, options: RemoveChildByNameOptions = {}): ThreeMfProcessor =>
       async (ctx) => {
         ctx.removeChildObjectsByName(targetName, options);
+      },
+
+    addChildObject:
+      (options: AddChildObjectOptions): ThreeMfProcessor =>
+      async (ctx) => {
+        ctx.addChildObject(options);
+      },
+
+    addChildObjectFromGeometry:
+      (options: AddChildObjectFromGeometryOptions): ThreeMfProcessor =>
+      async (ctx) => {
+        ctx.addChildObjectFromGeometry(options);
+      },
+
+    removeBackingChildObject:
+      (options: RemoveBackingOptions = {}): ThreeMfProcessor =>
+      async (ctx) => {
+        ctx.removeChildObjectsByName("Backing", options);
       },
   };
 
@@ -642,6 +964,38 @@ export async function removeChildObjectsByNameAndDownload(
 ) {
   const doc = await processThreeMf(input, [
     ThreeMfDocument.processors.removeChildObjectsByName(targetName, options),
+  ]);
+  await doc.download(outputFileName);
+}
+
+export async function removeBackingChildAndDownload(
+  input: File | Blob | ArrayBuffer | Uint8Array,
+  outputFileName = "removed-backing.3mf",
+  options: RemoveBackingOptions = {},
+) {
+  await removeChildObjectsByNameAndDownload(input, "Backing", outputFileName, options);
+}
+
+export async function addChildObjectAndDownload(
+  input: File | Blob | ArrayBuffer | Uint8Array,
+  childName: string,
+  mesh: ThreeMfMeshData,
+  outputFileName = "with-added-child.3mf",
+) {
+  const doc = await processThreeMf(input, [
+    ThreeMfDocument.processors.addChildObject({ childName, mesh }),
+  ]);
+  await doc.download(outputFileName);
+}
+
+export async function addChildObjectFromGeometryAndDownload(
+  input: File | Blob | ArrayBuffer | Uint8Array,
+  childName: string,
+  geometry: BufferGeometry,
+  outputFileName = "with-added-child.3mf",
+) {
+  const doc = await processThreeMf(input, [
+    ThreeMfDocument.processors.addChildObjectFromGeometry({ childName, geometry }),
   ]);
   await doc.download(outputFileName);
 }

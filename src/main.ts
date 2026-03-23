@@ -622,6 +622,10 @@ const luminaLayersTool = luminaLayersRefs
           uv: item.uv ? item.uv.map((xy) => new Vector2(xy.x, xy.y)) : null,
         }));
       },
+      getCurrentHistoryUid: () => historyManager.getCurrentSnapshotUid() ?? -1,
+      getGroupPlaceAngle: (groupId) => groupController.getGroupPlaceAngle(groupId) ?? 0,
+      hasGroupIntersection: (groupId) => unfold2d.hasGroupIntersection(groupId),
+      previewMeshCacheManager,
       log,
       t,
     })

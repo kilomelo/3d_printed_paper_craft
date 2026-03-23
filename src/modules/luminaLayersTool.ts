@@ -1,13 +1,17 @@
 // 叠色打印工具模块
+import * as THREE from "three";
 import { type GroupTextureTriangle, generateGroupTexture } from "./textureManager";
 import { downloadBlob } from "./gifRecorder";
 import type { PolygonWithPoints } from "./textureManager";
+import type { PolygonWithEdgeInfo } from "../types/geometryTypes";
 import { processThreeMf, ThreeMfDocument } from "./threeMF/threeMfProcessor";
 import {
   validateExpectedThreeMfStructure,
   assertExpectedThreeMfStructure,
   ThreeMfExpectedStructureErrorCode,
 } from "./threeMF/threeMfStructureValidator";
+import { buildStlInWorker } from "./replicad/replicadWorkerClient";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 
 export type LuminaLayersDeps = {
   getPreviewGroupId: () => number | undefined;
@@ -16,6 +20,13 @@ export type LuminaLayersDeps = {
   getGroupPolygonsData: (groupId: number) => PolygonWithPoints[];
   getTexture: () => THREE.Texture | null;
   getGroupFaceUVs: (groupId: number) => GroupTextureTriangle[];
+  getCurrentHistoryUid: () => number;
+  getGroupPlaceAngle: (groupId: number) => number;
+  hasGroupIntersection: (groupId: number) => boolean;
+  previewMeshCacheManager: {
+    getCachedPreviewMesh: (groupId: number, currentHistoryUid: number, currentGroupAngle: number) => { mesh: THREE.Mesh; angle: number } | null;
+    addCachedPreviewMesh: (groupId: number, mesh: THREE.Mesh, currentHistoryUid: number) => void;
+  };
   log: (msg: string | number, tone?: "info" | "success" | "error" | "progress") => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   t: (key: string, params?: Record<string, any>) => string;
@@ -126,6 +137,65 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
   const process3mfFile = async (file: File) => {
     console.log(`已载入 ${file.name}`);
     try {
+      // 获取当前展开组的缓存 mesh
+      const groupId = deps.getPreviewGroupId();
+      if (groupId === undefined) {
+        deps.log("没有预览的展开组", "error");
+        return;
+      }
+
+      const groupName = deps.getPreviewGroupName(groupId);
+      const currentHistoryUid = deps.getCurrentHistoryUid();
+      const groupAngle = deps.getGroupPlaceAngle(groupId);
+
+      let cachedMesh = deps.previewMeshCacheManager.getCachedPreviewMesh(groupId, currentHistoryUid, groupAngle);
+
+      // 缓存中没有模型，先生成并缓存
+      if (!cachedMesh || !cachedMesh.mesh.geometry) {
+        // 检查是否有自相交
+        if (deps.hasGroupIntersection(groupId)) {
+          deps.log("展开组存在自相交，无法生成模型", "error");
+          return;
+        }
+
+        const polygons = deps.getGroupPolygonsData(groupId);
+        if (!polygons.length) {
+          deps.log("展开组没有面数据", "error");
+          return;
+        }
+
+        deps.log("正在生成 STL 模型...", "info");
+        const { blob } = await buildStlInWorker(
+          polygons as PolygonWithEdgeInfo[],
+          (progress) => deps.log(progress, "progress"),
+          (msg, tone) => deps.log(msg, tone as "info" | "success" | "error" | "progress"),
+        );
+
+        const buffer = await blob.arrayBuffer();
+        const stlLoader = new STLLoader();
+        const geometry = stlLoader.parse(buffer);
+
+        // 修正 geometry 位置
+        geometry.computeBoundingBox();
+        const min = geometry.boundingBox!.min;
+        geometry.translate(-(min.x ?? 0), -(min.y ?? 0), -(min.z ?? 0));
+
+        const mesh = new THREE.Mesh(geometry);
+        mesh.name = "Replicad Mesh";
+
+        // 添加到缓存
+        deps.previewMeshCacheManager.addCachedPreviewMesh(groupId, mesh, currentHistoryUid);
+
+        // 重新获取缓存
+        cachedMesh = deps.previewMeshCacheManager.getCachedPreviewMesh(groupId, currentHistoryUid, groupAngle);
+        if (!cachedMesh || !cachedMesh.mesh.geometry) {
+          deps.log("模型生成失败", "error");
+          return;
+        }
+      }
+
+      const geometry = cachedMesh.mesh.geometry;
+
       // 返回结果式
       const result = await validateExpectedThreeMfStructure(file);
       if (!result.ok) {
@@ -134,10 +204,13 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
       } else {
         const doc = await processThreeMf(file, [
           ThreeMfDocument.processors.removeChildObjectsByName("Backing"),
-          ThreeMfDocument.processors.scaleAllModelInstances200Percent(),
+          ThreeMfDocument.processors.addChildObjectFromGeometry({
+            childName: groupName || "NewPart",
+            geometry: geometry as THREE.BufferGeometry,
+          }),
         ]);
-        await doc.download("removed-backing-scaled-200.3mf");
-        
+        await doc.download("modified.3mf");
+
         deps.log("3MF 文件处理完成，已下载", "success");
       }
     } catch (err) {
