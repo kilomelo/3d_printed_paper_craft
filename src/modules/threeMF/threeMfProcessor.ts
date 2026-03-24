@@ -8,7 +8,7 @@ import type { BufferGeometry } from "three";
  * - 重新导出并下载
  *
  * 当前内置处理器：
- * 1. 把所有模型实例缩放到 200%
+ * 1. 按 X / Y / Z 三轴独立缩放所有模型实例
  * 2. 按名称删除唯一组合对象中的任意子对象
  *
  * 依赖：npm i jszip
@@ -34,8 +34,12 @@ export type ThreeMfModelPartInfo = {
 };
 
 export type ScaleProcessorOptions = {
-  /** 默认 2，即 200% */
-  factor?: number;
+  /** X 轴缩放系数。默认 1。 */
+  xFactor?: number;
+  /** Y 轴缩放系数。默认 1。 */
+  yFactor?: number;
+  /** Z 轴缩放系数。默认 1。 */
+  zFactor?: number;
   /** 是否同时缩放 component 的 transform。默认 false，只缩放 build/item。 */
   includeComponentTransforms?: boolean;
 };
@@ -386,20 +390,20 @@ function formatTransform12(m: number[]): string {
  * m00 m01 m02 m10 m11 m12 m20 m21 m22 m30 m31 m32
  * 前 9 个是线性部分，最后 3 个是平移。
  */
-function scaleTransformLinearPart(m: number[], factor: number): number[] {
+function scaleTransformLinearPartByAxes(m: number[], xFactor: number, yFactor: number, zFactor: number): number[] {
   return [
-    m[0] * factor, m[1] * factor, m[2] * factor,
-    m[3] * factor, m[4] * factor, m[5] * factor,
-    m[6] * factor, m[7] * factor, m[8] * factor,
+    m[0] * xFactor, m[1] * yFactor, m[2] * zFactor,
+    m[3] * xFactor, m[4] * yFactor, m[5] * zFactor,
+    m[6] * xFactor, m[7] * yFactor, m[8] * zFactor,
     m[9], m[10], m[11],
   ];
 }
 
-function makePureScaleTransform(factor: number): string {
+function makePureScaleTransformByAxes(xFactor: number, yFactor: number, zFactor: number): string {
   return formatTransform12([
-    factor, 0, 0,
-    0, factor, 0,
-    0, 0, factor,
+    xFactor, 0, 0,
+    0, yFactor, 0,
+    0, 0, zFactor,
     0, 0, 0,
   ]);
 }
@@ -936,23 +940,27 @@ export class ThreeMfDocument {
   }
 
   scaleAllModelInstances(options: ScaleProcessorOptions = {}): this {
-    const factor = options.factor ?? 2;
+    const xFactor = options.xFactor ?? 1;
+    const yFactor = options.yFactor ?? 1;
+    const zFactor = options.zFactor ?? 1;
     const includeComponentTransforms = options.includeComponentTransforms ?? false;
 
-    if (!Number.isFinite(factor) || factor <= 0) {
-      throw new Error(`非法缩放系数: ${factor}`);
+    for (const [axis, factor] of [["x", xFactor], ["y", yFactor], ["z", zFactor]] as const) {
+      if (!Number.isFinite(factor) || factor <= 0) {
+        throw new Error(`非法 ${axis.toUpperCase()} 轴缩放系数: ${factor}`);
+      }
     }
 
     for (const { doc } of this.modelParts.values()) {
       const items = getElementsByLocalName(doc, "item");
       for (const item of items) {
-        this.scaleTransformAttribute(item, factor);
+        this.scaleTransformAttribute(item, xFactor, yFactor, zFactor);
       }
 
       if (includeComponentTransforms) {
         const components = getElementsByLocalName(doc, "component");
         for (const component of components) {
-          this.scaleTransformAttribute(component, factor);
+          this.scaleTransformAttribute(component, xFactor, yFactor, zFactor);
         }
       }
     }
@@ -1149,10 +1157,10 @@ export class ThreeMfDocument {
   }
 
   static processors = {
-    scaleAllModelInstances200Percent:
-      (options: Omit<ScaleProcessorOptions, "factor"> = {}): ThreeMfProcessor =>
+    scaleAllModelInstances:
+      (options: ScaleProcessorOptions = {}): ThreeMfProcessor =>
       async (ctx) => {
-        ctx.scaleAllModelInstances({ factor: 2, ...options });
+        ctx.scaleAllModelInstances(options);
       },
 
     removeChildObjectsByName:
@@ -1180,14 +1188,17 @@ export class ThreeMfDocument {
       },
   };
 
-  private scaleTransformAttribute(element: Element, factor: number) {
+  private scaleTransformAttribute(element: Element, xFactor: number, yFactor: number, zFactor: number) {
     const current = element.getAttribute("transform");
     const parsed = parseTransform12(current);
     if (parsed) {
-      element.setAttribute("transform", formatTransform12(scaleTransformLinearPart(parsed, factor)));
+      element.setAttribute(
+        "transform",
+        formatTransform12(scaleTransformLinearPartByAxes(parsed, xFactor, yFactor, zFactor)),
+      );
       return;
     }
-    element.setAttribute("transform", makePureScaleTransform(factor));
+    element.setAttribute("transform", makePureScaleTransformByAxes(xFactor, yFactor, zFactor));
   }
 
   async toUint8Array(): Promise<Uint8Array> {
@@ -1239,13 +1250,13 @@ export async function processThreeMf(
   return doc;
 }
 
-export async function scale3mfTo200PercentAndDownload(
+export async function scale3mfAndDownload(
   input: File | Blob | ArrayBuffer | Uint8Array,
-  outputFileName = "scaled-200.3mf",
-  options: Omit<ScaleProcessorOptions, "factor"> = {},
+  outputFileName = "scaled.3mf",
+  options: ScaleProcessorOptions = {},
 ) {
   const doc = await processThreeMf(input, [
-    ThreeMfDocument.processors.scaleAllModelInstances200Percent(options),
+    ThreeMfDocument.processors.scaleAllModelInstances(options),
   ]);
   await doc.download(outputFileName);
 }

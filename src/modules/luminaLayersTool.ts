@@ -4,7 +4,7 @@ import { type GroupTextureTriangle, generateGroupTexture } from "./textureManage
 import { downloadBlob } from "./gifRecorder";
 import type { PolygonWithPoints } from "./textureManager";
 import type { PolygonWithEdgeInfo } from "../types/geometryTypes";
-import { processThreeMf, ThreeMfDocument } from "./threeMF/threeMfProcessor";
+import { processThreeMf, ThreeMfDocument, getCompositeChildrenUnionBoundingBoxFrom3mf } from "./threeMF/threeMfProcessor";
 import {
   validateExpectedThreeMfStructure,
   assertExpectedThreeMfStructure,
@@ -12,6 +12,7 @@ import {
 } from "./threeMF/threeMfStructureValidator";
 import { buildStlInWorker } from "./replicad/replicadWorkerClient";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { getSettings } from "./settings";
 
 export type LuminaLayersDeps = {
   getPreviewGroupId: () => number | undefined;
@@ -22,6 +23,7 @@ export type LuminaLayersDeps = {
   getGroupFaceUVs: (groupId: number) => GroupTextureTriangle[];
   getCurrentHistoryUid: () => number;
   getGroupPlaceAngle: (groupId: number) => number;
+  getGroupBounds: () => { minX: number; maxX: number; minY: number; maxY: number } | undefined;
   hasGroupIntersection: (groupId: number) => boolean;
   previewMeshCacheManager: {
     getCachedPreviewMesh: (groupId: number, currentHistoryUid: number, currentGroupAngle: number) => { mesh: THREE.Mesh; angle: number } | null;
@@ -37,6 +39,7 @@ export type LuminaLayersRefs = {
   groupNameLabel: HTMLSpanElement;
   faceCountLabel: HTMLSpanElement;
   pngFileNameLabel: HTMLSpanElement;
+  luminaLayersParaWidthLabel: HTMLSpanElement;
   exportPngBtn: HTMLButtonElement;
   dropZone: HTMLDivElement;
   closeBtn: HTMLButtonElement;
@@ -51,6 +54,7 @@ export function getLuminaLayersRefs(): LuminaLayersRefs | null {
     groupNameLabel: get<HTMLSpanElement>("#lumina-layers-group-name"),
     faceCountLabel: get<HTMLSpanElement>("#lumina-layers-face-count"),
     pngFileNameLabel: get<HTMLSpanElement>("#lumina-layers-png-filename"),
+    luminaLayersParaWidthLabel: get<HTMLSpanElement>("#lumina-layers-para-width"),
     exportPngBtn: get<HTMLButtonElement>("#lumina-layers-export-png-btn"),
     dropZone: get<HTMLDivElement>("#lumina-layers-drop-zone"),
     closeBtn: get<HTMLButtonElement>("#lumina-layers-close-btn"),
@@ -85,6 +89,17 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
     setTextWithTooltip(refs.groupNameLabel, groupName);
     setTextWithTooltip(refs.faceCountLabel, faceCount.toString());
     setTextWithTooltip(refs.pngFileNameLabel, `文件名：${pngFileName}`);
+    // 更新展开组尺寸
+    const bounds = deps.getGroupBounds();
+    const { scale } = getSettings();
+    // 乘以 2 以提高ll导出模型精度，抗锯齿
+    const width = 1 * scale * (bounds ? bounds.maxX - bounds.minX : 100);
+    const height = 1 * scale * (bounds ? bounds.maxY - bounds.minY : 100);
+    if (bounds) {
+      setTextWithTooltip(refs.luminaLayersParaWidthLabel, `${width.toFixed(2)} × ${height.toFixed(2)}`);
+    } else {
+      setTextWithTooltip(refs.luminaLayersParaWidthLabel, "-");
+    }
     // 延迟加载视频
     // const dataSrc = refs.videoIframe.getAttribute("data-src");
     // if (dataSrc) {
@@ -210,18 +225,29 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
       }
     }
 
+    const { scale } = getSettings();
     const geometry = cachedMesh.mesh.geometry.clone();
-
     const bbox = await getCompositeChildrenUnionBoundingBoxFrom3mf(file, { includeBuildItemTransform: true,});
-    console.log('[LuminaLayersTool] bbox of model in 3mf ', bbox)
+    
+    console.log('[LuminaLayersTool] bbox of model in 3mf ', bbox, 'scale', scale);
+
     // 应用展开组旋转角度
     if (groupAngle && Math.abs(groupAngle) > 1e-9) {
+      console.log('[LuminaLayersTool] apply group angle', groupAngle);
       geometry.rotateZ(-groupAngle);
-    }
+      // 先放大 2 倍，因为后面还需要缩小 2 倍
+      // geometry.scale(2, 2, 1)
+    };
     
     try {
       const doc = await processThreeMf(file, [
         ThreeMfDocument.processors.removeChildObjectsByName("Backing"),
+        // 缩小 2 倍
+        // ThreeMfDocument.processors.scaleAllModelInstances({
+        //   xFactor: 0.5,
+        //   yFactor: 0.5,
+        //   zFactor: 1,
+        // }),
         ThreeMfDocument.processors.addChildObjectFromGeometry({
           childName: groupName || "NewPart",
           geometry: geometry as THREE.BufferGeometry,

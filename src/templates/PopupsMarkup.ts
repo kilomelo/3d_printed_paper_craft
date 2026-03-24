@@ -411,6 +411,10 @@ export const renderLuminaLayersDialog = () => `
               </div>
             </article>
           </section>
+
+          <section class="lumina-info-card">
+            <span id="lumina-layers-para-width" class="lumina-parameter-guide"></span>
+          </section>
         </div>
       </div>
       <div class="settings-footer">

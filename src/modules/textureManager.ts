@@ -591,15 +591,39 @@ export async function generateGroupTexture(options: GroupTextureOptions): Promis
     });
   });
 
-  // 根据包围盒尺寸动态设置画布分辨率
-  const PIXELS_PER_UNIT = 10;
+  // 根据包围盒尺寸动态设置画布分辨率（保持宽高比）
+  const PIXELS_PER_UNIT = 20;
   const MIN_SIZE = 64;
   const MAX_SIZE = 4096;
   const rawWidth = Math.ceil((maxX - minX) * PIXELS_PER_UNIT);
   const rawHeight = Math.ceil((maxY - minY) * PIXELS_PER_UNIT);
-  const canvasWidth = Math.max(MIN_SIZE, Math.min(MAX_SIZE, rawWidth));
-  const canvasHeight = Math.max(MIN_SIZE, Math.min(MAX_SIZE, rawHeight));
-  console.log(`[generateGroupTexture] canvas size: ${canvasWidth}x${canvasHeight}`)
+
+  // 保持宽高比，计算最终的画布尺寸
+  const aspectRatio = rawWidth / rawHeight;
+  let canvasWidth: number;
+  let canvasHeight: number;
+
+  if (rawWidth > MAX_SIZE && rawHeight > MAX_SIZE) {
+    // 如果两边都超过最大值，选择较大的那个作为限制
+    if (aspectRatio > 1) {
+      canvasWidth = MAX_SIZE;
+      canvasHeight = Math.max(MIN_SIZE, Math.round(MAX_SIZE / aspectRatio));
+    } else {
+      canvasHeight = MAX_SIZE;
+      canvasWidth = Math.max(MIN_SIZE, Math.round(MAX_SIZE * aspectRatio));
+    }
+  } else if (rawWidth > MAX_SIZE) {
+    canvasWidth = MAX_SIZE;
+    canvasHeight = Math.max(MIN_SIZE, Math.round(MAX_SIZE / aspectRatio));
+  } else if (rawHeight > MAX_SIZE) {
+    canvasHeight = MAX_SIZE;
+    canvasWidth = Math.max(MIN_SIZE, Math.round(MAX_SIZE * aspectRatio));
+  } else {
+    canvasWidth = Math.max(MIN_SIZE, rawWidth);
+    canvasHeight = Math.max(MIN_SIZE, rawHeight);
+  }
+
+  console.log(`[generateGroupTexture] raw size: ${rawWidth}x${rawHeight}, canvas size: ${canvasWidth}x${canvasHeight}`)
 
   const canvas = document.createElement("canvas");
   canvas.width = canvasWidth;

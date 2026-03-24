@@ -1574,6 +1574,7 @@ textarea {
   color: var(--muted);
 }
 
+.lumina-parameter-guide,
 .lumina-meta-info {
   min-width: 0;
   font-size: 14px;
