@@ -63,14 +63,25 @@ export type ThreeMfMeshData = {
   name?: string;
 };
 
+export type ThreeMfChildPartKind = "normal" | "negative";
+
 export type AddChildObjectOptions = {
   childName: string;
   mesh: ThreeMfMeshData;
+  /**
+   * 子对象在 Bambu / Orca 项目中的部件类型。
+   * - normal: 普通正模型
+   * - negative: 负模型（Negative Part）
+   *
+   * 默认 normal。
+   */
+  partKind?: ThreeMfChildPartKind;
 };
 
 export type AddChildObjectFromGeometryOptions = {
   childName: string;
   geometry: BufferGeometry;
+  partKind?: ThreeMfChildPartKind;
 };
 
 export type ThreeMfVector3 = {
@@ -596,6 +607,14 @@ function formatXmlNumber(v: number): string {
   return s.replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
 }
 
+function normalizeChildPartKind(kind: ThreeMfChildPartKind | undefined): ThreeMfChildPartKind {
+  return kind === "negative" ? "negative" : "normal";
+}
+
+function partKindToModelSettingsSubtype(kind: ThreeMfChildPartKind): string {
+  return kind === "negative" ? "negative_part" : "normal_part";
+}
+
 function getFirstDirectChildByLocalName(parent: Element, localName: string): Element | null {
   for (const child of Array.from(parent.children)) {
     const childLocal = child.localName || child.tagName.split(":").pop() || child.tagName;
@@ -1059,6 +1078,7 @@ export class ThreeMfDocument {
     const childName = options.childName.trim();
     if (!childName) throw new Error("childName 不能为空");
 
+    const partKind = normalizeChildPartKind(options.partKind);
     const mesh = normalizeMeshData(options.mesh);
 
     if (!this.primaryModelPath) {
@@ -1126,7 +1146,7 @@ export class ThreeMfDocument {
         : this.modelSettingsDoc!.createElement("part");
 
       newPartEl.setAttribute("id", String(newObjectId));
-      if (!newPartEl.getAttribute("subtype")) newPartEl.setAttribute("subtype", "normal_part");
+      newPartEl.setAttribute("subtype", partKindToModelSettingsSubtype(partKind));
 
       setOrCreateMetadataValue(newPartEl, "name", childName);
       setOrCreateMetadataValue(newPartEl, "source_volume_id", String(computeNextSourceVolumeId(modelSettingsRootObjectEl)));
@@ -1148,7 +1168,19 @@ export class ThreeMfDocument {
 
   addChildObjectFromGeometry(options: AddChildObjectFromGeometryOptions): this {
     const mesh = meshDataFromBufferGeometry(options.geometry, options.childName);
-    return this.addChildObject({ childName: options.childName, mesh });
+    return this.addChildObject({
+      childName: options.childName,
+      mesh,
+      partKind: options.partKind,
+    });
+  }
+
+  addNegativeChildObject(options: Omit<AddChildObjectOptions, "partKind">): this {
+    return this.addChildObject({ ...options, partKind: "negative" });
+  }
+
+  addNegativeChildObjectFromGeometry(options: Omit<AddChildObjectFromGeometryOptions, "partKind">): this {
+    return this.addChildObjectFromGeometry({ ...options, partKind: "negative" });
   }
 
   /** 向后兼容旧接口：删除名称为 Backing 的子对象 */
@@ -1179,6 +1211,18 @@ export class ThreeMfDocument {
       (options: AddChildObjectFromGeometryOptions): ThreeMfProcessor =>
       async (ctx) => {
         ctx.addChildObjectFromGeometry(options);
+      },
+
+    addNegativeChildObject:
+      (options: Omit<AddChildObjectOptions, "partKind">): ThreeMfProcessor =>
+      async (ctx) => {
+        ctx.addNegativeChildObject(options);
+      },
+
+    addNegativeChildObjectFromGeometry:
+      (options: Omit<AddChildObjectFromGeometryOptions, "partKind">): ThreeMfProcessor =>
+      async (ctx) => {
+        ctx.addNegativeChildObjectFromGeometry(options);
       },
 
     removeBackingChildObject:
@@ -1249,18 +1293,6 @@ export async function processThreeMf(
   }
   return doc;
 }
-
-export async function scale3mfAndDownload(
-  input: File | Blob | ArrayBuffer | Uint8Array,
-  outputFileName = "scaled.3mf",
-  options: ScaleProcessorOptions = {},
-) {
-  const doc = await processThreeMf(input, [
-    ThreeMfDocument.processors.scaleAllModelInstances(options),
-  ]);
-  await doc.download(outputFileName);
-}
-
 export async function removeChildObjectsByNameAndDownload(
   input: File | Blob | ArrayBuffer | Uint8Array,
   targetName: string,
@@ -1280,31 +1312,6 @@ export async function removeBackingChildAndDownload(
 ) {
   await removeChildObjectsByNameAndDownload(input, "Backing", outputFileName, options);
 }
-
-export async function addChildObjectAndDownload(
-  input: File | Blob | ArrayBuffer | Uint8Array,
-  childName: string,
-  mesh: ThreeMfMeshData,
-  outputFileName = "with-added-child.3mf",
-) {
-  const doc = await processThreeMf(input, [
-    ThreeMfDocument.processors.addChildObject({ childName, mesh }),
-  ]);
-  await doc.download(outputFileName);
-}
-
-export async function addChildObjectFromGeometryAndDownload(
-  input: File | Blob | ArrayBuffer | Uint8Array,
-  childName: string,
-  geometry: BufferGeometry,
-  outputFileName = "with-added-child.3mf",
-) {
-  const doc = await processThreeMf(input, [
-    ThreeMfDocument.processors.addChildObjectFromGeometry({ childName, geometry }),
-  ]);
-  await doc.download(outputFileName);
-}
-
 
 export async function getCompositeChildrenUnionBoundingBoxFrom3mf(
   input: File | Blob | ArrayBuffer | Uint8Array,

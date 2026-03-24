@@ -3,6 +3,7 @@ import * as THREE from "three";
 import type { Object3D, Vector2, Texture as ThreeTexture } from "three";
 import { appEventBus } from "./eventBus";
 import { ensurePerTriangleUVsIfMissing } from "./geometry";
+import type { PolygonContour } from "../types/geometryTypes";
 
 // 贴图格式类型
 export type TextureFormat = "png" | "jpg" | "jpeg" | "webp";
@@ -485,11 +486,6 @@ export function ensureUVsForModel(model: Object3D | null): boolean {
 
 // === 展开组贴图生成 ===
 
-// 多边形数据类型
-export type PolygonWithPoints = {
-  points: [number, number][];
-};
-
 // 展开组贴图三角形数据
 export type GroupTextureTriangle = {
   faceId: number;
@@ -499,7 +495,7 @@ export type GroupTextureTriangle = {
 
 // 展开组贴图生成选项
 export type GroupTextureOptions = {
-  polygons: PolygonWithPoints[];
+  polygons: PolygonContour[];
   faceUVs: Map<number, Vector2[] | null> | GroupTextureTriangle[];
   texture: ThreeTexture | null;
   size?: number;

@@ -51,6 +51,9 @@ export type PolygonWithEdgeInfo = {
   boundaryPointAngleData?: PolygonPointAngleData[];
 };
 
+// 多边形数据类型，用于贴图导出和replicad构造轮廓修剪负物体
+export type PolygonContour = Pick<PolygonWithEdgeInfo, 'points'>;
+
 export const v2 = (p: Point2D) => new THREE.Vector2(p[0], p[1]);
 export const v3 = (p: Point3D) => new THREE.Vector3(p[0], p[1], p[2]);
 

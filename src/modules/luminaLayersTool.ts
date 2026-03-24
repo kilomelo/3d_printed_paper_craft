@@ -2,15 +2,14 @@
 import * as THREE from "three";
 import { type GroupTextureTriangle, generateGroupTexture } from "./textureManager";
 import { downloadBlob } from "./gifRecorder";
-import type { PolygonWithPoints } from "./textureManager";
-import type { PolygonWithEdgeInfo } from "../types/geometryTypes";
+import type { PolygonWithEdgeInfo, PolygonContour } from "../types/geometryTypes";
 import { processThreeMf, ThreeMfDocument, getCompositeChildrenUnionBoundingBoxFrom3mf } from "./threeMF/threeMfProcessor";
 import {
   validateExpectedThreeMfStructure,
-  assertExpectedThreeMfStructure,
   ThreeMfExpectedStructureErrorCode,
 } from "./threeMF/threeMfStructureValidator";
 import { buildStlInWorker } from "./replicad/replicadWorkerClient";
+import { buildNegativeOutlineForLuminaLayers } from "./replicad/replicadModeling";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { getSettings } from "./settings";
 
@@ -18,7 +17,7 @@ export type LuminaLayersDeps = {
   getPreviewGroupId: () => number | undefined;
   getPreviewGroupName: (groupId: number) => string | undefined;
   getProjectName: () => string;
-  getGroupPolygonsData: (groupId: number) => PolygonWithPoints[];
+  getGroupPolygonsData: (groupId: number) => PolygonContour[];
   getTexture: () => THREE.Texture | null;
   getGroupFaceUVs: (groupId: number) => GroupTextureTriangle[];
   getCurrentHistoryUid: () => number;
@@ -206,7 +205,7 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
           // 修正 geometry 位置
           geometry.computeBoundingBox();
           const min = geometry.boundingBox!.min;
-          geometry.translate(-(min.x ?? 0), -(min.y ?? 0), -(min.z ?? 0));
+          console.log("[LuminaLayersTool] geometry.boundingBox.min", min);
 
           const mesh = new THREE.Mesh(geometry);
           mesh.name = "Replicad Mesh";
@@ -227,17 +226,63 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
 
     const { scale } = getSettings();
     const geometry = cachedMesh.mesh.geometry.clone();
+    // 用负轮廓几何体替代原展开组几何体
+    const polygons = deps.getGroupPolygonsData(groupId);
+    if (!polygons.length) {
+      deps.log("展开组没有面数据", "error");
+      return;
+    }
+    deps.log("正在生成负轮廓几何体...", "info");
+
+    let negativeGeometry: THREE.BufferGeometry;
+    try {
+      const solid = await buildNegativeOutlineForLuminaLayers(polygons);
+      if (!solid) {
+        deps.log("负轮廓几何体生成失败", "error");
+        return;
+      }
+      const meshTolerance = 0.1;
+      const meshAngularTolerance = 0.5;
+      const mesh = solid.mesh({ tolerance: meshTolerance, angularTolerance: meshAngularTolerance });
+      negativeGeometry = new THREE.BufferGeometry();
+      negativeGeometry.setAttribute("position", new THREE.Float32BufferAttribute(mesh.vertices, 3));
+      negativeGeometry.setAttribute("normal", new THREE.Float32BufferAttribute(mesh.normals, 3));
+      const indexArray = mesh.vertices.length / 3 > 65535
+        ? new THREE.Uint32BufferAttribute(mesh.triangles, 1)
+        : new THREE.Uint16BufferAttribute(mesh.triangles, 1);
+      negativeGeometry.setIndex(indexArray);
+      negativeGeometry.computeBoundingBox();
+    } catch (err) {
+      console.error("生成负轮廓几何体失败:", err);
+      deps.log("生成负轮廓几何体失败", "error");
+      return;
+    }
     const bbox = await getCompositeChildrenUnionBoundingBoxFrom3mf(file, { includeBuildItemTransform: true,});
     
     console.log('[LuminaLayersTool] bbox of model in 3mf ', bbox, 'scale', scale);
+
+    let maxX = -Infinity;
+    let minY = Infinity;
+    polygons.forEach((polygon) => {
+      polygon.points.forEach((point) => {
+        maxX = Math.max(maxX, point[0]);
+        minY = Math.min(minY, point[1]);
+      })
+    })
+    console.log('[LuminaLayersTool] polygons min ', -maxX, minY);
+
 
     // 应用展开组旋转角度
     if (groupAngle && Math.abs(groupAngle) > 1e-9) {
       console.log('[LuminaLayersTool] apply group angle', groupAngle);
       geometry.rotateZ(-groupAngle);
-      // 先放大 2 倍，因为后面还需要缩小 2 倍
-      // geometry.scale(2, 2, 1)
-    };
+      negativeGeometry.rotateZ(-groupAngle);
+    }
+    // 对其模型
+    geometry.translate(maxX, -minY, 0);
+    negativeGeometry.translate(maxX, -minY, 0);
+    // 先放大 2 倍，因为后面还需要缩小 2 倍
+    // geometry.scale(2, 2, 1)
     
     try {
       const doc = await processThreeMf(file, [
@@ -249,8 +294,14 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
         //   zFactor: 1,
         // }),
         ThreeMfDocument.processors.addChildObjectFromGeometry({
-          childName: groupName || "NewPart",
+          childName: groupName + "-NegativeMesh",
+          geometry: negativeGeometry as THREE.BufferGeometry,
+          partKind: "negative",
+        }),
+        ThreeMfDocument.processors.addChildObjectFromGeometry({
+          childName: groupName || "GroupMesh",
           geometry: geometry as THREE.BufferGeometry,
+          partKind: "normal",
         }),
       ]);
       await doc.download("modified.3mf");

@@ -1,4 +1,4 @@
-import { Sketcher, Sketch, PlaneName, Point, Plane, drawCircle, drawRectangle, Shape3D } from "replicad";
+import { Sketcher, Sketch, PlaneName, Point, Plane, drawCircle, drawRectangle, Shape3D, CompoundSketch } from "replicad";
 import type { Point2D } from "../../types/geometryTypes";
 import { degToRad } from "../mathUtils";
 
@@ -23,7 +23,7 @@ export function makeVerticalPlaneThroughAB(a: Point2D, b: Point2D, z = 0): Plane
   const ny = -dx / len;
   const normal: Point = [nx, ny, 0];
 
-  return new Plane(origin, xDir, normal); // Plane(origin, xDirection, normal) :contentReference[oaicite:2]{index=2}
+  return new Plane(origin, xDir, normal); // Plane(origin, xDirection, normal)
 }
 
 export function makeVerticalSketcherThroughAB(a: Point2D, b: Point2D) {
@@ -78,6 +78,66 @@ export function extrudeFromContourPoints(points: Point2D[], plane: PlaneName | P
   const sketcher = sketchFromContourPoints(points, plane, offset);
   if (!sketcher) return undefined;
   return sketcher.extrude(height);
+}
+
+function sanitizeContourPoints(points: Point2D[], eps = 1e-9): Point2D[] | undefined {
+  if (points.length < 3) return undefined;
+
+  const out = points.map(([x, y]) => [x, y] as Point2D);
+  const first = out[0];
+  const last = out[out.length - 1];
+
+  if (Math.abs(first[0] - last[0]) <= eps && Math.abs(first[1] - last[1]) <= eps) {
+    out.pop();
+  }
+
+  return out.length >= 3 ? out : undefined;
+}
+
+/**
+ * 以“外轮廓 + 一个或多个内孔”的方式直接生成复合草图并挤出。
+ *
+ * 适合：
+ * - 外轮廓明确且无歧义
+ * - 内孔轮廓也已明确
+ * - 想避免先 extrude 再 cut
+ *
+ * 约定：
+ * - outerPoints 必须是一条有效闭合轮廓（首尾重复点可有可无）
+ * - innerContours 中每项都必须是一条有效闭合轮廓
+ * - 不强制要求顺/逆时针方向；由 CompoundSketch 语义处理“外轮廓 + 孔”
+ */
+export function extrudeRingFromOuterAndInnerContours(
+  outerPoints: Point2D[],
+  innerContours: Point2D[][],
+  plane: PlaneName | Plane = "XY",
+  offset = 0,
+  height = 1,
+): Shape3D | undefined {
+  const cleanOuter = sanitizeContourPoints(outerPoints);
+  if (!cleanOuter) return undefined;
+
+  const cleanInnerContours = innerContours
+    .map((points) => sanitizeContourPoints(points))
+    .filter((points): points is Point2D[] => !!points);
+
+  const outerSketch = sketchFromContourPoints(cleanOuter, plane, offset);
+  if (!outerSketch) return undefined;
+
+  const innerSketches: Sketch[] = [];
+  try {
+    for (const contour of cleanInnerContours) {
+      const innerSketch = sketchFromContourPoints(contour, plane, offset);
+      if (!innerSketch) continue;
+      innerSketches.push(innerSketch);
+    }
+
+    const compound = new CompoundSketch([outerSketch, ...innerSketches]);
+    return compound.extrude(height) as Shape3D;
+  } finally {
+    outerSketch.delete?.();
+    innerSketches.forEach((sketch) => sketch.delete?.());
+  }
 }
 
 // 在指定平面上以指定圆心画圆然后挤出圆柱体

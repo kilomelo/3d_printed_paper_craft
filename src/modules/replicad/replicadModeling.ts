@@ -1,9 +1,10 @@
 import { BufferGeometry, Float32BufferAttribute, Uint16BufferAttribute, Uint32BufferAttribute, Mesh, Shape } from "three";
+import { createClipper2TsAdapter } from "../clipper/clipper2tsAdapter";
 import { localGC, setOC, getOC, Shape3D, makeBox, drawCircle, drawRectangle, Point, Plane, Sketcher } from "replicad";
 import type { OpenCascadeInstance } from "replicad-opencascadejs";
 import initOC from "replicad-opencascadejs/src/replicad_single.js";
 import ocWasmUrl from "replicad-opencascadejs/src/replicad_single.wasm?url";
-import type { Point2D, PolygonWithEdgeInfo } from "../../types/geometryTypes";
+import type { Point2D, PolygonWithEdgeInfo, PolygonContour } from "../../types/geometryTypes";
 import { getSettings } from "../settings";
 import {
   pointKey, degToRad,
@@ -20,6 +21,7 @@ import {
   transformPlaneLocal,
   splitSolidByPlane,
   arcByCenterStartAngleSafe,
+  extrudeRingFromOuterAndInnerContours,
 } from "./replicadUtils";
 import { t, initI18n, setLanguage } from "../i18n";
 
@@ -110,6 +112,7 @@ const buildSolidFromPolygonsWithAngles = async (
     await ensureReplicadOC();
 
     // 第一步：生成连接层和主体
+    // todo 这里改为调用clipper接口，更稳一些
     const outerResult  = polygons2Outer(polygonsWithAngles);
     if (!outerResult || !outerResult.outer || outerResult.outer.length < 3) {
       onLog?.(t("log.replicad.outer.fail"));
@@ -753,6 +756,33 @@ export const buildTabClip = async () => {
   const tabClipSolidHalf = tabClipSolidOneQuater.fuse(tabClipSolidOneQuater.clone().mirror("YZ")).simplify();
   return tabClipSolidHalf.fuse(tabClipSolidHalf.clone().mirror("XZ")).simplify();
 };
+
+export const buildNegativeOutlineForLuminaLayers = async (outlinePolygons: PolygonContour[]) => {
+  if (!outlinePolygons.length) return undefined;
+  await ensureReplicadOC();
+  const clipper = createClipper2TsAdapter();
+
+  // 合并所有多边形为一个外轮廓
+  const allPoints = outlinePolygons.map((p) => p.points);
+  const unioned = clipper.union(allPoints);
+  if (!unioned || unioned.length !== 1) {
+    throw new Error("生成负物体时轮廓合并失败");
+  }
+
+  const expanded = clipper.offset(unioned, 1, {
+    joinType: "miter",
+    endType: "polygon",
+  });
+  if (!expanded || expanded.length !== 1) {
+    throw new Error("生成负物体时轮廓偏移失败");
+  }
+  // todo 高度根据叠色高度设定
+  const solid = extrudeRingFromOuterAndInnerContours(expanded[0], unioned, "XY", 0, 0.4);
+  if (!solid) {
+    throw new Error("生成负物体时挤出失败");
+  }
+  return solid.mirror("YZ").simplify();
+}
 
 export async function buildGroupStepFromPolygons(
   polygonsWithAngles: PolygonWithEdgeInfo[],
