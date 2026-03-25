@@ -43,6 +43,8 @@ export type SettingsUIRefs = {
   wireframeRow: HTMLDivElement;
   layerHeightInput: HTMLInputElement;
   layerHeightResetBtn: HTMLButtonElement;
+  luminaLayersTotalHeightInput: HTMLInputElement;
+  luminaLayersTotalHeightResetBtn: HTMLButtonElement;
   connectionLayersDecBtn: HTMLButtonElement;
   connectionLayersIncBtn: HTMLButtonElement;
   connectionLayersValue: HTMLSpanElement;
@@ -54,10 +56,12 @@ export type SettingsUIRefs = {
   navBasic: HTMLButtonElement;
   navInterlocking: HTMLButtonElement;
   navClip: HTMLButtonElement;
+  navLumina: HTMLButtonElement;
   navExperiment: HTMLButtonElement;
   panelBasic: HTMLDivElement;
   panelInterlocking: HTMLDivElement;
   panelClip: HTMLDivElement;
+  panelLumina: HTMLDivElement;
   panelExperiment: HTMLDivElement;
 };
 
@@ -106,6 +110,8 @@ export function getSettingsUIRefs(): SettingsUIRefs | null {
     wireframeRow: get<HTMLDivElement>("#setting-wireframe-row"),
     layerHeightInput: get<HTMLInputElement>("#setting-layer-height"),
     layerHeightResetBtn: get<HTMLButtonElement>("#setting-layer-height-reset"),
+    luminaLayersTotalHeightInput: get<HTMLInputElement>("#setting-lumina-layers-total-height"),
+    luminaLayersTotalHeightResetBtn: get<HTMLButtonElement>("#setting-lumina-layers-total-height-reset"),
     connectionLayersDecBtn: get<HTMLButtonElement>("#setting-connection-layers-dec"),
     connectionLayersIncBtn: get<HTMLButtonElement>("#setting-connection-layers-inc"),
     connectionLayersValue: get<HTMLSpanElement>("#setting-connection-layers-value"),
@@ -117,10 +123,12 @@ export function getSettingsUIRefs(): SettingsUIRefs | null {
     navBasic: get<HTMLButtonElement>("#settings-nav-basic"),
     navInterlocking: get<HTMLButtonElement>("#settings-nav-interlocking"),
     navClip: get<HTMLButtonElement>("#settings-nav-clip"),
+    navLumina: get<HTMLButtonElement>("#settings-nav-lumina"),
     navExperiment: get<HTMLButtonElement>("#settings-nav-experiment"),
     panelBasic: get<HTMLDivElement>("#settings-panel-basic"),
     panelInterlocking: get<HTMLDivElement>("#settings-panel-interlocking"),
     panelClip: get<HTMLDivElement>("#settings-panel-clip"),
+    panelLumina: get<HTMLDivElement>("#settings-panel-lumina"),
     panelExperiment: get<HTMLDivElement>("#settings-panel-experiment"),
   };
 
@@ -201,6 +209,10 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     setRowModified(refs.clawWidthInput, settingsDraft.clawWidth !== defaults.clawWidth);
     setRowModified(refs.clawFitGapInput, settingsDraft.clawFitGap !== defaults.clawFitGap);
     setRowModified(refs.layerHeightInput, settingsDraft.layerHeight !== defaults.layerHeight);
+    setRowModified(
+      refs.luminaLayersTotalHeightInput,
+      settingsDraft.luminaLayersTotalHeight !== defaults.luminaLayersTotalHeight,
+    );
     setRowModified(refs.connectionLayersValue, settingsDraft.connectionLayers !== defaults.connectionLayers);
     setRowModified(refs.bodyLayersValue, settingsDraft.bodyLayers !== defaults.bodyLayers);
     setRowModified(refs.joinTypeInterlockingBtn, settingsDraft.joinType !== defaults.joinType);
@@ -212,15 +224,16 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     setRowModified(refs.wireframeThicknessInput, settingsDraft.wireframeThickness !== defaults.wireframeThickness);
   };
 
-  const activateTab = (tab: "basic" | "interlocking" | "clip" | "experiment") => {
+  const activateTab = (tab: "basic" | "interlocking" | "clip" | "lumina" | "experiment") => {
     const tabs: Array<{
-      key: "basic" | "interlocking" | "clip" | "experiment";
+      key: "basic" | "interlocking" | "clip" | "lumina" | "experiment";
       nav: HTMLButtonElement;
       panel: HTMLDivElement;
     }> = [
       { key: "basic", nav: refs.navBasic, panel: refs.panelBasic },
       { key: "interlocking", nav: refs.navInterlocking, panel: refs.panelInterlocking },
       { key: "clip", nav: refs.navClip, panel: refs.panelClip },
+      { key: "lumina", nav: refs.navLumina, panel: refs.panelLumina },
       { key: "experiment", nav: refs.navExperiment, panel: refs.panelExperiment },
     ];
     tabs.forEach(({ key, nav, panel }) => {
@@ -255,6 +268,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
       measurePanelHeight(refs.panelBasic),
       measurePanelHeight(refs.panelInterlocking),
       measurePanelHeight(refs.panelClip),
+      measurePanelHeight(refs.panelLumina),
       measurePanelHeight(refs.panelExperiment),
     );
     const maxAllowed = Math.floor(window.innerHeight * 0.8);
@@ -295,6 +309,10 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
       !Number.isNaN(val) && val >= SETTINGS_LIMITS.tabThickness.min && val <= SETTINGS_LIMITS.tabThickness.max,
     layerHeight: (val: number) =>
       !Number.isNaN(val) && val > SETTINGS_LIMITS.layerHeight.min && val <= SETTINGS_LIMITS.layerHeight.max,
+    luminaLayersTotalHeight: (val: number) =>
+      !Number.isNaN(val) &&
+      val >= SETTINGS_LIMITS.luminaLayersTotalHeight.min &&
+      val <= SETTINGS_LIMITS.luminaLayersTotalHeight.max,
     connectionLayers: (val: number) =>
       Number.isInteger(val) &&
       val >= SETTINGS_LIMITS.connectionLayers.min &&
@@ -335,6 +353,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.clawFitGapInput.value = String(settingsDraft.clawFitGap);
     refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
     refs.layerHeightInput.value = String(settingsDraft.layerHeight);
+    refs.luminaLayersTotalHeightInput.value = String(settingsDraft.luminaLayersTotalHeight);
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
     refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
     refs.tabWidthInput.value = String(settingsDraft.tabWidth);
@@ -344,7 +363,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateClipGapAdjustButtons();
     updateHollowButtons();
     updateWireframeEnabled();
-    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterlockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.clawFitGapInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
+    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterlockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.clawFitGapInput, refs.layerHeightInput, refs.luminaLayersTotalHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
       updateInputColor(el, true),
     );
     updateModifiedIndicators();
@@ -433,6 +452,9 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
   });
   refs.navClip.addEventListener("click", () => {
     activateTab("clip");
+  });
+  refs.navLumina.addEventListener("click", () => {
+    activateTab("lumina");
   });
   refs.navExperiment.addEventListener("click", () => {
     activateTab("experiment");
@@ -545,6 +567,15 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     () => getDefaultSettings().layerHeight,
   );
   bindNumericInput(
+    refs.luminaLayersTotalHeightInput,
+    refs.luminaLayersTotalHeightResetBtn,
+    (raw) => parseFloat(raw),
+    () => settingsDraft.luminaLayersTotalHeight,
+    (v) => (settingsDraft.luminaLayersTotalHeight = v),
+    validators.luminaLayersTotalHeight,
+    () => getDefaultSettings().luminaLayersTotalHeight,
+  );
+  bindNumericInput(
     refs.tabWidthInput,
     refs.tabWidthResetBtn,
     (raw) => parseFloat(raw),
@@ -615,6 +646,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.clawWidthInput.value = String(settingsDraft.clawWidth);
     refs.clawFitGapInput.value = String(settingsDraft.clawFitGap);
     refs.layerHeightInput.value = String(settingsDraft.layerHeight);
+    refs.luminaLayersTotalHeightInput.value = String(settingsDraft.luminaLayersTotalHeight);
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
     refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
     refs.tabWidthInput.value = String(settingsDraft.tabWidth);
@@ -624,7 +656,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateJoinTypeButtons();
     updateClipGapAdjustButtons();
     updateHollowButtons();
-    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterlockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.clawFitGapInput, refs.layerHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
+    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterlockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.clawFitGapInput, refs.layerHeightInput, refs.luminaLayersTotalHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
       updateInputColor(el, true),
     );
     updateModifiedIndicators();
@@ -671,6 +703,14 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     }
     if (settingsDraft.layerHeight !== settingsSnapshot.layerHeight) {
       changes.push(t("log.settings.changed", { label: t("settings.layerHeight.label"), value: settingsDraft.layerHeight }));
+    }
+    if (settingsDraft.luminaLayersTotalHeight !== settingsSnapshot.luminaLayersTotalHeight) {
+      changes.push(
+        t("log.settings.changed", {
+          label: t("settings.luminaLayersTotalHeight.label"),
+          value: settingsDraft.luminaLayersTotalHeight,
+        }),
+      );
     }
     if (settingsDraft.connectionLayers !== settingsSnapshot.connectionLayers) {
       changes.push(t("log.settings.changed", { label: t("settings.connectionLayers.label"), value: settingsDraft.connectionLayers }));
@@ -721,6 +761,7 @@ export function applySettingsI18n() {
   };
 
   updateDesc('[data-i18n="settings.layerHeight.desc"]', "settings.layerHeight.desc", { max: limits.layerHeight.max });
+  updateDesc('[data-i18n="settings.luminaLayersTotalHeight.desc"]', "settings.luminaLayersTotalHeight.desc");
   updateDesc('[data-i18n="settings.connectionLayers.desc"]', "settings.connectionLayers.desc", { min: limits.connectionLayers.min, max: limits.connectionLayers.max });
   updateDesc('[data-i18n="settings.bodyLayers.desc"]', "settings.bodyLayers.desc", { min: limits.bodyLayers.min, max: limits.bodyLayers.max });
   updateDesc('[data-i18n="settings.joinType.desc"]', "settings.joinType.desc");

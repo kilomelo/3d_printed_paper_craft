@@ -14,6 +14,7 @@ export const renderSettingsOverlay = () => `
           <button class="settings-nav-item active" id="settings-nav-basic" data-i18n="settings.nav.basic">基础设置</button>
           <button class="settings-nav-item" id="settings-nav-interlocking" data-i18n="settings.nav.interlocking">咬合拼接</button>
           <button class="settings-nav-item" id="settings-nav-clip" data-i18n="settings.nav.clip">卡扣拼接</button>
+          <button class="settings-nav-item" id="settings-nav-lumina" data-i18n="settings.nav.lumina">叠色设置</button>
           <button class="settings-nav-item" id="settings-nav-experiment" data-i18n="settings.nav.experimental">实验设置</button>
         </div>
         <div class="settings-content">
@@ -187,6 +188,18 @@ export const renderSettingsOverlay = () => `
                   <button id="setting-clip-thickness-narrow" class="btn settings-inline-btn" data-i18n="settings.clipGapAdjusts.on">薄夹</button>
                 </div>
                 <button id="setting-clip-thickness-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+          </div>
+          <div class="settings-panel" id="settings-panel-lumina">
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <label for="setting-lumina-layers-total-height" class="setting-label" data-i18n="settings.luminaLayersTotalHeight.label">叠色层总高度</label>
+                <span class="setting-desc" data-i18n="settings.luminaLayersTotalHeight.desc">叠色层高度，不包括背板，单位mm</span>
+              </div>
+              <div class="setting-field">
+                <input id="setting-lumina-layers-total-height" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <button id="setting-lumina-layers-total-height-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
           </div>

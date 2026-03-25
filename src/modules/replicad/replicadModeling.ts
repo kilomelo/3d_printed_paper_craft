@@ -94,6 +94,7 @@ const buildSolidFromPolygonsWithAngles = async (
     onProgress?.(0);
     const {
       layerHeight,
+      luminaLayersTotalHeight,
       connectionLayers,
       bodyLayers,
       joinType,
@@ -108,7 +109,7 @@ const buildSolidFromPolygonsWithAngles = async (
       wireframeThickness,
     } = getSettings();
     const bodyThickness = bodyLayers * layerHeight;
-    const connectionThickness = mode === "normal" ? connectionLayers * layerHeight : 0.4;
+    const connectionThickness = mode === "normal" ? connectionLayers * layerHeight : luminaLayersTotalHeight;
     onProgress?.(1);
     await ensureReplicadOC();
 
@@ -790,8 +791,8 @@ export const buildNegativeOutlineForLuminaLayers = async (
   if (!expanded || expanded.length !== 1) {
     throw new Error("生成负物体时轮廓偏移失败");
   }
-  // todo 高度根据叠色高度设定
-  const solid = extrudeRingFromOuterAndInnerContours(expanded[0], [outerResult.outer], "XY", 0, 0.4);
+  const { luminaLayersTotalHeight } = getSettings();
+  const solid = extrudeRingFromOuterAndInnerContours(expanded[0], [outerResult.outer], "XY", 0, luminaLayersTotalHeight);
   if (!solid) {
     throw new Error("生成负物体时挤出失败");
   }

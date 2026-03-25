@@ -4,6 +4,7 @@ import { appEventBus } from "./eventBus.js";
 export type Settings = {
   scale: number;
   layerHeight: number;
+  luminaLayersTotalHeight: number;
   connectionLayers: number;
   bodyLayers: number;
   joinType: "interlocking" | "clip";
@@ -24,6 +25,7 @@ export type Settings = {
 export const SETTINGS_LIMITS = {
   scale: { min: 0 },
   layerHeight: { min: 0, max: 0.5 },
+  luminaLayersTotalHeight: { min: 0.4, max: 0.6 },
   connectionLayers: { min: 1, max: 4 },
   bodyLayers: { min: 1, max: 8 },
   joinType: { allowed: ["interlocking", "clip"] as const },
@@ -44,6 +46,7 @@ const defaultSettings: Settings = {
   joinType: "clip",
   scale: 1,
   layerHeight: 0.2,
+  luminaLayersTotalHeight: 0.4,
   connectionLayers: 1,
   bodyLayers: 3,
   clawInterlockingAngle: 4,
@@ -84,6 +87,15 @@ export function setLayerHeight(val: number) {
   )
     return;
   current = { ...current, layerHeight: val };
+}
+
+export function setLuminaLayersTotalHeight(val: number) {
+  if (
+    Number.isNaN(val) ||
+    val < SETTINGS_LIMITS.luminaLayersTotalHeight.min ||
+    val > SETTINGS_LIMITS.luminaLayersTotalHeight.max
+  ) return;
+  current = { ...current, luminaLayersTotalHeight: val };
 }
 
 export function setClawInterlockingAngle(val: number) {
@@ -253,6 +265,14 @@ const sanitizeImportedSettings = (imported: Partial<Record<keyof Settings, unkno
   const layerHeight = readFiniteNumber(imported.layerHeight);
   if (layerHeight != null) {
     next.layerHeight = clamp(layerHeight, Number.EPSILON, SETTINGS_LIMITS.layerHeight.max);
+  }
+  const luminaLayersTotalHeight = readFiniteNumber(imported.luminaLayersTotalHeight);
+  if (luminaLayersTotalHeight != null) {
+    next.luminaLayersTotalHeight = clamp(
+      luminaLayersTotalHeight,
+      SETTINGS_LIMITS.luminaLayersTotalHeight.min,
+      SETTINGS_LIMITS.luminaLayersTotalHeight.max,
+    );
   }
   const connectionLayers = readFiniteNumber(imported.connectionLayers);
   if (connectionLayers != null) {
