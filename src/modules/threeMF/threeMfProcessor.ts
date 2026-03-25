@@ -17,6 +17,8 @@ import type { BufferGeometry } from "three";
 const RELS_PATH = "_rels/.rels";
 const START_PART_REL_TYPE = "http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel";
 const MODEL_SETTINGS_CONFIG_PATH = "Metadata/model_settings.config";
+const LAYER_CONFIG_RANGES_PATH = "Metadata/layer_config_ranges.xml";
+const LAYER_CONFIG_RANGES_CACHE_KEY = "__layerConfigRangesDocCache";
 
 export type ThreeMfProcessor = (ctx: ThreeMfDocument) => void | Promise<void>;
 
@@ -104,6 +106,16 @@ export type CompositeChildrenUnionBoundingBoxOptions = {
    * 当你准备把新子对象直接挂到这个组合对象下时，通常应保持 false。
    */
   includeBuildItemTransform?: boolean;
+};
+
+export type HeightRangeModifierOptions = {
+  minZ: number;
+  maxZ: number;
+  slicerOptions: Record<string, string | number | boolean>;
+  /**
+   * 默认 true：如果同一个 object 下已存在相同 [minZ, maxZ] 的 range，则先删后加。
+   */
+  replaceSameRange?: boolean;
 };
 
 type DisplayNameInfo = {
@@ -695,6 +707,39 @@ function normalizeMeshData(mesh: ThreeMfMeshData): { positions: Float32Array; in
   return { positions, indices };
 }
 
+function getCachedLayerConfigRangesDoc(ctx: unknown): XMLDocument | null {
+  return ((ctx as any)[LAYER_CONFIG_RANGES_CACHE_KEY] as XMLDocument | null | undefined) ?? null;
+}
+
+function setCachedLayerConfigRangesDoc(ctx: unknown, doc: XMLDocument | null) {
+  (ctx as any)[LAYER_CONFIG_RANGES_CACHE_KEY] = doc;
+}
+
+function buildHeightRangeOptions(
+  userOptions: Record<string, string | number | boolean>
+): Record<string, string | number | boolean> {
+  // 这一组是按你给我的“有高度范围修改器.3mf”样本整理的最小稳妥默认值
+  // 用户传入的值优先级更高，会覆盖这些默认值
+  return {
+    bottom_color_penetration_layers: 3,
+    extruder: 0,
+    infill_direction: 45,
+    inner_wall_line_width: 0.45,
+    layer_height: 0.2,
+    skeleton_infill_density: "15%",
+    skeleton_infill_line_width: 0.45,
+    skin_infill_density: "15%",
+    skin_infill_line_width: 0.45,
+    sparse_infill_density: "15%",
+    sparse_infill_line_width: 0.45,
+    sparse_infill_pattern: "grid",
+    top_color_penetration_layers: 5,
+    top_shell_layers: 5,
+    wall_loops: 2,
+    ...userOptions,
+  };
+}
+
 export function meshDataFromBufferGeometry(geometry: BufferGeometry, name?: string): ThreeMfMeshData {
   const positionAttr = geometry.getAttribute("position") as any;
   if (!positionAttr || positionAttr.itemSize !== 3) {
@@ -955,6 +1000,131 @@ export class ThreeMfDocument {
 
   async apply(processor: ThreeMfProcessor): Promise<this> {
     await processor(this);
+    return this;
+  }
+
+    private async getOrCreateLayerConfigRangesDoc(): Promise<XMLDocument> {
+    const cached = getCachedLayerConfigRangesDoc(this);
+    if (cached) return cached;
+
+    const existing = this.zip.file(LAYER_CONFIG_RANGES_PATH);
+    let doc: XMLDocument;
+
+    if (existing) {
+      const text = await existing.async("string");
+      doc = parseXml(text, LAYER_CONFIG_RANGES_PATH);
+    } else {
+      doc = parseXml(
+        '<?xml version="1.0" encoding="utf-8"?><objects></objects>',
+        LAYER_CONFIG_RANGES_PATH,
+      );
+    }
+
+    setCachedLayerConfigRangesDoc(this, doc);
+    return doc;
+  }
+
+  /**
+   * 给主 3D/3dmodel.model 中唯一组合对象的所有子对象增加相同的高度范围修改器。
+   * 这会在 Metadata/layer_config_ranges.xml 中为每个 component.objectid 写入同一组 range。
+   */
+  async addHeightRangeModifier(options: HeightRangeModifierOptions): Promise<this> {
+    const minZ = options.minZ;
+    const maxZ = options.maxZ;
+
+    if (!Number.isFinite(minZ) || !Number.isFinite(maxZ) || !(maxZ > minZ)) {
+      throw new Error(`非法高度范围: minZ=${minZ}, maxZ=${maxZ}`);
+    }
+
+    if (!this.primaryModelPath) {
+      throw new Error("未找到主 model part，无法添加高度范围修改器");
+    }
+
+    const primaryEntry = this.modelParts.get(normalizeZipPath(this.primaryModelPath));
+    if (!primaryEntry) {
+      throw new Error(`主 model part 不存在：${this.primaryModelPath}`);
+    }
+
+    const primaryDoc = primaryEntry.doc;
+    const rootObjects = getElementsByLocalName(primaryDoc, "object");
+    const buildItems = getElementsByLocalName(primaryDoc, "item");
+
+    if (rootObjects.length !== 1 || buildItems.length !== 1) {
+      throw new Error(
+        `预期主 model 中只有 1 个 object 和 1 个 build/item，实际 object=${rootObjects.length}, item=${buildItems.length}`,
+      );
+    }
+
+    const rootObject = rootObjects[0];
+    const componentEls = getElementsByLocalName(rootObject, "component");
+    if (componentEls.length === 0) {
+      throw new Error("唯一模型对象不是组合对象（未找到任何 component）");
+    }
+
+    const targetObjectIds = Array.from(
+      new Set(
+        componentEls
+          .map((componentEl) => (componentEl.getAttribute("objectid") ?? "").trim())
+          .filter(Boolean),
+      ),
+    );
+
+    if (targetObjectIds.length === 0) {
+      throw new Error("未能解析出任何 component.objectid");
+    }
+
+    const layerDoc = await this.getOrCreateLayerConfigRangesDoc();
+    const objectsRoot = layerDoc.documentElement;
+    const replaceSameRange = options.replaceSameRange ?? true;
+
+    for (const objectId of targetObjectIds) {
+      let objectEl =
+        getElementsByLocalName(layerDoc, "object").find(
+          (el) => (el.getAttribute("id") ?? "").trim() === objectId,
+        ) ?? null;
+
+      if (!objectEl) {
+        objectEl = layerDoc.createElement("object");
+        objectEl.setAttribute("id", objectId);
+        objectsRoot.appendChild(objectEl);
+      }
+
+      if (replaceSameRange) {
+        const existingRanges = getElementsByLocalName(objectEl, "range");
+        for (const rangeEl of existingRanges) {
+          const existingMin = Number(rangeEl.getAttribute("min_z"));
+          const existingMax = Number(rangeEl.getAttribute("max_z"));
+          if (
+            Number.isFinite(existingMin) &&
+            Number.isFinite(existingMax) &&
+            Math.abs(existingMin - minZ) < 1e-9 &&
+            Math.abs(existingMax - maxZ) < 1e-9
+          ) {
+            removeElement(rangeEl);
+          }
+        }
+      }
+
+      const rangeEl = layerDoc.createElement("range");
+      rangeEl.setAttribute("min_z", String(minZ));
+      rangeEl.setAttribute("max_z", String(maxZ));
+
+      const mergedSlicerOptions = buildHeightRangeOptions(options.slicerOptions);
+
+      for (const [optKey, rawValue] of Object.entries(mergedSlicerOptions)) {
+        const optionEl = layerDoc.createElement("option");
+        optionEl.setAttribute("opt_key", optKey);
+        optionEl.textContent =
+          typeof rawValue === "boolean" ? (rawValue ? "1" : "0") : String(rawValue);
+        rangeEl.appendChild(optionEl);
+      }
+
+      objectEl.appendChild(rangeEl);
+    }
+
+    // 直接回写到 zip，避免你去改现有 flushXmlBackToZip 的签名/字段
+    this.zip.file(LAYER_CONFIG_RANGES_PATH, serializeXml(layerDoc));
+
     return this;
   }
 
@@ -1229,6 +1399,12 @@ export class ThreeMfDocument {
       (options: RemoveBackingOptions = {}): ThreeMfProcessor =>
       async (ctx) => {
         ctx.removeChildObjectsByName("Backing", options);
+      },
+
+    addHeightRangeModifier:
+      (options: HeightRangeModifierOptions): ThreeMfProcessor =>
+      async (ctx) => {
+        await ctx.addHeightRangeModifier(options);
       },
   };
 

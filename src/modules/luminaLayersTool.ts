@@ -19,7 +19,6 @@ export type LuminaLayersDeps = {
   getGroupPolygonsData: (groupId: number) => PolygonContour[];
   getTexture: () => THREE.Texture | null;
   getGroupFaceUVs: (groupId: number) => GroupTextureTriangle[];
-  getCurrentHistoryUid: () => number;
   getGroupPlaceAngle: (groupId: number) => number;
   getGroupBounds: () => { minX: number; maxX: number; minY: number; maxY: number } | undefined;
   hasGroupIntersection: (groupId: number) => boolean;
@@ -166,7 +165,6 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
       return;
     }
     const groupName = deps.getPreviewGroupName(groupId);
-    const currentHistoryUid = deps.getCurrentHistoryUid();
     const groupAngle = deps.getGroupPlaceAngle(groupId);
 
     // 检查是否有自相交
@@ -272,6 +270,11 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
           childName: groupName || "GroupMesh",
           geometry: geometry as THREE.BufferGeometry,
           partKind: "normal",
+        }),
+        ThreeMfDocument.processors.addHeightRangeModifier({
+          minZ: 0.4,
+          maxZ: 100,
+          slicerOptions: {},
         }),
       ]);
       await doc.download("modified.3mf");
