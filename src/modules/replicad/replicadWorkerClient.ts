@@ -1,21 +1,20 @@
 import { PolygonWithEdgeInfo } from "../../types/geometryTypes";
 import { getSettings } from "../settings";
-import { Mesh } from "three";
-import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { Mesh, BufferGeometry, Float32BufferAttribute, Uint32BufferAttribute, Uint16BufferAttribute } from "three";
 import { getCurrentLang } from "../i18n";
 
 type WorkerResponse =
   | { id: number; ok: true; type: "step"; buffer: ArrayBuffer; mime: string }
   | { id: number; ok: true; type: "stl"; buffer: ArrayBuffer; mime: string }
-  | { id: number; ok: true; type: "mesh"; buffer: ArrayBuffer; mime: string }
+  | { id: number; ok: true; type: "mesh"; vertices: ArrayBuffer; normals: ArrayBuffer; triangles: ArrayBuffer; trianglesType: "uint16" | "uint32" }
   | { id: number; ok: true; type: "progress"; message: number }
   | { id: number; ok: true; type: "log"; message: string; tone?: "info" | "error" | "success" | "progress" }
   | { id: number; ok: false; error: string };
 
 type WorkerRequest =
-  | { id: number; type: "step"; polygons: PolygonWithEdgeInfo[]; settings: ReturnType<typeof getSettings>; lang?: string }
-  | { id: number; type: "stl"; polygons: PolygonWithEdgeInfo[]; settings: ReturnType<typeof getSettings>; lang?: string }
-  | { id: number; type: "mesh"; polygons: PolygonWithEdgeInfo[]; settings: ReturnType<typeof getSettings>; lang?: string };
+  | { id: number; type: "step"; polygons: PolygonWithEdgeInfo[]; settings: ReturnType<typeof getSettings>; lang?: string; mode?: "normal" | "lumina" }
+  | { id: number; type: "stl"; polygons: PolygonWithEdgeInfo[]; settings: ReturnType<typeof getSettings>; lang?: string; mode?: "normal" | "lumina" }
+  | { id: number; type: "mesh"; polygons: PolygonWithEdgeInfo[]; settings: ReturnType<typeof getSettings>; lang?: string; mode?: "normal" | "lumina" };
 
 let worker: Worker | null = null;
 let seq = 0;
@@ -102,20 +101,38 @@ export async function buildStlInWorker(
   return { blob: new Blob([res.buffer], { type: res.mime }) };
 }
 
-const stlLoader = new STLLoader();
-
 export async function buildMeshInWorker(
   polygonsWithAngles: PolygonWithEdgeInfo[],
   onProgress?: (msg: number) => void,
   onLog?: (msg: string, tone?: string) => void,
+  mode: "normal" | "lumina" = "normal",
 ) {
-  const res = (await callWorker({ type: "mesh", polygons: polygonsWithAngles, settings: getSettings(), lang: getCurrentLang() }, onProgress, onLog)) as Extract<
+  const res = (await callWorker({ type: "mesh", polygons: polygonsWithAngles, settings: getSettings(), lang: getCurrentLang(), mode }, onProgress, onLog)) as Extract<
     WorkerResponse,
     { type: "mesh"; ok: true }
   >;
-  const geometry = stlLoader.parse(res.buffer);
+
+  const vertices = new Float32Array(res.vertices);
+  const normals = new Float32Array(res.normals);
+  const triangles =
+    res.trianglesType === "uint32"
+      ? new Uint32Array(res.triangles)
+      : new Uint16Array(res.triangles);
+
+  const geometry = new BufferGeometry();
+  const position = new Float32BufferAttribute(vertices, 3);
+  const normal = new Float32BufferAttribute(normals, 3);
+  const indexArray =
+    res.trianglesType === "uint32"
+      ? new Uint32BufferAttribute(triangles, 1)
+      : new Uint16BufferAttribute(triangles, 1);
+
+  geometry.setAttribute("position", position);
+  geometry.setAttribute("normal", normal);
+  geometry.setIndex(indexArray);
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
+
   const mesh = new Mesh(geometry);
   mesh.name = "Replicad Mesh";
   return { mesh };

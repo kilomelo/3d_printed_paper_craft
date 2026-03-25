@@ -626,7 +626,6 @@ const luminaLayersTool = luminaLayersRefs
       getGroupPlaceAngle: (groupId) => groupController.getGroupPlaceAngle(groupId) ?? 0,
       getGroupBounds: () => unfold2d.getLastBounds() ?? undefined,
       hasGroupIntersection: (groupId) => unfold2d.hasGroupIntersection(groupId),
-      previewMeshCacheManager,
       log,
       t,
     })

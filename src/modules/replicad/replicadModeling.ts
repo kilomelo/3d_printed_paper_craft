@@ -78,14 +78,15 @@ const tabClipGemometry = () => {
 };
 
 // 实际实行参数化建模的方法【核心逻辑】
-// 这里已经从“按三角形输入”改为“按多边形输入”。
+// 这里已经从"按三角形输入"改为"按多边形输入"。
 // 多边形的边按 points[i] -> points[(i + 1) % n] 解释。
-// hollowStyle 开启时，生产端会退回为“三角形 polygon”，因此仍可复用现有镂空逻辑。
+// hollowStyle 开启时，生产端会退回为"三角形 polygon"，因此仍可复用现有镂空逻辑。
 const buildSolidFromPolygonsWithAngles = async (
   polygonsWithAngles: PolygonWithEdgeInfo[],
   onProgress?: (progress: number) => void,
   onLog?: (msg: string) => void,
   lang?: string,
+  mode: "normal" | "lumina" = "normal",
 ): Promise<{ solid: Shape3D }> => {
   const [gc, cleanup] = localGC();
   try {
@@ -107,12 +108,11 @@ const buildSolidFromPolygonsWithAngles = async (
       wireframeThickness,
     } = getSettings();
     const bodyThickness = bodyLayers * layerHeight;
-    const connectionThickness = connectionLayers * layerHeight;
+    const connectionThickness = mode === "normal" ? connectionLayers * layerHeight : 0.4;
     onProgress?.(1);
     await ensureReplicadOC();
 
     // 第一步：生成连接层和主体
-    // todo 这里改为调用clipper接口，更稳一些
     const outerResult  = polygons2Outer(polygonsWithAngles);
     if (!outerResult || !outerResult.outer || outerResult.outer.length < 3) {
       onLog?.(t("log.replicad.outer.fail"));
@@ -129,6 +129,7 @@ const buildSolidFromPolygonsWithAngles = async (
       throw new Error("连接层草图生成失败");
     }
     let connectionSolid = connectionBase.simplify();
+    
     if (!connectionSolid) {
       onLog?.(t("log.replicad.connModel.fail"));
       throw new Error("连接层建模失败");
@@ -140,7 +141,7 @@ const buildSolidFromPolygonsWithAngles = async (
     const slopeTools: Shape3D[] = [];
     const vertexAngleMap = new Map<string, { position: Point2D; minAngle: number }>();
     // 生成的几何体的面最小间距
-    const minDistance = 0.2 * connectionLayers;
+    const minDistance = 0.2;
     // 舌片外沿倒角
     const tabChamferSize = tabThickness - layerHeight;
     // 
@@ -178,7 +179,7 @@ const buildSolidFromPolygonsWithAngles = async (
         const pointB = points[(edgeIdx + 1) % points.length];
         return makeVerticalPlaneNormalAB(pointB, pointA);
       });
-      // 额外准备“反向法向”的平面，用于构造相邻边裁剪刀具的反向版本。
+      // 额外准备"反向法向"的平面，用于构造相邻边裁剪刀具的反向版本。
       // 多边形出现阴角时，同一条边对不同相邻边的裁剪语义可能相反；
       // 因此不能再只依赖每条边一把固定方向的刀具。
       const planesReversed = points.map((pointA, edgeIdx) => {
@@ -231,7 +232,7 @@ const buildSolidFromPolygonsWithAngles = async (
         // 相邻两条边的刀具用于裁剪当前边生成的几何体。
         //
         // 多边形语境下，如果当前边在某个共享顶点处是阴角（>180），
-        // 则该顶点对应的“相邻边裁剪刀具”需要反向。
+        // 则该顶点对应的"相邻边裁剪刀具"需要反向。
         // - 当前边终点(pointB)对应 nextEdgeIdx
         // - 当前边起点(pointA)对应 prevEdgeIdx
         const pointAReflex = (getPolygonPointAngle(pointA) ?? 0) > 180 + 1e-6;
@@ -240,7 +241,8 @@ const buildSolidFromPolygonsWithAngles = async (
         const adjEdgeCutToolR = pointAReflex ? edgeCutToolsReversed[prevEdgeIdx] : edgeCutTools[prevEdgeIdx];
         if ((!edge.isOuter && edge.angle > 180) || edge.angle < 180) {
           // 第二步：生成弯折、拼接坡度刀具
-          const slopeStartZ = edge.isOuter ? layerHeight : connectionThickness;
+          // 坡度的起始z高度，如果不是叠色模式，则以"尽量减少接缝"为目标；如果是叠色模式，则以"尽量不裁剪叠色区域"为目标
+          const slopeStartZ = (mode !== "lumina" && edge.isOuter) ? layerHeight : connectionThickness;
           const slopeZDelta = slopToolHeight - slopeStartZ;
             // 这是数学上的标准偏移
           const mathmaticalTopOffset = slopeZDelta * Math.tan(degToRad(90 - edge.angle / 2));
@@ -249,7 +251,7 @@ const buildSolidFromPolygonsWithAngles = async (
             // 这是超量弯折需要的额外偏移量（为什么需要超量弯折？因为打印机因流量校准等因素不可能生产出绝对符合数学模型的尺寸，且装配中超量弯折会有帮助）
             + (edge.isOuter ? 0 : (slopeZDelta * Math.tan(degToRad(excessiveBend / 2 + 90 - edge.angle / 2)) - mathmaticalTopOffset));
           // 需要确保斜坡首层（layerHeight/2处）的最小间距，以保证两边的斜坡的首层不融合
-          // 切片软甲中的“切片间隙闭合半径”需要设置得尽量小以减少该问题，但仍然需要从数据上保证间距
+          // 切片软甲中的"切片间隙闭合半径"需要设置得尽量小以减少该问题，但仍然需要从数据上保证间距
           // 注意这里公式求得的是确保首层的偏移为minDistance / 2时的坡底偏移
           const slopeFirstLayerOffset = 1e-4 + Math.max(0, slopeTopOffset - slopeZDelta * (slopeTopOffset - minDistance / 2) / (slopeZDelta - layerHeight / 2));
 
@@ -710,12 +712,22 @@ const buildSolidFromPolygonsWithAngles = async (
       [outerResult.max[0] + margin, outerResult.max[1] + margin, 0] as Point
     );
     connectionSolid = connectionSolid.cut(tool) as Shape3D;
+
+    // 如果是为LuminaLayersTool生成的几何，则需要减去叠色模型所在的区域
+    if (mode === "lumina") {
+      console.log('[ReplicadModeling] cutting lumina layers solid');
+      const luminaLayersSolid = extrudeFromContourPoints(outerResult.outer, "XY", 0, connectionThickness);
+      if (!luminaLayersSolid) {
+        // todo 报错
+      } else connectionSolid = connectionSolid.cut(luminaLayersSolid) as Shape3D;
+    }
     connectionSolid = connectionSolid.simplify().mirror("XY").rotate(180, [0, 0, 0], [0, 1, 0])
     onProgress?.(100);
     if (!isOcctValid(connectionSolid)) {
       onLog?.(t("log.replicad.invalid.final"));
       console.warn('[ReplicadModeling] final solid is not valid OCCT shape');
     }
+    console.log('[ReplicadModeling] final solid', connectionSolid);
     return { solid: connectionSolid };
   }
   finally {
@@ -757,19 +769,21 @@ export const buildTabClip = async () => {
   return tabClipSolidHalf.fuse(tabClipSolidHalf.clone().mirror("XZ")).simplify();
 };
 
-export const buildNegativeOutlineForLuminaLayers = async (outlinePolygons: PolygonContour[]) => {
-  if (!outlinePolygons.length) return undefined;
+export const buildNegativeOutlineForLuminaLayers = async (
+  // outlinePolygons: PolygonContour[]
+  polygonsWithAngles: PolygonWithEdgeInfo[]
+) => {
+  if (!polygonsWithAngles.length) return undefined;
   await ensureReplicadOC();
   const clipper = createClipper2TsAdapter();
 
-  // 合并所有多边形为一个外轮廓
-  const allPoints = outlinePolygons.map((p) => p.points);
-  const unioned = clipper.union(allPoints);
-  if (!unioned || unioned.length !== 1) {
-    throw new Error("生成负物体时轮廓合并失败");
+  const outerResult  = polygons2Outer(polygonsWithAngles);
+  if (!outerResult || !outerResult.outer || outerResult.outer.length < 3) {
+    // onLog?.(t("log.replicad.outer.fail"));
+    throw new Error("生成负物体时外轮廓查找失败");
   }
 
-  const expanded = clipper.offset(unioned, 1, {
+  const expanded = clipper.offset([outerResult.outer], 1, {
     joinType: "miter",
     endType: "polygon",
   });
@@ -777,7 +791,7 @@ export const buildNegativeOutlineForLuminaLayers = async (outlinePolygons: Polyg
     throw new Error("生成负物体时轮廓偏移失败");
   }
   // todo 高度根据叠色高度设定
-  const solid = extrudeRingFromOuterAndInnerContours(expanded[0], unioned, "XY", 0, 0.4);
+  const solid = extrudeRingFromOuterAndInnerContours(expanded[0], [outerResult.outer], "XY", 0, 0.4);
   if (!solid) {
     throw new Error("生成负物体时挤出失败");
   }
@@ -800,17 +814,20 @@ export async function buildGroupStepFromPolygons(
 
 const buildMeshTolerance = 0.1;
 const buildMeshAngularTolerance = 0.5;
+
 export async function buildGroupStlFromPolygons(
   polygonsWithAngles: PolygonWithEdgeInfo[],
   onProgress?: (msg: number) => void,
   onLog?: (msg: string) => void,
   lang?: string,
+  mode: "normal" | "lumina" = "normal",
 ): Promise<Blob> {
+  console.log('[buildGroupStlFromPolygons] 开始执行', { polygonsCount: polygonsWithAngles.length, mode });
   if (!polygonsWithAngles.length) {
     onLog?.(t("log.replicad.noTriangles"));
     throw new Error("没有可用于建模的展开面片");
   }
-  const { solid } = await buildSolidFromPolygonsWithAngles(polygonsWithAngles, onProgress, onLog, lang);
+  const { solid } = await buildSolidFromPolygonsWithAngles(polygonsWithAngles, onProgress, onLog, lang, mode);
   return solid.blobSTL({ binary: true, tolerance: buildMeshTolerance, angularTolerance: buildMeshAngularTolerance });
 }
 
@@ -819,20 +836,16 @@ export async function buildGroupMeshFromPolygons(
   onProgress?: (msg: number) => void,
   onLog?: (msg: string) => void,
   lang?: string,
+  mode: "normal" | "lumina" = "normal",
 ): Promise<{ mesh: Mesh }> {
-  if (!polygonsWithAngles.length) {
-    onLog?.(t("log.replicad.noTriangles"));
-    throw new Error("没有可用于建模的展开面片");
-  }
-  const { solid } = await buildSolidFromPolygonsWithAngles(polygonsWithAngles, onProgress, onLog, lang);
-  const mesh = solid.mesh({ tolerance: buildMeshTolerance, angularTolerance: buildMeshAngularTolerance });
+  const { vertices, normals, triangles } = await buildGroupMeshDataFromPolygons(polygonsWithAngles, onProgress, onLog, lang, mode);
   const geometry = new BufferGeometry();
-  const position = new Float32BufferAttribute(mesh.vertices, 3);
-  const normal = new Float32BufferAttribute(mesh.normals, 3);
+  const position = new Float32BufferAttribute(vertices, 3);
+  const normal = new Float32BufferAttribute(normals, 3);
   const indexArray =
-    mesh.vertices.length / 3 > 65535
-      ? new Uint32BufferAttribute(mesh.triangles, 1)
-      : new Uint16BufferAttribute(mesh.triangles, 1);
+    vertices.length / 3 > 65535
+      ? new Uint32BufferAttribute(triangles, 1)
+      : new Uint16BufferAttribute(triangles, 1);
   geometry.setAttribute("position", position);
   geometry.setAttribute("normal", normal);
   geometry.setIndex(indexArray);
@@ -841,4 +854,33 @@ export async function buildGroupMeshFromPolygons(
   const expotMesh = new Mesh(geometry);
   expotMesh.name = "group_preview_mesh";
   return { mesh: expotMesh };
+}
+
+/**
+ * 构建网格数据（不创建 Three.js 对象，用于 Worker 通信）
+ */
+export async function buildGroupMeshDataFromPolygons(
+  polygonsWithAngles: PolygonWithEdgeInfo[],
+  onProgress?: (msg: number) => void,
+  onLog?: (msg: string) => void,
+  lang?: string,
+  mode: "normal" | "lumina" = "normal",
+): Promise<{ vertices: Float32Array; normals: Float32Array; triangles: Uint16Array | Uint32Array }> {
+  if (!polygonsWithAngles.length) {
+    onLog?.(t("log.replicad.noTriangles"));
+    throw new Error("没有可用于建模的展开面片");
+  }
+  const { solid } = await buildSolidFromPolygonsWithAngles(polygonsWithAngles, onProgress, onLog, lang, mode);
+  const mesh = solid.mesh({ tolerance: buildMeshTolerance, angularTolerance: buildMeshAngularTolerance });
+
+  const indexArray =
+    mesh.vertices.length / 3 > 65535
+      ? new Uint32Array(mesh.triangles)
+      : new Uint16Array(mesh.triangles);
+
+  return {
+    vertices: new Float32Array(mesh.vertices),
+    normals: new Float32Array(mesh.normals),
+    triangles: indexArray,
+  };
 }

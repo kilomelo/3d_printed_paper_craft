@@ -8,9 +8,8 @@ import {
   validateExpectedThreeMfStructure,
   ThreeMfExpectedStructureErrorCode,
 } from "./threeMF/threeMfStructureValidator";
-import { buildStlInWorker } from "./replicad/replicadWorkerClient";
+import { buildMeshInWorker } from "./replicad/replicadWorkerClient";
 import { buildNegativeOutlineForLuminaLayers } from "./replicad/replicadModeling";
-import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { getSettings } from "./settings";
 
 export type LuminaLayersDeps = {
@@ -24,10 +23,6 @@ export type LuminaLayersDeps = {
   getGroupPlaceAngle: (groupId: number) => number;
   getGroupBounds: () => { minX: number; maxX: number; minY: number; maxY: number } | undefined;
   hasGroupIntersection: (groupId: number) => boolean;
-  previewMeshCacheManager: {
-    getCachedPreviewMesh: (groupId: number, currentHistoryUid: number, currentGroupAngle: number) => { mesh: THREE.Mesh; angle: number } | null;
-    addCachedPreviewMesh: (groupId: number, mesh: THREE.Mesh, currentHistoryUid: number) => void;
-  };
   log: (msg: string | number, tone?: "info" | "success" | "error" | "progress") => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   t: (key: string, params?: Record<string, any>) => string;
@@ -174,60 +169,35 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
     const currentHistoryUid = deps.getCurrentHistoryUid();
     const groupAngle = deps.getGroupPlaceAngle(groupId);
 
-    let cachedMesh = deps.previewMeshCacheManager.getCachedPreviewMesh(groupId, currentHistoryUid, groupAngle);
+    // 检查是否有自相交
+    if (deps.hasGroupIntersection(groupId)) {
+      deps.log("展开组存在自相交，无法生成模型", "error");
+      return;
+    }
 
-    // 缓存中没有模型，先生成并缓存
-    if (!cachedMesh || !cachedMesh.mesh.geometry) {
-      // 检查是否有自相交
-      if (deps.hasGroupIntersection(groupId)) {
-        deps.log("展开组存在自相交，无法生成模型", "error");
-        return;
-      }
+    const polygons = deps.getGroupPolygonsData(groupId);
+    if (!polygons.length) {
+      deps.log("展开组没有面数据", "error");
+      return;
+    }
+    deps.log("正在生成展开组模型...", "info");
 
-      const polygons = deps.getGroupPolygonsData(groupId);
-      if (!polygons.length) {
-        deps.log("展开组没有面数据", "error");
-        return;
-      }
-      deps.log("正在生成 STL 模型...", "info");
-
-      try {
-          const { blob } = await buildStlInWorker(
-            polygons as PolygonWithEdgeInfo[],
-            (progress) => deps.log(progress, "progress"),
-            (msg, tone) => deps.log(msg, tone as "info" | "success" | "error" | "progress"),
-          );
-
-          const buffer = await blob.arrayBuffer();
-          const stlLoader = new STLLoader();
-          const geometry = stlLoader.parse(buffer);
-
-          // 修正 geometry 位置
-          geometry.computeBoundingBox();
-          const min = geometry.boundingBox!.min;
-          console.log("[LuminaLayersTool] geometry.boundingBox.min", min);
-
-          const mesh = new THREE.Mesh(geometry);
-          mesh.name = "Replicad Mesh";
-
-          // 添加到缓存
-          deps.previewMeshCacheManager.addCachedPreviewMesh(groupId, mesh, currentHistoryUid);
-      } catch (err) {
-        console.error("生成展开组模型失败:", err);
-        deps.log("生成展开组模型失败", "error");
-      }
-      // 重新获取缓存
-      cachedMesh = deps.previewMeshCacheManager.getCachedPreviewMesh(groupId, currentHistoryUid, groupAngle);
-      if (!cachedMesh || !cachedMesh.mesh.geometry) {
-        deps.log("生成展开组模型失败", "error");
-        return;
-      }
+    let geometry: THREE.BufferGeometry;
+    try {
+      const { mesh } = await buildMeshInWorker(
+        polygons as PolygonWithEdgeInfo[],
+        (progress) => deps.log(progress, "progress"),
+        (msg, tone) => deps.log(msg, tone as "info" | "success" | "error" | "progress"),
+        "lumina",
+      );
+      geometry = mesh.geometry;
+    } catch (err) {
+      console.error("生成展开组模型失败:", err);
+      deps.log("生成展开组模型失败", "error");
+      return;
     }
 
     const { scale } = getSettings();
-    const geometry = cachedMesh.mesh.geometry.clone();
-    // 用负轮廓几何体替代原展开组几何体
-    const polygons = deps.getGroupPolygonsData(groupId);
     if (!polygons.length) {
       deps.log("展开组没有面数据", "error");
       return;
