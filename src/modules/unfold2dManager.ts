@@ -234,7 +234,13 @@ export function createUnfold2dManager(
       return cachedSnapped.tris;
     }
     const faces = getGroupFaces(groupId);
-    if (!faces || faces.size === 0) return [];
+    if (!faces || faces.size === 0) {
+      if (cachedSnapped?.groupId === groupId) {
+        cachedSnapped = null;
+      }
+      groupIntersected.set(groupId, false);
+      return [];
+    }
     clearTransforms();
     buildRootTransforms(groupId);
     buildTransformsForGroup(groupId);
@@ -1214,6 +1220,7 @@ export function createUnfold2dManager(
     rebuildGroup2D(groupId, true);
   });
   appEventBus.on("groupFaceRemoved", ({ groupId, faceId }: { groupId: number; faceId: number }) => {
+    cachedSnapped = null;
     const current = getPreviewGroupId();
     if (groupId !== current) return;
     rebuildGroup2D(groupId, true);

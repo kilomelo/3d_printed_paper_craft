@@ -123,6 +123,17 @@ textarea {
   transform: translateY(0);
 }
 
+.btn.is-disabled,
+.btn.is-disabled:hover,
+.btn.is-disabled:active {
+  color: var(--muted);
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: none;
+  transform: none;
+  cursor: not-allowed;
+}
+
 .btn.primary {
   height: 42px;
   border-color: rgba(56, 189, 248, 0.8);
@@ -362,6 +373,34 @@ textarea {
 
 .loading-overlay.hidden {
   display: none;
+}
+
+.transient-popup {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, calc(-50% + 8px));
+  max-width: min(80vw, 560px);
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  z-index: 60;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.transient-popup.is-visible {
+  opacity: 1;
+  transform: translate(-50%, -50%);
 }
 
 .about-overlay {

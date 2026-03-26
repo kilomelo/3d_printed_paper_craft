@@ -56,6 +56,7 @@ import { loadHomeChangelog } from "./modules/homeChangelog";
 import { createGifCaptureController } from "./modules/gifCapture";
 import { createHoldButton } from "./components/createHoldButton";
 import { createSegmentedControl } from "./components/createSegmentedControl";
+import { initTransientPopup, showTransientPopup } from "./modules/transientPopup";
 import "./styles/home.css";
 import { renderHomeSection } from "./templates/homeMarkup";
 import { initI18n, t, getCurrentLang, setLanguage, onLanguageChanged } from "./modules/i18n";
@@ -228,9 +229,9 @@ app.innerHTML = `
         <button class="btn ghost menu-btn-with-icon" id="menu-open"><span class="menu-btn-icon">${menu_open_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.model.open">打开文件</span></button>
         <button class="btn ghost menu-btn-with-icon" id="export-3dppc-btn"><span class="menu-btn-icon">${menu_export_3dppc_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.save3dppc">保存工程</span></button>
         <button class="btn ghost menu-btn-with-icon" id="export-group-stl-btn"><span class="menu-btn-icon">${menu_export_stl_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.export.group">导出展开组</span></button>
-        <button class="btn ghost menu-btn-with-icon" id="export-seam-clip-btn"><span class="menu-btn-icon">${menu_export_clip_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.export.seamClamp.stl">导出固定夹</span></button>
         <button class="btn ghost menu-btn-with-icon" id="lumina-layers-btn"><span class="menu-btn-icon">${menu_lumina_layers_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.luminaLayers">叠色打印工具</span></button>
         <button class="btn ghost menu-btn-with-icon" id="preview-group-model-btn"><span class="menu-btn-icon">${menu_preview_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.preview.group">预览展开组模型</span></button>
+        <button class="btn ghost menu-btn-with-icon" id="export-seam-clip-btn"><span class="menu-btn-icon">${menu_export_clip_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.export.seamClamp.stl">导出固定夹</span></button>
         <button class="btn ghost menu-btn-with-icon" id="settings-open-btn"><span class="menu-btn-icon">${menu_setting_IconSvg}</span><span class="menu-btn-label" data-i18n="menu.project.settings">项目设置</span></button>
         <a class="btn img-btn ghost hidden" id="jump-link-btn" target="_blank" rel="noopener noreferrer">
           <img src="/demo/makerworld.png" alt="Jump Link" />
@@ -301,6 +302,7 @@ app.innerHTML = `
   </section>
 </main>
   <div id="loading-overlay" class="loading-overlay hidden"></div>
+  <div id="transient-popup" class="transient-popup" aria-live="polite"></div>
   <div id="log-panel" class="log-panel hidden">
     <div id="log-list" class="log-list"></div>
   </div>
@@ -365,11 +367,13 @@ const settingsOverlay = document.querySelector<HTMLDivElement>("#settings-overla
 const settingsContent = settingsOverlay?.querySelector<HTMLDivElement>(".settings-content") || null;
 const renameModal = document.querySelector<HTMLDivElement>("#rename-modal");
 const loadingOverlay = document.querySelector<HTMLDivElement>("#loading-overlay");
+const transientPopupEl = document.querySelector<HTMLDivElement>("#transient-popup");
 langToggleBtn = document.querySelector<HTMLButtonElement>("#lang-toggle");
 langToggleGlobalBtn = document.querySelector<HTMLButtonElement>("#lang-toggle-global");
 
 // 设置 homeDemo 模块的 DOM 元素引用
 setHomeDemoElements(homeDemoOptionsEl, homeDemoEntry);
+initTransientPopup(transientPopupEl);
 
 const showLoadingOverlay = () => loadingOverlay?.classList.remove("hidden");
 const hideLoadingOverlay = () => loadingOverlay?.classList.add("hidden");
@@ -419,6 +423,7 @@ if (
   !layoutWorkspace ||
   !settingsOverlay ||
   !renameModal ||
+  !transientPopupEl ||
   !settingsOpenBtn ||
   !settingsContent ||
   !textureInput ||
@@ -1180,6 +1185,7 @@ const updateMenuState = () => {
   settingsOpenBtn.classList.toggle("hidden", isPreview);
   editorPreviewEl.classList.toggle("single-col", isPreview);
   refreshJumpLinkButtonState();
+  refreshExportDialogTriggerState();
   requestAnimationFrame(() => renderer3d.resizeRenderer3D());
 };
 
@@ -1255,6 +1261,7 @@ window.addEventListener("resize", () => {
 appEventBus.on("groupCurrentChanged", (groupId: number) => {
   groupUI.render(buildGroupUIState());
   refreshPreviewMeshCacheIndicator();
+  refreshExportDialogTriggerState();
 });
 appEventBus.on("groupColorChanged", ({ groupId, color }) => {
   groupUI.render(buildGroupUIState());
@@ -1263,19 +1270,27 @@ appEventBus.on("groupColorChanged", ({ groupId, color }) => {
 appEventBus.on("groupFaceAdded", ({ groupId }) => {
   groupUI.render(buildGroupUIState());
   setFileSaved(false);
+  refreshExportDialogTriggerState();
 });
 appEventBus.on("groupFaceRemoved", ({ groupId }) => {
   groupUI.render(buildGroupUIState());
   setFileSaved(false);
+  refreshExportDialogTriggerState();
+});
+appEventBus.on("groupRemoved", () => {
+  groupUI.render(buildGroupUIState());
+  refreshExportDialogTriggerState();
 });
 appEventBus.on("groupPlaceAngleChanged", () => { setFileSaved(false); });
 appEventBus.on("workspaceStateChanged", ({ previous, current }) =>  {
   if (current !== "loading") groupUI.render(buildGroupUIState());
   updateMenuState();
+  refreshExportDialogTriggerState();
 });
 
 groupUI.render(buildGroupUIState());
 updateMenuState();
+refreshExportDialogTriggerState();
 historyPanelUI = bindHistorySystem({
   panel: document.getElementById("history-panel"),
   list: document.getElementById("history-list"),
@@ -1351,6 +1366,7 @@ document.addEventListener("keydown", (e) => {
 bindGroupPreviewActions({
   exportGroupStlBtn: null as any,
   previewGroupModelBtn,
+  validateGroupOutputAccess: () => !!validateCurrentGroupForExportDialogs(),
   getPreviewGroupId: () => groupController.getPreviewGroupId(),
   getPreviewGroupName: (groupId) => groupController.getGroupName(groupId),
   getProjectName: () => getCurrentProject().name || "未命名工程",
@@ -1375,14 +1391,57 @@ bindGroupPreviewActions({
   t,
 });
 
-// 导出 STL 按钮点击事件：打开导出对话框
-exportGroupStlBtn?.addEventListener("click", () => {
+function getCurrentGroupExportDialogState() {
   const groupId = groupController.getPreviewGroupId();
-  const groupName = groupController.getGroupName(groupId) || `展开组 ${groupId}`;
+  if (groupId === undefined) {
+    return { allowed: false as const, reason: "no_group" as const };
+  }
   const faces = groupController.getGroupFaces(groupId);
   const faceCount = faces ? faces.size : 0;
-  const projectName = getCurrentProject().name || "未命名工程";
-  exportUI.open(groupName, faceCount, projectName);
+  if (faceCount <= 0) {
+    return { allowed: false as const, reason: "no_faces" as const, groupId, faceCount };
+  }
+  if (unfold2d.hasGroupIntersection(groupId)) {
+    return { allowed: false as const, reason: "self_intersection" as const, groupId, faceCount };
+  }
+  return {
+    allowed: true as const,
+    groupId,
+    faceCount,
+    groupName: groupController.getGroupName(groupId) || `展开组 ${groupId}`,
+    projectName: getCurrentProject().name || "未命名工程",
+  };
+}
+
+function refreshExportDialogTriggerState() {
+  const state = getCurrentGroupExportDialogState();
+  const disabled = !state.allowed;
+  exportGroupStlBtn?.classList.toggle("is-disabled", disabled);
+  luminaLayersBtn?.classList.toggle("is-disabled", disabled);
+  previewGroupModelBtn?.classList.toggle("is-disabled", disabled);
+  exportGroupStlBtn?.setAttribute("aria-disabled", disabled ? "true" : "false");
+  luminaLayersBtn?.setAttribute("aria-disabled", disabled ? "true" : "false");
+  previewGroupModelBtn?.setAttribute("aria-disabled", disabled ? "true" : "false");
+}
+
+function validateCurrentGroupForExportDialogs() {
+  const state = getCurrentGroupExportDialogState();
+  if (state.allowed) return state;
+  if (state.reason === "no_group") {
+    showTransientPopup(t("log.export.noGroup"));
+  } else if (state.reason === "no_faces") {
+    showTransientPopup("当前展开组没有三角面，无法进行导出操作");
+  } else if (state.reason === "self_intersection") {
+    showTransientPopup("当前展开组存在自交三角形，无法进行导出操作");
+  }
+  return null;
+}
+
+// 导出 STL 按钮点击事件：打开导出对话框
+exportGroupStlBtn?.addEventListener("click", () => {
+  const groupInfo = validateCurrentGroupForExportDialogs();
+  if (!groupInfo) return;
+  exportUI.open(groupInfo.groupName, groupInfo.faceCount, groupInfo.projectName);
 });
 
 exportTabClipBtn?.addEventListener("click", async () => {
@@ -1415,17 +1474,10 @@ exportTabClipBtn?.addEventListener("click", async () => {
 
 // 叠色打印工具按钮点击事件
 luminaLayersBtn?.addEventListener("click", () => {
-  const groupId = groupController.getPreviewGroupId();
-  if (groupId === undefined) {
-    log(t("log.export.noGroup"), "error");
-    return;
-  }
-  const groupName = groupController.getGroupName(groupId) || `展开组 ${groupId}`;
-  const faces = groupController.getGroupFaces(groupId);
-  const faceCount = faces ? faces.size : 0;
-  const projectName = getCurrentProject().name || "未命名工程";
-  const pngFileName = `${projectName}-${groupName}.png`;
-  luminaLayersTool?.open(groupName, faceCount, projectName, pngFileName);
+  const groupInfo = validateCurrentGroupForExportDialogs();
+  if (!groupInfo) return;
+  const pngFileName = `${groupInfo.projectName}-${groupInfo.groupName}.png`;
+  luminaLayersTool?.open(groupInfo.groupName, groupInfo.faceCount, groupInfo.projectName, pngFileName);
 });
 
 exitPreviewBtn.addEventListener("click", () => {

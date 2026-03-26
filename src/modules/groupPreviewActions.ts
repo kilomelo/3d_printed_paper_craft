@@ -17,6 +17,7 @@ import type { WorkspaceState } from "../types/workspaceState.js";
 type BindGroupPreviewActionsOptions = {
   exportGroupStlBtn: HTMLButtonElement | null;
   previewGroupModelBtn: HTMLButtonElement;
+  validateGroupOutputAccess?: () => boolean;
   getPreviewGroupId: () => number;
   getPreviewGroupName: (groupId: number) => string | undefined;
   getProjectName: () => string;
@@ -40,6 +41,7 @@ export const bindGroupPreviewActions = (opts: BindGroupPreviewActionsOptions) =>
   if (opts.exportGroupStlBtn) {
     const stlBtn = opts.exportGroupStlBtn;
     stlBtn.addEventListener("click", async () => {
+      if (opts.validateGroupOutputAccess && !opts.validateGroupOutputAccess()) return;
       stlBtn.disabled = true;
       try {
         const targetGroupId = opts.getPreviewGroupId();
@@ -84,6 +86,7 @@ export const bindGroupPreviewActions = (opts: BindGroupPreviewActionsOptions) =>
   }
 
   opts.previewGroupModelBtn.addEventListener("click", async () => {
+    if (opts.validateGroupOutputAccess && !opts.validateGroupOutputAccess()) return;
     opts.previewGroupModelBtn.disabled = true;
     try {
       const targetGroupId = opts.getPreviewGroupId();
