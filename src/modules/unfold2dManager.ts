@@ -1337,6 +1337,10 @@ export function createUnfold2dManager(
   ]);
 
   appEventBus.on("settingsChanged", (changedItems) => {
+    if (changedItems.includes("scale") && lastBounds) {
+      updateBBoxRuler(lastBounds.minX, lastBounds.maxX, lastBounds.minY, lastBounds.maxY);
+    }
+
     // 检查是否有影响 2D 视图的设置项被修改
     const affectedItems = changedItems.filter((item) => settingsAffecting2D.has(item));
     if (affectedItems.length === 0) return;

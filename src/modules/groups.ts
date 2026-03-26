@@ -332,7 +332,9 @@ export function applyImportedGroups(
       rebuildGroupTree(g.id, faceAdjacency);
     });
 
-  if (!groups.find((g) => g.id === 1)) {
+  // 仅当导入结果里确实没有任何组时，才补一个默认组。
+  // 不能把“缺少 id=1”误判成“没有组”，因为合法工程的组 ID 可能并非从 1 连续开始。
+  if (groups.length === 0) {
     addGroup(1);
   }
 }

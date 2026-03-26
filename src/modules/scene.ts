@@ -135,8 +135,8 @@ export class BBoxRuler {
       [xDimX - len * 0.5, minY, 0],
       [xDimX + len * 0.5, minY, 0],
     ]);
-    const labelXText = `${Math.round(width * scale)}`;
-    const labelYText = `${Math.round(height * scale)}`;
+    const labelXText = `${Math.ceil(10 * width * scale) / 10}`;
+    const labelYText = `${Math.ceil(10 * height * scale) / 10}`;
     const refreshLabel = (sprite: Sprite, text: string) => {
       const mat = sprite.material as SpriteMaterial;
       const tex = mat.map as CanvasTexture;

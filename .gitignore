@@ -39,3 +39,4 @@ coverage/
 !.vscode/settings.json
 
 .VSCodeCounter
+test_assets/*

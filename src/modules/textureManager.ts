@@ -128,10 +128,12 @@ export async function loadTextureFromUrl(url: string, name?: string): Promise<Te
 /**
  * 添加贴图到项目
  */
-export function addTexture(texture: TextureData): void {
+export function addTexture(texture: TextureData, emitEvent: boolean = true): void {
   projectTextures.set(texture.id, texture);
-  // 广播贴图变动事件，携带贴图数据
-  appEventBus.emit("texturesChanged", { textureData: texture, action: "add" });
+  if (emitEvent) {
+    // 广播贴图变动事件，携带贴图数据
+    appEventBus.emit("texturesChanged", { textureData: texture, action: "add" });
+  }
 }
 
 /**
@@ -158,7 +160,7 @@ export function removeTexture(id: string): boolean {
 /**
  * 覆盖贴图数据（用新图片替换）
  */
-export function replaceTexture(id: string, newTexture: TextureData): boolean {
+export function replaceTexture(id: string, newTexture: TextureData, emitEvent: boolean = true): boolean {
   if (!projectTextures.has(id)) {
     return false;
   }
@@ -169,8 +171,10 @@ export function replaceTexture(id: string, newTexture: TextureData): boolean {
     id: oldTexture.id,
   };
   projectTextures.set(id, updatedTexture);
-  // 广播贴图变动事件，携带更新后的贴图数据
-  appEventBus.emit("texturesChanged", { textureData: updatedTexture, action: "replace" });
+  if (emitEvent) {
+    // 广播贴图变动事件，携带更新后的贴图数据
+    appEventBus.emit("texturesChanged", { textureData: updatedTexture, action: "replace" });
+  }
   return true;
 }
 
@@ -209,14 +213,14 @@ export function clearAllTextures(userInitiated: boolean = false): void {
  * 将贴图数据导出为 Three.js Texture
  */
 export function createThreeTexture(textureData: TextureData): Promise<THREE.Texture> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const blob = new Blob([textureData.data], {
       type: `image/${textureData.format}`,
     });
     const url = URL.createObjectURL(blob);
 
     const loader = new THREE.TextureLoader();
-    const texture = loader.load(
+    loader.load(
       url,
       // onLoad 回调 - 贴图加载完成后返回
       (loadedTexture) => {
@@ -226,7 +230,12 @@ export function createThreeTexture(textureData: TextureData): Promise<THREE.Text
         loadedTexture.needsUpdate = true;
         URL.revokeObjectURL(url);
         resolve(loadedTexture);
-      }
+      },
+      undefined,
+      (error) => {
+        URL.revokeObjectURL(url);
+        reject(error);
+      },
     );
   });
 }
@@ -250,16 +259,12 @@ export function getTextureCount(): number {
 /**
  * 从 3dppc 数据中恢复贴图
  */
-export function restoreTexturesFromPPC(textures: TextureData[]): void {
+export function restoreTexturesFromPPC(textures: TextureData[]): TextureData | null {
   clearAllTextures(false); // 自动恢复，不输出日志
   textures.forEach((tex) => {
     projectTextures.set(tex.id, tex);
   });
-  // 触发事件，让渲染器知道贴图已恢复
-  const firstTexture = textures[0];
-  if (firstTexture) {
-    appEventBus.emit("texturesChanged", { textureData: firstTexture, action: "add", userInitiated: false });
-  }
+  return textures[0] ?? null;
 }
 
 /**

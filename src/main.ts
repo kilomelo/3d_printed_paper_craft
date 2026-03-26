@@ -427,6 +427,20 @@ if (
 ) {
   throw new Error("初始化界面失败，缺少必要的元素");
 }
+
+const refreshJumpLinkButtonState = () => {
+  const currentDemo = isCurrentProjectDemo
+    ? homeDemoProjects.find((item) => item.id === selectedHomeDemoProjectId)
+    : null;
+  const shouldShow = getWorkspaceState() !== "previewGroupModel" && !!currentDemo?.jumpLink;
+  jumpLinkBtn.classList.toggle("hidden", !shouldShow);
+  if (currentDemo?.jumpLink) {
+    jumpLinkBtn.href = currentDemo.jumpLink;
+  } else {
+    jumpLinkBtn.removeAttribute("href");
+  }
+};
+
 // 预加载 workspace 布局，方便渲染器在首帧前完成尺寸初始化
 layoutWorkspace.classList.add("preloaded");
 // 确保文件选择框只允许支持的模型/3dppc 后缀
@@ -726,7 +740,9 @@ appEventBus.on("settingsChanged", (changedItems) => {
 
 // 监听贴图变动事件
 // 监听贴图变动事件，统一处理贴图相关逻辑
-appEventBus.on("texturesChanged", async ({ textureData, action, userInitiated }) => {
+const applyTextureChange = async (
+  { textureData, action, userInitiated }: { textureData: import("./modules/textureManager").TextureData | null; action: "add" | "replace" | "clear"; userInitiated?: boolean },
+) => {
   const isEditingTexture = getWorkspaceState() === "editingTexture";
   const hasTexture = textureData !== null;
 
@@ -751,31 +767,40 @@ appEventBus.on("texturesChanged", async ({ textureData, action, userInitiated })
       unfold2d.rebuildCurrentGroup();
     }
   } else if (textureData) {
-    // 添加/替换贴图：转换为 Three.js Texture 并设置到渲染器
-    const threeTexture = await createThreeTexture(textureData);
-    renderer3d.setTexture(threeTexture);
-    renderer3d.setTextureEnabled(true);
+    try {
+      // 添加/替换贴图：转换为 Three.js Texture 并设置到渲染器
+      const threeTexture = await createThreeTexture(textureData);
+      renderer3d.setTexture(threeTexture);
+      renderer3d.setTextureEnabled(true);
 
-    // 根据状态更新按钮显示/隐藏
-    loadTextureBtn.classList.toggle("hidden", !isEditingTexture || hasTexture);
-    generateTextureBtn?.classList.toggle("hidden", !isEditingTexture || hasTexture);
-    clearTextureBtn?.classList.toggle("hidden", !isEditingTexture || !hasTexture);
-    exportTextureBtn?.classList.toggle("hidden", !isEditingTexture || !hasTexture);
-    if (!isEditingTexture) {
-      textureToggle?.classList.remove("hidden");
-    }
-    textureToggle?.classList.add("active");
-    refreshToggleTextLabels?.();
+      // 根据状态更新按钮显示/隐藏
+      loadTextureBtn.classList.toggle("hidden", !isEditingTexture || hasTexture);
+      generateTextureBtn?.classList.toggle("hidden", !isEditingTexture || hasTexture);
+      clearTextureBtn?.classList.toggle("hidden", !isEditingTexture || !hasTexture);
+      exportTextureBtn?.classList.toggle("hidden", !isEditingTexture || !hasTexture);
+      if (!isEditingTexture) {
+        textureToggle?.classList.remove("hidden");
+      }
+      textureToggle?.classList.add("active");
+      refreshToggleTextLabels?.();
 
-    // 输出日志
-    const logKey = action === "add" ? "log.texture.loaded" : "log.texture.replaced";
-    log(t(logKey, { filename: textureData.name, width: textureData.width, height: textureData.height }), "success");
+      // 输出日志
+      const logKey = action === "add" ? "log.texture.loaded" : "log.texture.replaced";
+      log(t(logKey, { filename: textureData.name, width: textureData.width, height: textureData.height }), "success");
 
-    // 如果贴图渲染开关打开，重建 2D 视图
-    if (renderer3d.isTextureEnabled()) {
-      unfold2d.rebuildCurrentGroup();
+      // 如果贴图渲染开关打开，重建 2D 视图
+      if (renderer3d.isTextureEnabled()) {
+        unfold2d.rebuildCurrentGroup();
+      }
+    } catch (err) {
+      console.error("贴图加载失败", err);
+      log(t("log.texture.loadFailed"), "error");
     }
   }
+};
+
+appEventBus.on("texturesChanged", ({ textureData, action, userInitiated }) => {
+  void applyTextureChange({ textureData, action, userInitiated });
 });
 
 appEventBus.on("workspaceStateChanged", ({ current, previous }) => {
@@ -854,22 +879,13 @@ const handleFileSelectedFromFile = async (file: File) => {
     projectLoaded();
     // 恢复贴图数据（如果有）
     if (importedTextures && importedTextures.length > 0) {
-      restoreTexturesFromPPC(importedTextures);
+      const restoredTexture = restoreTexturesFromPPC(importedTextures);
+      if (restoredTexture) {
+        await applyTextureChange({ textureData: restoredTexture, action: "add", userInitiated: false });
+      }
     }
     setProjectNameLabel(projectInfo.name);
-    // 更新跳转链接按钮状态
-    if (isCurrentProjectDemo && jumpLinkBtn) {
-      const currentDemo = homeDemoProjects.find(item => item.id === selectedHomeDemoProjectId);
-      if (currentDemo?.jumpLink) {
-        jumpLinkBtn.href = currentDemo.jumpLink;
-        jumpLinkBtn.classList.remove("hidden");
-      } else {
-        jumpLinkBtn.classList.add("hidden");
-      }
-    } else {
-      jumpLinkBtn?.classList.add("hidden");
-    }
-    setIsCurrentProjectDemo(false);
+    refreshJumpLinkButtonState();
     // 重置工具栏开关状态到默认值（全部开启）
     renderer3d.setTextureEnabled(false);
     renderer3d.setLightEnabled(true);
@@ -892,6 +908,8 @@ const handleFileSelectedFromFile = async (file: File) => {
     log(t("log.file.loadFailed"), "error");
     renderer3d.clearModel();
     resetSettings();
+    setIsCurrentProjectDemo(false);
+    refreshJumpLinkButtonState();
   }
   finally {
     changeWorkspaceState("normal");
@@ -906,6 +924,7 @@ const handleFileSelected = async () => {
     hideLoadingOverlay();
     return;
   }
+  setIsCurrentProjectDemo(false);
   await handleFileSelectedFromFile(file);
 };
 
@@ -978,6 +997,7 @@ const handleTextureSelected = async () => {
   if (!file) return;
 
   try {
+    changeWorkspaceState("loading");
     // 确保模型有 UV 坐标
     const uvGenerated = ensureUVsForModel(getModel());
     if (uvGenerated) {
@@ -990,17 +1010,25 @@ const handleTextureSelected = async () => {
     if (existingTextures.length > 0) {
       // 替换已有贴图（使用已有贴图的 ID）
       const existingId = existingTextures[0].id;
-      replaceTexture(existingId, textureData);
+      if (!replaceTexture(existingId, textureData, false)) {
+        addTexture(textureData, false);
+        await applyTextureChange({ textureData, action: "add", userInitiated: false });
+      } else {
+        const appliedTexture = getAllTextures().find((tex) => tex.id === existingId) ?? textureData;
+        await applyTextureChange({ textureData: appliedTexture, action: "replace", userInitiated: false });
+      }
     } else {
       // 首次加载贴图
-      addTexture(textureData);
+      addTexture(textureData, false);
+      await applyTextureChange({ textureData, action: "add", userInitiated: false });
     }
   } catch (err) {
     console.error("贴图加载失败", err);
     log(t("log.texture.loadFailed"), "error");
+  } finally {
+    changeWorkspaceState("editingTexture");
+    textureInput.value = "";
   }
-
-  textureInput.value = "";
 };
 
 textureInput.addEventListener("change", handleTextureSelected);
@@ -1151,7 +1179,7 @@ const updateMenuState = () => {
   groupPreviewPanel.classList.toggle("hidden", isPreview);
   settingsOpenBtn.classList.toggle("hidden", isPreview);
   editorPreviewEl.classList.toggle("single-col", isPreview);
-  jumpLinkBtn.classList.toggle("hidden", isPreview);
+  refreshJumpLinkButtonState();
   requestAnimationFrame(() => renderer3d.resizeRenderer3D());
 };
 
