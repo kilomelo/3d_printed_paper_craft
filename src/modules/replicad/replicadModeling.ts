@@ -1,5 +1,4 @@
 import { BufferGeometry, Float32BufferAttribute, Uint16BufferAttribute, Uint32BufferAttribute, Mesh, Shape } from "three";
-import { createClipper2TsAdapter } from "../clipper/clipper2tsAdapter";
 import { localGC, setOC, getOC, Shape3D, makeBox, drawCircle, drawRectangle, Point, Plane, Sketcher } from "replicad";
 import type { OpenCascadeInstance } from "replicad-opencascadejs";
 import initOC from "replicad-opencascadejs/src/replicad_single.js";
@@ -328,8 +327,10 @@ const buildSolidFromPolygonsWithAngles = async (
               tabTrapezoid[0] = pointA_Incenter_extend;
               tabTrapezoid[1] = pointB_Incenter_extend;
             }
-            // 舌片从layerHeight处开始挤出，因为需要确保超小角度时的首层面积符合三角形面积
-            const tabSolidBase = extrudeFromContourPoints(tabTrapezoid, "XY", layerHeight, tabThickness);
+            // 如果是非lumina模式，舌片从layerHeight处开始挤出，因为需要确保超小角度时的首层面积符合三角形面积
+            // 如果是lumina模式，舌片从connectionThickness处开始挤出，因为需要确保和叠色层对齐
+            const tabStartZ = mode === "lumina" ? connectionThickness: layerHeight;
+            const tabSolidBase = extrudeFromContourPoints(tabTrapezoid, "XY", tabStartZ, tabThickness);
             if (!tabSolidBase) {
               onLog?.(t("log.replicad.tabSketch.fail"));
               console.warn('[ReplicadModeling] failed to create tab sketch for edge, skip this edge', edge);
@@ -375,16 +376,16 @@ const buildSolidFromPolygonsWithAngles = async (
 
             // 舌片外侧上沿做一个倒角方便卡子安装
             const tabChamferTool = extrudeFromContourPoints([
-              [tabActualWidth + 1e-4, tabThickness + layerHeight - tabChamferSize],
-              [tabActualWidth + 1e-4, tabThickness + layerHeight + 1e-4],
-              [tabActualWidth - tabChamferSize * Math.tan(Math.PI / 4), tabThickness + layerHeight + 1e-4],
+              [tabActualWidth + 1e-4, tabThickness + tabStartZ - tabChamferSize],
+              [tabActualWidth + 1e-4, tabThickness + tabStartZ + 1e-4],
+              [tabActualWidth - tabChamferSize * Math.tan(Math.PI / 4), tabThickness + tabStartZ + 1e-4],
             ], edgePerpendicularPlane, -1, distAB);
 
             // 舌片两端也做倒角防止从一个顶点触发的拼接边舌片之间的干涉
             const tabEndChamferSolid = extrudeFromContourPoints([
-              [ 0, tabThickness + layerHeight - tabChamferSize],
-              [ 0, tabThickness + layerHeight + 1e-1],
-              [ -tabThickness, tabThickness + layerHeight + 1e-1],
+              [ 0, tabThickness + tabStartZ - tabChamferSize],
+              [ 0, tabThickness + tabStartZ + 1e-1],
+              [ -tabThickness, tabThickness + tabStartZ + 1e-1],
             ], edgePerpendicularPlane, -tabExtendMargin, distAB + 2 * tabExtendMargin);
             if (!tabChamferTool || !tabEndChamferSolid) {
               onLog?.(t("log.replicad.tabChamfer.fail"));
@@ -394,7 +395,9 @@ const buildSolidFromPolygonsWithAngles = async (
               tabSolid = tabSolid.cut(tabEndChamferSolid.clone().rotate(-tabAngleA, [pointA[0], pointA[1], 0], [0,0,1])).simplify();
               tabSolid = tabSolid.cut(tabEndChamferSolid.rotate(tabAngleB, [pointB[0], pointB[1], 0], [0,0,1])).simplify();
             }
-            tabSolid = tabSolid.rotate(tabAngle, [pointA[0], pointA[1], layerHeight], [pointA[0] - pointB[0], pointA[1] - pointB[1], 0]);
+            tabSolid = tabSolid.rotate(tabAngle,
+              [pointA[0], pointA[1], tabStartZ],
+              [pointA[0] - pointB[0], pointA[1] - pointB[1], 0]);
 
             const tabCutTools: Shape3D[] = [adjEdgeCutToolL.clone(), adjEdgeCutToolR.clone()];
             // 向外翻的舌片可能需要根据外轮廓顶点角度进行相邻外轮廓舌片防干涉的裁剪
@@ -771,12 +774,10 @@ export const buildTabClip = async () => {
 };
 
 export const buildNegativeOutlineForLuminaLayers = async (
-  // outlinePolygons: PolygonContour[]
   polygonsWithAngles: PolygonWithEdgeInfo[]
 ) => {
   if (!polygonsWithAngles.length) return undefined;
   await ensureReplicadOC();
-  const clipper = createClipper2TsAdapter();
 
   const outerResult  = polygons2Outer(polygonsWithAngles);
   if (!outerResult || !outerResult.outer || outerResult.outer.length < 3) {
@@ -784,19 +785,34 @@ export const buildNegativeOutlineForLuminaLayers = async (
     throw new Error("生成负物体时外轮廓查找失败");
   }
 
-  const expanded = clipper.offset([outerResult.outer], 1, {
-    joinType: "miter",
-    endType: "polygon",
-  });
-  if (!expanded || expanded.length !== 1) {
-    throw new Error("生成负物体时轮廓偏移失败");
-  }
   const { luminaLayersTotalHeight } = getSettings();
-  const solid = extrudeRingFromOuterAndInnerContours(expanded[0], [outerResult.outer], "XY", 0, luminaLayersTotalHeight);
-  if (!solid) {
+  const offsetAmount = 1;
+  let outerSolid: Shape3D | undefined;
+
+  polygonsWithAngles.forEach((polygon, index) => {
+    if (polygon.points.length !== 3) {
+      throw new Error(`生成负物体时第 ${index + 1} 个 polygon 不是三角形`);
+    }
+    const triangle = [polygon.points[0], polygon.points[1], polygon.points[2]] as [Point2D, Point2D, Point2D];
+    const offsetResult = offsetTriangleSafe(
+      triangle,
+      [-offsetAmount, -offsetAmount, -offsetAmount],
+      { requireInside: false }
+    );
+    if (!offsetResult.tri) {
+      throw new Error(`生成负物体时第 ${index + 1} 个三角形偏移失败: ${offsetResult.reason}`);
+    }
+    const extrudedTriangle = extrudeFromContourPoints(offsetResult.tri, "XY", 0, luminaLayersTotalHeight);
+    if (!extrudedTriangle) {
+      throw new Error(`生成负物体时第 ${index + 1} 个三角形挤出失败`);
+    }
+    outerSolid = outerSolid ? outerSolid.fuse(extrudedTriangle).simplify() : extrudedTriangle;
+  });
+  const innerSolid = extrudeFromContourPoints(outerResult.outer, "XY", 0, luminaLayersTotalHeight);
+  if (!outerSolid || !innerSolid) {
     throw new Error("生成负物体时挤出失败");
   }
-  return solid.mirror("YZ").simplify();
+  return outerSolid.cut(innerSolid).mirror("YZ").simplify();
 }
 
 export async function buildGroupStepFromPolygons(

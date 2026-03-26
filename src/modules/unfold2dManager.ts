@@ -30,7 +30,7 @@ import type {
   Point2D,
   Point3D,
   Vec3,
-  PolygonWithEdgeInfo as PolygonData,
+  PolygonWithEdgeInfo,
   PolygonEdgeInfo,
 } from "../types/geometryTypes";
 import { p3, v3 } from "../types/geometryTypes";
@@ -603,7 +603,8 @@ export function createUnfold2dManager(
   // 新建模链路：按"共面连通块"输出多边形。
   // 这里刻意复用单面边信息计算，再做边界合并，避免重复实现 tabAngle / joinSide 等规则。
   // scale 只在最终构造返回结果时应用，避免影响依赖原始坐标/顶点 key 的中间计算。
-  const getGroupPolygonsData = (groupId: number): PolygonData[] => {
+  // groupId 是展开组的 ID，forceTriangle 表示是否强制以三角形输出（不合并为多边形）
+  const getGroupPolygonsData = (groupId: number, forceTriangle: boolean = false): PolygonWithEdgeInfo[] => {
     const tris = buildSnappedTris(groupId);
     if (!tris.length) return [];
     const { scale, hollowStyle, minFoldAngleThreshold } = getSettings();
@@ -641,7 +642,7 @@ export function createUnfold2dManager(
         edges: buildFaceEdgeInfo(fid, vertexKeys, edgeIds, [a, b, c], triNormal, seamContext),
       });
     });
-    if (hollowStyle) {
+    if (hollowStyle || forceTriangle) {
       return Array.from(faceSeeds.values()).map((seed) =>
         finalizePolygonForExport(
           {
@@ -656,7 +657,7 @@ export function createUnfold2dManager(
 
     const faceIds = new Set(faceSeeds.keys());
     const visited = new Set<number>();
-    const polygons: PolygonData[] = [];
+    const polygons: PolygonWithEdgeInfo[] = [];
 
     const collectComponent = (startFaceId: number) => {
       const component: number[] = [];
@@ -717,7 +718,7 @@ export function createUnfold2dManager(
   // - 它描述的是 polygon 语境下的相邻边夹角；
   // - 不依赖整个展开组总外轮廓；
   // - 因此可覆盖那些"在局部 polygon 上是边界点，但并非全局外轮廓点"的情况。
-  const finalizePolygonForExport = (polygon: PolygonData, scale: number): PolygonData => {
+  const finalizePolygonForExport = (polygon: PolygonWithEdgeInfo, scale: number): PolygonWithEdgeInfo => {
     const scaledPoints = polygon.points.map(([x, y]) => [x * scale, y * scale] as Point2D);
     return {
       ...polygon,
@@ -791,6 +792,8 @@ export function createUnfold2dManager(
     };
   };
 
+  // "共面三角形合并为多边形"的几何算法
+  // 用于在纸模展开导出时消除同一平面上的冗余三角面分割，生成更简洁的多边形轮廓数据，从而减少建模时的碎片化问题
   const mergeCoplanarFaceSeeds = (
     seeds: Array<{
       faceId: number;
@@ -799,7 +802,7 @@ export function createUnfold2dManager(
       edgeIds: number[];
       edges: PolygonEdgeInfo[];
     }>,
-  ): PolygonData | null => {
+  ): PolygonWithEdgeInfo | null => {
     if (seeds.length === 0) return null;
     if (seeds.length === 1) {
       return {

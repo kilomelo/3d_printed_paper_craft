@@ -11,7 +11,7 @@ export type GroupData = {
   placeAngle: number;
 };
 
-const GROUP_COLOR_PALETTE = [0x86a6ee, 0xea7c7c, 0xbfbf20, 0x3ecb3e, 0x20bfbf, 0xed82ed];
+const GROUP_COLOR_PALETTE = [0x86a6ee, 0xea7c7c, 0xffe770, 0x3ecb3e, 0x20bfbf, 0xed82ed];
 
 const groups: GroupData[] = [];
 const faceGroupMap: Map<number, number | null> = new Map();

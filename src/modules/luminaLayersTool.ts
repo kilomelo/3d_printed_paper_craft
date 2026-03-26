@@ -16,7 +16,7 @@ export type LuminaLayersDeps = {
   getPreviewGroupId: () => number | undefined;
   getPreviewGroupName: (groupId: number) => string | undefined;
   getProjectName: () => string;
-  getGroupPolygonsData: (groupId: number) => PolygonContour[];
+  getGroupPolygonsData: (groupId: number, forceTriangle?: boolean) => PolygonWithEdgeInfo[];
   getTexture: () => THREE.Texture | null;
   getGroupFaceUVs: (groupId: number) => GroupTextureTriangle[];
   getGroupPlaceAngle: (groupId: number) => number;
@@ -201,10 +201,10 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
       return;
     }
     deps.log("正在生成负轮廓几何体...", "info");
-
+    const triangles = deps.getGroupPolygonsData(groupId, true);
     let negativeGeometry: THREE.BufferGeometry;
     try {
-      const solid = await buildNegativeOutlineForLuminaLayers(polygons);
+      const solid = await buildNegativeOutlineForLuminaLayers(triangles);
       if (!solid) {
         deps.log("负轮廓几何体生成失败", "error");
         return;
@@ -262,12 +262,12 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
         //   zFactor: 1,
         // }),
         ThreeMfDocument.processors.addChildObjectFromGeometry({
-          childName: groupName + "-NegativeMesh",
+          childName: groupName + "-边缘抗锯齿",
           geometry: negativeGeometry as THREE.BufferGeometry,
           partKind: "negative",
         }),
         ThreeMfDocument.processors.addChildObjectFromGeometry({
-          childName: groupName || "GroupMesh",
+          childName: groupName || "3D打印纸艺模型",
           geometry: geometry as THREE.BufferGeometry,
           partKind: "normal",
         }),
@@ -276,6 +276,7 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
           maxZ: 100,
           slicerOptions: {},
         }),
+        ThreeMfDocument.processors.renameCompositeRootObject(groupName || "3D打印纸艺模型"),
       ]);
       await doc.download("modified.3mf");
     }
