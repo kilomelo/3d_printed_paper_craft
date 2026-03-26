@@ -5,7 +5,7 @@ import { getCurrentProject } from "./project";
 import { getGroupColorCursor, exportGroupsData } from "./groups";
 import { getSettings } from "./settings";
 import { exportEdgeJoinTypes } from "./model";
-import { getTexturesForExport, type TextureData } from "./textureManager";
+import { getTexturesForExport, normalizeTextureMetadata, type TextureData } from "./textureManager";
 
 // 贴图元数据（用于序列化到 meta 中）
 export type TextureMeta = Omit<TextureData, "data">;
@@ -48,7 +48,7 @@ export type PPCFile = {
   textureBinaries?: ArrayBuffer[];
 };
 
-const FORMAT_VERSION = "1.1"; // 升级版本号以支持贴图
+const FORMAT_VERSION = "1.2"; // 升级版本号以支持贴图元数据
 const MAGIC = "3DPPCBIN";
 
 async function computeChecksum(payload: unknown): Promise<string> {
@@ -90,17 +90,21 @@ export async function build3dppcData(object: Group): Promise<PPCFile> {
     });
   });
 
-  // 获取贴图数据（只导出元数据，不包含二进制数据）
-  const texturesForExport = getTexturesForExport();
-  const textureMeta: TextureMeta[] = texturesForExport.map((tex) => ({
-    id: tex.id,
-    name: tex.name,
-    format: tex.format,
-    width: tex.width,
-    height: tex.height,
-    colorSpace: tex.colorSpace,
-    flipY: tex.flipY,
-  }));
+  const settings = getSettings();
+  const includeTextures = settings.includeTextureInProject === "include";
+  const texturesForExport = includeTextures ? getTexturesForExport() : [];
+  const textureMeta: TextureMeta[] | undefined = includeTextures
+    ? texturesForExport.map((tex) => ({
+        id: tex.id,
+        name: tex.name,
+        format: tex.format,
+        width: tex.width,
+        height: tex.height,
+        colorSpace: tex.colorSpace,
+        flipY: tex.flipY,
+        metadata: normalizeTextureMetadata(tex),
+      }))
+    : undefined;
 
   return {
     version: FORMAT_VERSION,
@@ -121,11 +125,11 @@ export async function build3dppcData(object: Group): Promise<PPCFile> {
     groupColorCursor: getGroupColorCursor(),
     groups: groupsData,
     annotations: {
-      settings: getSettings(),
+      settings,
       edgeJoinTypes: exportEdgeJoinTypes(),
     },
     textures: textureMeta,
-    textureBinaries: texturesForExport.map((tex) => tex.data),
+    textureBinaries: includeTextures ? texturesForExport.map((tex) => tex.data) : undefined,
   };
 }
 
@@ -261,6 +265,7 @@ function decodeBinaryPPC(buffer: ArrayBuffer): PPCFile {
 
       textures.push({
         ...texMeta,
+        metadata: normalizeTextureMetadata(texMeta),
         data: texData,
       } as TextureData);
     }

@@ -51,7 +51,6 @@ export type ExportOptions = {
   exportStl: boolean;
   exportStep: boolean;
   exportPng: boolean;
-  pngFlipY?: boolean;
 };
 
 export type ExportUIDeps = {

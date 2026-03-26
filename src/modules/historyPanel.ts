@@ -35,7 +35,13 @@ const buildActionParams = (action: MetaAction): Record<string, string | number> 
         angle: typeof payload.angle === "number" ? payload.angle.toFixed(1) : (payload.angle as string | number) ?? "",
       };
     case "settingsChange":
-      return { count: (payload.count as number) ?? 0 };
+      return {
+        count: typeof payload.count === "number"
+          ? payload.count
+          : Array.isArray(payload.changedItems)
+            ? payload.changedItems.length
+            : 0,
+      };
     case "seamJoinTypeChange":
       return { count: (payload.count as number) ?? 0 };
     default:

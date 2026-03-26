@@ -14,9 +14,9 @@ import { appEventBus } from "./modules/eventBus";
 import { createGroupUI } from "./modules/groupUI";
 import { createRenderer2D } from "./modules/renderer2d";
 import { createUnfold2dManager } from "./modules/unfold2dManager";
-import { createGeometryContext, snapGeometryPositions } from "./modules/geometry";
+import { createGeometryContext } from "./modules/geometry";
 import { build3dppcData, download3dppc, type PPCFile } from "./modules/ppc";
-import { createSettingsUI, applySettingsI18n, getSettingsUIRefs, type SettingsUIRefs } from "./modules/settingsUI";
+import { createSettingsUI, applySettingsI18n, getSettingsUIRefs } from "./modules/settingsUI";
 import { SETTINGS_LIMITS } from "./modules/settings";
 import { exportEdgeJoinTypes, getModel, importEdgeJoinTypes } from "./modules/model";
 import {
@@ -26,7 +26,21 @@ import { buildTabClip } from "./modules/replicad/replicadModeling";
 import { startNewProject, getCurrentProject } from "./modules/project";
 import { historyManager } from "./modules/history";
 import { loadRawObject } from "./modules/fileLoader";
-import { loadTextureFromFile, addTexture, getTextureCount, hasTextures, replaceTexture, createThreeTexture, getAllTextures, clearAllTextures, generateUVTexture, ensureUVsForModel, restoreTexturesFromPPC, type GroupTextureTriangle } from "./modules/textureManager";
+import {
+  loadTextureFromFile,
+  addTexture, hasTextures,
+  replaceTexture,
+  createThreeTexture,
+  getAllTextures,
+  getTextureById,
+  updateTextureSettings,
+  clearAllTextures,
+  generateUVTexture,
+  ensureUVsForModel,
+  restoreTexturesFromPPC,
+  isGeneratedTexture,
+  normalizeTextureMetadata,
+  type GroupTextureTriangle } from "./modules/textureManager";
 import {
   menu_open_IconSvg,
   menu_export_3dppc_IconSvg,
@@ -741,12 +755,32 @@ appEventBus.on("settingsChanged", (changedItems) => {
       refreshToggleTextLabels?.();
     }
   }
+
+  const textureSettingsChanged = changedItems.includes("textureColorSpace") || changedItems.includes("textureFlipY");
+  if (changedItems.includes("generatedTextureResolution")) {
+    void (async () => {
+      const regenerated = await regenerateGeneratedTextureForResolutionSetting();
+      if (!regenerated && textureSettingsChanged) {
+        await reapplyTextureForTextureSettings();
+      }
+    })();
+    return;
+  }
+
+  if (textureSettingsChanged) {
+    void reapplyTextureForTextureSettings();
+  }
 });
 
 // 监听贴图变动事件
 // 监听贴图变动事件，统一处理贴图相关逻辑
 const applyTextureChange = async (
-  { textureData, action, userInitiated }: { textureData: import("./modules/textureManager").TextureData | null; action: "add" | "replace" | "clear"; userInitiated?: boolean },
+  { textureData, action, userInitiated, suppressLog }: {
+    textureData: import("./modules/textureManager").TextureData | null;
+    action: "add" | "replace" | "clear";
+    userInitiated?: boolean;
+    suppressLog?: boolean;
+  },
 ) => {
   const isEditingTexture = getWorkspaceState() === "editingTexture";
   const hasTexture = textureData !== null;
@@ -790,8 +824,10 @@ const applyTextureChange = async (
       refreshToggleTextLabels?.();
 
       // 输出日志
-      const logKey = action === "add" ? "log.texture.loaded" : "log.texture.replaced";
-      log(t(logKey, { filename: textureData.name, width: textureData.width, height: textureData.height }), "success");
+      if (!suppressLog) {
+        const logKey = action === "add" ? "log.texture.loaded" : "log.texture.replaced";
+        log(t(logKey, { filename: textureData.name, width: textureData.width, height: textureData.height }), "success");
+      }
 
       // 如果贴图渲染开关打开，重建 2D 视图
       if (renderer3d.isTextureEnabled()) {
@@ -807,6 +843,80 @@ const applyTextureChange = async (
 appEventBus.on("texturesChanged", ({ textureData, action, userInitiated }) => {
   void applyTextureChange({ textureData, action, userInitiated });
 });
+
+const getPrimaryModelGeometry = (): THREE.BufferGeometry | undefined => {
+  const model = getModel();
+  let geometry: THREE.BufferGeometry | undefined;
+  if (!model) return geometry;
+  model.traverse((child) => {
+    const mesh = child as { isMesh?: boolean; geometry?: THREE.BufferGeometry };
+    if (mesh.isMesh && mesh.geometry && !geometry) {
+      geometry = mesh.geometry;
+    }
+  });
+  return geometry;
+};
+
+const regenerateGeneratedTextureForResolutionSetting = async () => {
+  const generatedTexture = getAllTextures().find((texture) => isGeneratedTexture(texture));
+  if (!generatedTexture) return false;
+
+  ensureUVsForModel(getModel());
+  const geometry = getPrimaryModelGeometry();
+  const metadata = normalizeTextureMetadata(generatedTexture);
+  const regeneratedTexture = await generateUVTexture(
+    metadata.generatedMode === "uvLayout" ? geometry : undefined,
+  );
+  const appliedTexture = { ...regeneratedTexture, name: generatedTexture.name };
+
+  clearAllTextures(false);
+  addTexture(appliedTexture, false);
+  await applyTextureChange({
+    textureData: appliedTexture,
+    action: "add",
+    userInitiated: false,
+    suppressLog: true,
+  });
+  return true;
+};
+
+const reapplyTextureForTextureSettings = async () => {
+  const textures = getAllTextures();
+  if (textures.length === 0) return;
+
+  const settings = getSettings();
+  const geometry = getPrimaryModelGeometry();
+  let primaryTexture: import("./modules/textureManager").TextureData | null = null;
+
+  for (const texture of textures) {
+    if (isGeneratedTexture(texture)) {
+      const metadata = normalizeTextureMetadata(texture);
+      const regeneratedTexture = await generateUVTexture(
+        metadata.generatedMode === "uvLayout" ? geometry : undefined,
+      );
+      replaceTexture(texture.id, { ...regeneratedTexture, name: texture.name }, false);
+      const updatedTexture = getTextureById(texture.id) ?? null;
+      if (!primaryTexture) primaryTexture = updatedTexture;
+      continue;
+    }
+
+    updateTextureSettings(texture.id, {
+      colorSpace: settings.textureColorSpace,
+      flipY: settings.textureFlipY,
+    });
+    const updatedTexture = getTextureById(texture.id) ?? null;
+    if (!primaryTexture) primaryTexture = updatedTexture;
+  }
+
+  if (primaryTexture) {
+    await applyTextureChange({
+      textureData: primaryTexture,
+      action: "replace",
+      userInitiated: false,
+      suppressLog: true,
+    });
+  }
+};
 
 appEventBus.on("workspaceStateChanged", ({ current, previous }) => {
   const isPreview = current === "previewGroupModel";
@@ -1051,15 +1161,7 @@ generateTextureBtn?.addEventListener("click", async () => {
       log(t("log.texture.uvAutoGenerated"), "info");
     }
 
-    let geometry: THREE.BufferGeometry | undefined;
-    if (model) {
-      model.traverse((child) => {
-        const mesh = child as { isMesh?: boolean; geometry?: THREE.BufferGeometry };
-        if (mesh.isMesh && mesh.geometry && !geometry) {
-          geometry = mesh.geometry;
-        }
-      });
-    }
+    const geometry = getPrimaryModelGeometry();
     const textureData = await generateUVTexture(geometry);
     // 清除旧贴图数据（自动替换，不输出日志）
     if (hasTextures()) {
@@ -1342,9 +1444,13 @@ const handleExport3dppc = async () => {
   }
   try {
     log(t("log.export.3dppc.start"), "info");
+    const hasProjectTextures = hasTextures();
     const data = await build3dppcData(model);
     const fileName = download3dppc(data);
-    log(t("log.export.3dppc.success", { fileName }), "success");
+    const successKey = hasProjectTextures && getSettings().includeTextureInProject === "exclude"
+      ? "log.export.3dppc.success.excludeTexture"
+      : "log.export.3dppc.success";
+    log(t(successKey, { fileName }), "success");
     setFileSaved(true);
   } catch (error) {
     console.error("保存失败", error);

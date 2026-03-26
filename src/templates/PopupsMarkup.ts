@@ -14,6 +14,7 @@ export const renderSettingsOverlay = () => `
           <button class="settings-nav-item active" id="settings-nav-basic" data-i18n="settings.nav.basic">基础设置</button>
           <button class="settings-nav-item" id="settings-nav-interlocking" data-i18n="settings.nav.interlocking">咬合拼接</button>
           <button class="settings-nav-item" id="settings-nav-clip" data-i18n="settings.nav.clip">卡扣拼接</button>
+          <button class="settings-nav-item" id="settings-nav-texture" data-i18n="settings.nav.texture">贴图设置</button>
           <button class="settings-nav-item" id="settings-nav-lumina" data-i18n="settings.nav.lumina">叠色设置</button>
           <button class="settings-nav-item" id="settings-nav-experiment" data-i18n="settings.nav.experimental">实验设置</button>
         </div>
@@ -188,6 +189,61 @@ export const renderSettingsOverlay = () => `
                   <button id="setting-clip-thickness-narrow" class="btn settings-inline-btn" data-i18n="settings.clipGapAdjusts.on">薄夹</button>
                 </div>
                 <button id="setting-clip-thickness-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+          </div>
+          <div class="settings-panel" id="settings-panel-texture">
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <span class="setting-label" data-i18n="settings.includeTextureInProject.label">保存工程文件时是否包含贴图</span>
+                <span class="setting-desc" data-i18n="settings.includeTextureInProject.desc"></span>
+              </div>
+              <div class="setting-field">
+                <div class="settings-toggle-group">
+                  <button id="setting-include-texture-in-project-include" class="btn settings-inline-btn" data-i18n="settings.includeTextureInProject.include">包含贴图</button>
+                  <button id="setting-include-texture-in-project-exclude" class="btn settings-inline-btn" data-i18n="settings.includeTextureInProject.exclude">不包含贴图</button>
+                </div>
+                <button id="setting-include-texture-in-project-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <span class="setting-label" data-i18n="settings.textureColorSpace.label">色彩空间</span>
+                <span class="setting-desc" data-i18n="settings.textureColorSpace.desc">如果贴图颜色异常请尝试调整该选项</span>
+              </div>
+              <div class="setting-field">
+                <div class="settings-toggle-group">
+                  <button id="setting-texture-color-space-srgb" class="btn settings-inline-btn" data-i18n="settings.textureColorSpace.srgb">sRGB</button>
+                  <button id="setting-texture-color-space-linear" class="btn settings-inline-btn" data-i18n="settings.textureColorSpace.linear">Linear</button>
+                </div>
+                <button id="setting-texture-color-space-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <span class="setting-label" data-i18n="settings.textureFlipY.label">垂直翻转</span>
+                <span class="setting-desc" data-i18n="settings.textureFlipY.desc">如果贴图位置异常请尝试调整该选项</span>
+              </div>
+              <div class="setting-field">
+                <div class="settings-toggle-group">
+                  <button id="setting-texture-flip-y-true" class="btn settings-inline-btn" data-i18n="settings.textureFlipY.true">翻转</button>
+                  <button id="setting-texture-flip-y-false" class="btn settings-inline-btn" data-i18n="settings.textureFlipY.false">不翻转</button>
+                </div>
+                <button id="setting-texture-flip-y-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <span class="setting-label" data-i18n="settings.generatedTextureResolution.label">生成贴图的分辨率</span>
+                <span class="setting-desc" data-i18n="settings.generatedTextureResolution.desc"></span>
+              </div>
+              <div class="setting-field">
+                <div class="settings-toggle-group">
+                  <button id="setting-generated-texture-resolution-1024" class="btn settings-inline-btn" data-i18n="settings.generatedTextureResolution.1024">1024</button>
+                  <button id="setting-generated-texture-resolution-2048" class="btn settings-inline-btn" data-i18n="settings.generatedTextureResolution.2048">2048</button>
+                  <button id="setting-generated-texture-resolution-4096" class="btn settings-inline-btn" data-i18n="settings.generatedTextureResolution.4096">4096</button>
+                </div>
+                <button id="setting-generated-texture-resolution-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
           </div>

@@ -4,12 +4,21 @@ import type { Object3D, Vector2, Texture as ThreeTexture } from "three";
 import { appEventBus } from "./eventBus";
 import { ensurePerTriangleUVsIfMissing } from "./geometry";
 import type { PolygonContour } from "../types/geometryTypes";
+import { getSettings } from "./settings";
 
 // 贴图格式类型
 export type TextureFormat = "png" | "jpg" | "jpeg" | "webp";
 
 // 贴图颜色空间
 export type TextureColorSpace = "srgb" | "linear";
+
+export type TextureSource = "generated" | "imported";
+export type GeneratedTextureMode = "uvLayout" | "fullCanvas";
+
+export type TextureMetadata = {
+  source: TextureSource;
+  generatedMode?: GeneratedTextureMode;
+};
 
 // 贴图数据结构
 export type TextureData = {
@@ -21,6 +30,7 @@ export type TextureData = {
   height: number;
   colorSpace: TextureColorSpace;
   flipY: boolean;
+  metadata?: TextureMetadata;
 };
 
 // 项目中的贴图存储
@@ -51,6 +61,24 @@ function getFormatFromExtension(ext: string): TextureFormat | null {
   return null;
 }
 
+export function normalizeTextureMetadata(texture: Pick<TextureData, "name" | "metadata">): TextureMetadata {
+  if (texture.metadata?.source === "generated") {
+    return {
+      source: "generated",
+      generatedMode: texture.metadata.generatedMode ?? "uvLayout",
+    };
+  }
+  if (texture.metadata?.source === "imported") {
+    return { source: "imported" };
+  }
+
+  return { source: "imported" };
+}
+
+export function isGeneratedTexture(texture: Pick<TextureData, "name" | "metadata">): boolean {
+  return normalizeTextureMetadata(texture).source === "generated";
+}
+
 /**
  * 从 File 对象加载贴图数据
  */
@@ -75,8 +103,9 @@ export async function loadTextureFromFile(file: File): Promise<TextureData> {
     data: arrayBuffer,
     width: bitmap.width,
     height: bitmap.height,
-    colorSpace: "srgb", // 默认 sRGB
-    flipY: true, // 默认 flipY
+    colorSpace: getSettings().textureColorSpace,
+    flipY: getSettings().textureFlipY,
+    metadata: { source: "imported" },
   };
 
   bitmap.close();
@@ -117,8 +146,9 @@ export async function loadTextureFromUrl(url: string, name?: string): Promise<Te
     data: arrayBuffer,
     width: bitmap.width,
     height: bitmap.height,
-    colorSpace: "srgb",
-    flipY: true,
+    colorSpace: getSettings().textureColorSpace,
+    flipY: getSettings().textureFlipY,
+    metadata: { source: "imported" },
   };
 
   bitmap.close();
@@ -262,7 +292,10 @@ export function getTextureCount(): number {
 export function restoreTexturesFromPPC(textures: TextureData[]): TextureData | null {
   clearAllTextures(false); // 自动恢复，不输出日志
   textures.forEach((tex) => {
-    projectTextures.set(tex.id, tex);
+    projectTextures.set(tex.id, {
+      ...tex,
+      metadata: normalizeTextureMetadata(tex),
+    });
   });
   return textures[0] ?? null;
 }
@@ -276,18 +309,37 @@ export function getTexturesForExport(): TextureData[] {
 
 // === 贴图生成功能 ===
 
-const UV_TEXTURE_SIZE = 2048;
+function srgbToLinearByte(value: number) {
+  const srgb = value / 255;
+  const linear = srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+  return Math.round(linear * 255);
+}
 
-function drawBaseUVPattern(ctx: CanvasRenderingContext2D, width: number, height: number) {
+function encodePatternChannel(value: number, colorSpace: TextureColorSpace) {
+  return colorSpace === "linear" ? srgbToLinearByte(value) : value;
+}
+
+function drawBaseUVPattern(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  colorSpace: TextureColorSpace,
+  flipY: boolean,
+) {
   const imageData = ctx.createImageData(width, height);
   const data = imageData.data;
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const i = (y * width + x) * 4;
-      data[i] = 0; // R
-      data[i + 1] = Math.round((y / (height - 1)) * 255); // G
-      data[i + 2] = Math.round((x / (width - 1)) * 255); // B
+      const xNorm = width > 1 ? x / (width - 1) : 0;
+      const yNorm = height > 1 ? y / (height - 1) : 0;
+      const r = 0;
+      const g = Math.round((flipY ? yNorm : (1 - yNorm)) * 255);
+      const b = Math.round(xNorm * 255);
+      data[i] = encodePatternChannel(r, colorSpace); // R
+      data[i + 1] = encodePatternChannel(g, colorSpace); // G
+      data[i + 2] = encodePatternChannel(b, colorSpace); // B
       data[i + 3] = 255; // A
     }
   }
@@ -354,8 +406,9 @@ function clamp01(v: number) {
 export async function generateUVTexture(
   geometry?: THREE.BufferGeometry
 ): Promise<TextureData> {
-  const width = UV_TEXTURE_SIZE;
-  const height = UV_TEXTURE_SIZE;
+  const { textureColorSpace, textureFlipY, generatedTextureResolution } = getSettings();
+  const width = generatedTextureResolution;
+  const height = generatedTextureResolution;
 
   // 先生成一张完整的基础调试图
   const patternCanvas = document.createElement("canvas");
@@ -365,7 +418,7 @@ export async function generateUVTexture(
   if (!patternCtx) {
     throw new Error("无法创建 pattern 画布上下文");
   }
-  drawBaseUVPattern(patternCtx, width, height);
+  drawBaseUVPattern(patternCtx, width, height, textureColorSpace, textureFlipY);
 
   // 输出画布
   const canvas = document.createElement("canvas");
@@ -389,8 +442,7 @@ export async function generateUVTexture(
       const vv = clamp01(v);
       return {
         x: uu * (width - 1),
-        // y: vv * (height - 1), // 让导出的图直观看起来就是 UV 展开
-        y: (1 - vv) * (height - 1), // 让导出的图直观看起来就是 UV 展开
+        y: textureFlipY ? (1 - vv) * (height - 1) : vv * (height - 1),
       };
     };
 
@@ -456,16 +508,17 @@ export async function generateUVTexture(
 
   return {
     id: generateTextureId(),
-    name: geometry ? "generated_uv_layout_texture.png" : "generated_texture.png",
+    name: "3dppc_generated.png",
     format: "png",
     data: arrayBuffer,
     width,
     height,
-    colorSpace: "srgb",
-
-    // 这里建议先设成 false，因为我们输出的是"直接看上去像 UV 展开图"的图片
-    // 如果你项目里现有纹理导入链要求 generated texture 必须 flipY=true，再按你的加载链改回去。
-    flipY: true,
+    colorSpace: textureColorSpace,
+    flipY: textureFlipY,
+    metadata: {
+      source: "generated",
+      generatedMode: geometry ? "uvLayout" : "fullCanvas",
+    },
   };
 }
 

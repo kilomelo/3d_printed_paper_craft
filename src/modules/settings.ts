@@ -5,6 +5,10 @@ export type Settings = {
   scale: number;
   layerHeight: number;
   luminaLayersTotalHeight: number;
+  includeTextureInProject: "include" | "exclude";
+  textureColorSpace: "srgb" | "linear";
+  textureFlipY: boolean;
+  generatedTextureResolution: 1024 | 2048 | 4096;
   connectionLayers: number;
   bodyLayers: number;
   joinType: "interlocking" | "clip";
@@ -26,6 +30,9 @@ export const SETTINGS_LIMITS = {
   scale: { min: 0 },
   layerHeight: { min: 0, max: 0.5 },
   luminaLayersTotalHeight: { min: 0.4, max: 0.6 },
+  includeTextureInProject: { allowed: ["include", "exclude"] as const },
+  textureColorSpace: { allowed: ["srgb", "linear"] as const },
+  generatedTextureResolution: { allowed: [1024, 2048, 4096] as const },
   connectionLayers: { min: 1, max: 4 },
   bodyLayers: { min: 1, max: 8 },
   joinType: { allowed: ["interlocking", "clip"] as const },
@@ -47,6 +54,10 @@ const defaultSettings: Settings = {
   scale: 1,
   layerHeight: 0.2,
   luminaLayersTotalHeight: 0.4,
+  includeTextureInProject: "include",
+  textureColorSpace: "srgb",
+  textureFlipY: true,
+  generatedTextureResolution: 2048,
   connectionLayers: 1,
   bodyLayers: 3,
   clawInterlockingAngle: 4,
@@ -96,6 +107,25 @@ export function setLuminaLayersTotalHeight(val: number) {
     val > SETTINGS_LIMITS.luminaLayersTotalHeight.max
   ) return;
   current = { ...current, luminaLayersTotalHeight: val };
+}
+
+export function setIncludeTextureInProject(val: Settings["includeTextureInProject"]) {
+  if (!SETTINGS_LIMITS.includeTextureInProject.allowed.includes(val)) return;
+  current = { ...current, includeTextureInProject: val };
+}
+
+export function setTextureColorSpace(val: Settings["textureColorSpace"]) {
+  if (!SETTINGS_LIMITS.textureColorSpace.allowed.includes(val)) return;
+  current = { ...current, textureColorSpace: val };
+}
+
+export function setTextureFlipY(val: boolean) {
+  current = { ...current, textureFlipY: !!val };
+}
+
+export function setGeneratedTextureResolution(val: Settings["generatedTextureResolution"]) {
+  if (!SETTINGS_LIMITS.generatedTextureResolution.allowed.includes(val)) return;
+  current = { ...current, generatedTextureResolution: val };
 }
 
 export function setClawInterlockingAngle(val: number) {
@@ -253,9 +283,32 @@ const sanitizeImportedSettings = (imported: Partial<Record<keyof Settings, unkno
       next.clipGapAdjust = clipGapAdjust;
     }
   }
+  if (typeof imported.includeTextureInProject === "string") {
+    const includeTextureInProject = imported.includeTextureInProject as Settings["includeTextureInProject"];
+    if (SETTINGS_LIMITS.includeTextureInProject.allowed.includes(includeTextureInProject)) {
+      next.includeTextureInProject = includeTextureInProject;
+    }
+  }
+  if (typeof imported.textureColorSpace === "string") {
+    const textureColorSpace = imported.textureColorSpace as Settings["textureColorSpace"];
+    if (SETTINGS_LIMITS.textureColorSpace.allowed.includes(textureColorSpace)) {
+      next.textureColorSpace = textureColorSpace;
+    }
+  }
   const hollowStyle = readBoolean(imported.hollowStyle);
   if (hollowStyle != null) {
     next.hollowStyle = hollowStyle;
+  }
+  const textureFlipY = readBoolean(imported.textureFlipY);
+  if (textureFlipY != null) {
+    next.textureFlipY = textureFlipY;
+  }
+  const generatedTextureResolution = readFiniteNumber(imported.generatedTextureResolution);
+  if (generatedTextureResolution != null) {
+    const roundedResolution = Math.round(generatedTextureResolution) as Settings["generatedTextureResolution"];
+    if (SETTINGS_LIMITS.generatedTextureResolution.allowed.includes(roundedResolution)) {
+      next.generatedTextureResolution = roundedResolution;
+    }
   }
 
   const scale = readFiniteNumber(imported.scale);

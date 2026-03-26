@@ -35,6 +35,19 @@ export type SettingsUIRefs = {
   clipGapAdjustNormalBtn: HTMLButtonElement;
   clipGapAdjustNarrowBtn: HTMLButtonElement;
   clipGapAdjustResetBtn: HTMLButtonElement;
+  includeTextureInProjectIncludeBtn: HTMLButtonElement;
+  includeTextureInProjectExcludeBtn: HTMLButtonElement;
+  includeTextureInProjectResetBtn: HTMLButtonElement;
+  textureColorSpaceSrgbBtn: HTMLButtonElement;
+  textureColorSpaceLinearBtn: HTMLButtonElement;
+  textureColorSpaceResetBtn: HTMLButtonElement;
+  textureFlipYTrueBtn: HTMLButtonElement;
+  textureFlipYFalseBtn: HTMLButtonElement;
+  textureFlipYResetBtn: HTMLButtonElement;
+  generatedTextureResolution1024Btn: HTMLButtonElement;
+  generatedTextureResolution2048Btn: HTMLButtonElement;
+  generatedTextureResolution4096Btn: HTMLButtonElement;
+  generatedTextureResolutionResetBtn: HTMLButtonElement;
   hollowOnBtn: HTMLButtonElement;
   hollowOffBtn: HTMLButtonElement;
   hollowResetBtn: HTMLButtonElement;
@@ -56,11 +69,13 @@ export type SettingsUIRefs = {
   navBasic: HTMLButtonElement;
   navInterlocking: HTMLButtonElement;
   navClip: HTMLButtonElement;
+  navTexture: HTMLButtonElement;
   navLumina: HTMLButtonElement;
   navExperiment: HTMLButtonElement;
   panelBasic: HTMLDivElement;
   panelInterlocking: HTMLDivElement;
   panelClip: HTMLDivElement;
+  panelTexture: HTMLDivElement;
   panelLumina: HTMLDivElement;
   panelExperiment: HTMLDivElement;
 };
@@ -102,6 +117,19 @@ export function getSettingsUIRefs(): SettingsUIRefs | null {
     clipGapAdjustNormalBtn: get<HTMLButtonElement>("#setting-clip-thickness-normal"),
     clipGapAdjustNarrowBtn: get<HTMLButtonElement>("#setting-clip-thickness-narrow"),
     clipGapAdjustResetBtn: get<HTMLButtonElement>("#setting-clip-thickness-reset"),
+    includeTextureInProjectIncludeBtn: get<HTMLButtonElement>("#setting-include-texture-in-project-include"),
+    includeTextureInProjectExcludeBtn: get<HTMLButtonElement>("#setting-include-texture-in-project-exclude"),
+    includeTextureInProjectResetBtn: get<HTMLButtonElement>("#setting-include-texture-in-project-reset"),
+    textureColorSpaceSrgbBtn: get<HTMLButtonElement>("#setting-texture-color-space-srgb"),
+    textureColorSpaceLinearBtn: get<HTMLButtonElement>("#setting-texture-color-space-linear"),
+    textureColorSpaceResetBtn: get<HTMLButtonElement>("#setting-texture-color-space-reset"),
+    textureFlipYTrueBtn: get<HTMLButtonElement>("#setting-texture-flip-y-true"),
+    textureFlipYFalseBtn: get<HTMLButtonElement>("#setting-texture-flip-y-false"),
+    textureFlipYResetBtn: get<HTMLButtonElement>("#setting-texture-flip-y-reset"),
+    generatedTextureResolution1024Btn: get<HTMLButtonElement>("#setting-generated-texture-resolution-1024"),
+    generatedTextureResolution2048Btn: get<HTMLButtonElement>("#setting-generated-texture-resolution-2048"),
+    generatedTextureResolution4096Btn: get<HTMLButtonElement>("#setting-generated-texture-resolution-4096"),
+    generatedTextureResolutionResetBtn: get<HTMLButtonElement>("#setting-generated-texture-resolution-reset"),
     hollowOnBtn: get<HTMLButtonElement>("#setting-hollow-on"),
     hollowOffBtn: get<HTMLButtonElement>("#setting-hollow-off"),
     hollowResetBtn: get<HTMLButtonElement>("#setting-hollow-reset"),
@@ -123,11 +151,13 @@ export function getSettingsUIRefs(): SettingsUIRefs | null {
     navBasic: get<HTMLButtonElement>("#settings-nav-basic"),
     navInterlocking: get<HTMLButtonElement>("#settings-nav-interlocking"),
     navClip: get<HTMLButtonElement>("#settings-nav-clip"),
+    navTexture: get<HTMLButtonElement>("#settings-nav-texture"),
     navLumina: get<HTMLButtonElement>("#settings-nav-lumina"),
     navExperiment: get<HTMLButtonElement>("#settings-nav-experiment"),
     panelBasic: get<HTMLDivElement>("#settings-panel-basic"),
     panelInterlocking: get<HTMLDivElement>("#settings-panel-interlocking"),
     panelClip: get<HTMLDivElement>("#settings-panel-clip"),
+    panelTexture: get<HTMLDivElement>("#settings-panel-texture"),
     panelLumina: get<HTMLDivElement>("#settings-panel-lumina"),
     panelExperiment: get<HTMLDivElement>("#settings-panel-experiment"),
   };
@@ -184,6 +214,27 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.clawRadiusAdaptiveOnBtn.classList.toggle("active", settingsDraft.clawRadiusAdaptive === "on");
   };
 
+  const updateIncludeTextureInProjectButtons = () => {
+    refs.includeTextureInProjectIncludeBtn.classList.toggle("active", settingsDraft.includeTextureInProject === "include");
+    refs.includeTextureInProjectExcludeBtn.classList.toggle("active", settingsDraft.includeTextureInProject === "exclude");
+  };
+
+  const updateTextureColorSpaceButtons = () => {
+    refs.textureColorSpaceSrgbBtn.classList.toggle("active", settingsDraft.textureColorSpace === "srgb");
+    refs.textureColorSpaceLinearBtn.classList.toggle("active", settingsDraft.textureColorSpace === "linear");
+  };
+
+  const updateTextureFlipYButtons = () => {
+    refs.textureFlipYTrueBtn.classList.toggle("active", settingsDraft.textureFlipY);
+    refs.textureFlipYFalseBtn.classList.toggle("active", !settingsDraft.textureFlipY);
+  };
+
+  const updateGeneratedTextureResolutionButtons = () => {
+    refs.generatedTextureResolution1024Btn.classList.toggle("active", settingsDraft.generatedTextureResolution === 1024);
+    refs.generatedTextureResolution2048Btn.classList.toggle("active", settingsDraft.generatedTextureResolution === 2048);
+    refs.generatedTextureResolution4096Btn.classList.toggle("active", settingsDraft.generatedTextureResolution === 4096);
+  };
+
   const updateWireframeEnabled = () => {
     const enabled = settingsDraft.hollowStyle;
     refs.wireframeThicknessInput.disabled = !enabled;
@@ -220,19 +271,30 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     setRowModified(refs.tabThicknessInput, settingsDraft.tabThickness !== defaults.tabThickness);
     setRowModified(refs.tabClipGapInput, settingsDraft.tabClipGap !== defaults.tabClipGap);
     setRowModified(refs.clipGapAdjustNormalBtn, settingsDraft.clipGapAdjust !== defaults.clipGapAdjust);
+    setRowModified(
+      refs.includeTextureInProjectIncludeBtn,
+      settingsDraft.includeTextureInProject !== defaults.includeTextureInProject,
+    );
+    setRowModified(refs.textureColorSpaceSrgbBtn, settingsDraft.textureColorSpace !== defaults.textureColorSpace);
+    setRowModified(refs.textureFlipYTrueBtn, settingsDraft.textureFlipY !== defaults.textureFlipY);
+    setRowModified(
+      refs.generatedTextureResolution1024Btn,
+      settingsDraft.generatedTextureResolution !== defaults.generatedTextureResolution,
+    );
     setRowModified(refs.hollowOnBtn, settingsDraft.hollowStyle !== defaults.hollowStyle);
     setRowModified(refs.wireframeThicknessInput, settingsDraft.wireframeThickness !== defaults.wireframeThickness);
   };
 
-  const activateTab = (tab: "basic" | "interlocking" | "clip" | "lumina" | "experiment") => {
+  const activateTab = (tab: "basic" | "interlocking" | "clip" | "texture" | "lumina" | "experiment") => {
     const tabs: Array<{
-      key: "basic" | "interlocking" | "clip" | "lumina" | "experiment";
+      key: "basic" | "interlocking" | "clip" | "texture" | "lumina" | "experiment";
       nav: HTMLButtonElement;
       panel: HTMLDivElement;
     }> = [
       { key: "basic", nav: refs.navBasic, panel: refs.panelBasic },
       { key: "interlocking", nav: refs.navInterlocking, panel: refs.panelInterlocking },
       { key: "clip", nav: refs.navClip, panel: refs.panelClip },
+      { key: "texture", nav: refs.navTexture, panel: refs.panelTexture },
       { key: "lumina", nav: refs.navLumina, panel: refs.panelLumina },
       { key: "experiment", nav: refs.navExperiment, panel: refs.panelExperiment },
     ];
@@ -268,6 +330,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
       measurePanelHeight(refs.panelBasic),
       measurePanelHeight(refs.panelInterlocking),
       measurePanelHeight(refs.panelClip),
+      measurePanelHeight(refs.panelTexture),
       measurePanelHeight(refs.panelLumina),
       measurePanelHeight(refs.panelExperiment),
     );
@@ -361,6 +424,10 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.tabClipGapInput.value = String(settingsDraft.tabClipGap);
     refs.wireframeThicknessInput.value = String(settingsDraft.wireframeThickness);
     updateClipGapAdjustButtons();
+    updateIncludeTextureInProjectButtons();
+    updateTextureColorSpaceButtons();
+    updateTextureFlipYButtons();
+    updateGeneratedTextureResolutionButtons();
     updateHollowButtons();
     updateWireframeEnabled();
     [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterlockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.clawFitGapInput, refs.layerHeightInput, refs.luminaLayersTotalHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
@@ -429,6 +496,71 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateClipGapAdjustButtons();
     updateModifiedIndicators();
   });
+  refs.includeTextureInProjectIncludeBtn.addEventListener("click", () => {
+    settingsDraft.includeTextureInProject = "include";
+    updateIncludeTextureInProjectButtons();
+    updateModifiedIndicators();
+  });
+  refs.includeTextureInProjectExcludeBtn.addEventListener("click", () => {
+    settingsDraft.includeTextureInProject = "exclude";
+    updateIncludeTextureInProjectButtons();
+    updateModifiedIndicators();
+  });
+  refs.includeTextureInProjectResetBtn.addEventListener("click", () => {
+    settingsDraft.includeTextureInProject = getDefaultSettings().includeTextureInProject;
+    updateIncludeTextureInProjectButtons();
+    updateModifiedIndicators();
+  });
+  refs.textureColorSpaceSrgbBtn.addEventListener("click", () => {
+    settingsDraft.textureColorSpace = "srgb";
+    updateTextureColorSpaceButtons();
+    updateModifiedIndicators();
+  });
+  refs.textureColorSpaceLinearBtn.addEventListener("click", () => {
+    settingsDraft.textureColorSpace = "linear";
+    updateTextureColorSpaceButtons();
+    updateModifiedIndicators();
+  });
+  refs.textureColorSpaceResetBtn.addEventListener("click", () => {
+    settingsDraft.textureColorSpace = getDefaultSettings().textureColorSpace;
+    updateTextureColorSpaceButtons();
+    updateModifiedIndicators();
+  });
+  refs.textureFlipYTrueBtn.addEventListener("click", () => {
+    settingsDraft.textureFlipY = true;
+    updateTextureFlipYButtons();
+    updateModifiedIndicators();
+  });
+  refs.textureFlipYFalseBtn.addEventListener("click", () => {
+    settingsDraft.textureFlipY = false;
+    updateTextureFlipYButtons();
+    updateModifiedIndicators();
+  });
+  refs.textureFlipYResetBtn.addEventListener("click", () => {
+    settingsDraft.textureFlipY = getDefaultSettings().textureFlipY;
+    updateTextureFlipYButtons();
+    updateModifiedIndicators();
+  });
+  refs.generatedTextureResolution1024Btn.addEventListener("click", () => {
+    settingsDraft.generatedTextureResolution = 1024;
+    updateGeneratedTextureResolutionButtons();
+    updateModifiedIndicators();
+  });
+  refs.generatedTextureResolution2048Btn.addEventListener("click", () => {
+    settingsDraft.generatedTextureResolution = 2048;
+    updateGeneratedTextureResolutionButtons();
+    updateModifiedIndicators();
+  });
+  refs.generatedTextureResolution4096Btn.addEventListener("click", () => {
+    settingsDraft.generatedTextureResolution = 4096;
+    updateGeneratedTextureResolutionButtons();
+    updateModifiedIndicators();
+  });
+  refs.generatedTextureResolutionResetBtn.addEventListener("click", () => {
+    settingsDraft.generatedTextureResolution = getDefaultSettings().generatedTextureResolution;
+    updateGeneratedTextureResolutionButtons();
+    updateModifiedIndicators();
+  });
   refs.clawRadiusAdaptiveOffBtn.addEventListener("click", () => {
     settingsDraft.clawRadiusAdaptive = "off";
     updateClawRadiusAdaptiveButtons();
@@ -452,6 +584,9 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
   });
   refs.navClip.addEventListener("click", () => {
     activateTab("clip");
+  });
+  refs.navTexture.addEventListener("click", () => {
+    activateTab("texture");
   });
   refs.navLumina.addEventListener("click", () => {
     activateTab("lumina");
@@ -655,6 +790,10 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.wireframeThicknessInput.value = String(settingsDraft.wireframeThickness);
     updateJoinTypeButtons();
     updateClipGapAdjustButtons();
+    updateIncludeTextureInProjectButtons();
+    updateTextureColorSpaceButtons();
+    updateTextureFlipYButtons();
+    updateGeneratedTextureResolutionButtons();
     updateHollowButtons();
     [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterlockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.clawFitGapInput, refs.layerHeightInput, refs.luminaLayersTotalHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
       updateInputColor(el, true),
@@ -728,6 +867,32 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
       const label = settingsDraft.clipGapAdjust === "off" ? t("settings.clipGapAdjusts.off") : t("settings.clipGapAdjusts.on");
       changes.push(t("log.settings.changed", { label: t("settings.clipGapAdjusts.label"), value: label }));
     }
+    if (settingsDraft.includeTextureInProject !== settingsSnapshot.includeTextureInProject) {
+      const label = settingsDraft.includeTextureInProject === "include"
+        ? t("settings.includeTextureInProject.include")
+        : t("settings.includeTextureInProject.exclude");
+      changes.push(t("log.settings.changed", { label: t("settings.includeTextureInProject.label"), value: label }));
+    }
+    if (settingsDraft.textureColorSpace !== settingsSnapshot.textureColorSpace) {
+      const label = settingsDraft.textureColorSpace === "srgb"
+        ? t("settings.textureColorSpace.srgb")
+        : t("settings.textureColorSpace.linear");
+      changes.push(t("log.settings.changed", { label: t("settings.textureColorSpace.label"), value: label }));
+    }
+    if (settingsDraft.textureFlipY !== settingsSnapshot.textureFlipY) {
+      const label = settingsDraft.textureFlipY
+        ? t("settings.textureFlipY.true")
+        : t("settings.textureFlipY.false");
+      changes.push(t("log.settings.changed", { label: t("settings.textureFlipY.label"), value: label }));
+    }
+    if (settingsDraft.generatedTextureResolution !== settingsSnapshot.generatedTextureResolution) {
+      changes.push(
+        t("log.settings.changed", {
+          label: t("settings.generatedTextureResolution.label"),
+          value: settingsDraft.generatedTextureResolution,
+        }),
+      );
+    }
     if (settingsDraft.hollowStyle !== settingsSnapshot.hollowStyle) {
       const hollowValue = settingsDraft.hollowStyle ? t("settings.hollow.on") : t("settings.hollow.off");
       changes.push(t("log.settings.changed", { label: t("settings.hollow.label"), value: hollowValue }));
@@ -775,6 +940,10 @@ export function applySettingsI18n() {
   updateDesc('[data-i18n="settings.minFoldAngleThreshold.desc"]', "settings.minFoldAngleThreshold.desc");
   updateDesc('[data-i18n="settings.tabClipGap.desc"]', "settings.tabClipGap.desc", { min: limits.tabClipGap.min, max: limits.tabClipGap.max });
   updateDesc('[data-i18n="settings.clipGapAdjusts.desc"]', "settings.clipGapAdjusts.desc");
+  updateDesc('[data-i18n="settings.includeTextureInProject.desc"]', "settings.includeTextureInProject.desc");
+  updateDesc('[data-i18n="settings.textureColorSpace.desc"]', "settings.textureColorSpace.desc");
+  updateDesc('[data-i18n="settings.textureFlipY.desc"]', "settings.textureFlipY.desc");
+  updateDesc('[data-i18n="settings.generatedTextureResolution.desc"]', "settings.generatedTextureResolution.desc");
   updateDesc('[data-i18n="settings.hollow.desc"]', "settings.hollow.desc");
   updateDesc('[data-i18n="settings.wireframeThickness.desc"]', "settings.wireframeThickness.desc", { min: limits.wireframeThickness.min, max: limits.wireframeThickness.max });
 }

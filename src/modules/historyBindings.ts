@@ -105,7 +105,11 @@ export const bindHistorySystem = (opts: BindHistorySystemOptions): HistoryPanelU
   });
 
   appEventBus.on("settingsChanged", (changedItems) => {
-    const pushResult = historyManager.push(opts.captureProjectState(), { name: "settingsChange", timestamp: Date.now(), payload: { changedItems } });
+    const pushResult = historyManager.push(opts.captureProjectState(), {
+      name: "settingsChange",
+      timestamp: Date.now(),
+      payload: { changedItems, count: changedItems.length },
+    });
     if (pushResult) {
       opts.previewMeshCacheManager.abandonCurrentActiveCaches(historyManager.getCurrentSnapshotUid() ?? -1);
       opts.previewMeshCacheManager.rememberAbandonRule(pushResult.uid);
