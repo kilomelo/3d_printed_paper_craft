@@ -64,7 +64,52 @@ export type ExportUIApi = {
   dispose: () => void;
 };
 
+const EXPORT_OPTIONS_STORAGE_KEY = "export_ui_options";
+const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
+  exportStl: true,
+  exportStep: false,
+  exportPng: false,
+};
+
 export function createExportUI(refs: ExportUIRefs, deps: ExportUIDeps): ExportUIApi {
+  const readStoredOptions = (): ExportOptions => {
+    if (typeof localStorage === "undefined") return { ...DEFAULT_EXPORT_OPTIONS };
+    try {
+      const raw = localStorage.getItem(EXPORT_OPTIONS_STORAGE_KEY);
+      if (!raw) return { ...DEFAULT_EXPORT_OPTIONS };
+      const parsed = JSON.parse(raw) as Partial<ExportOptions>;
+      return {
+        exportStl: typeof parsed.exportStl === "boolean" ? parsed.exportStl : DEFAULT_EXPORT_OPTIONS.exportStl,
+        exportStep: typeof parsed.exportStep === "boolean" ? parsed.exportStep : DEFAULT_EXPORT_OPTIONS.exportStep,
+        exportPng: typeof parsed.exportPng === "boolean" ? parsed.exportPng : DEFAULT_EXPORT_OPTIONS.exportPng,
+      };
+    } catch (error) {
+      console.warn("读取导出选项缓存失败", error);
+      return { ...DEFAULT_EXPORT_OPTIONS };
+    }
+  };
+
+  const writeStoredOptions = (options: ExportOptions) => {
+    if (typeof localStorage === "undefined") return;
+    try {
+      localStorage.setItem(EXPORT_OPTIONS_STORAGE_KEY, JSON.stringify(options));
+    } catch (error) {
+      console.warn("保存导出选项缓存失败", error);
+    }
+  };
+
+  const getCurrentOptions = (): ExportOptions => ({
+    exportStl: refs.stlCheckbox.checked,
+    exportStep: refs.stepCheckbox.checked,
+    exportPng: refs.pngCheckbox.checked,
+  });
+
+  const applyOptions = (options: ExportOptions) => {
+    refs.stlCheckbox.checked = options.exportStl;
+    refs.stepCheckbox.checked = options.exportStep;
+    refs.pngCheckbox.checked = options.exportPng;
+  };
+
   const syncOptionState = () => {
     refs.stlOption.classList.toggle("is-selected", refs.stlCheckbox.checked);
     refs.stepOption.classList.toggle("is-selected", refs.stepCheckbox.checked);
@@ -92,10 +137,7 @@ export function createExportUI(refs: ExportUIRefs, deps: ExportUIDeps): ExportUI
     setTextWithTooltip(refs.stlFileNameLabel, `${projectName}-${safeGroupName}.stl`);
     setTextWithTooltip(refs.stepFileNameLabel, `${projectName}-${safeGroupName}.step`);
     setTextWithTooltip(refs.pngFileNameLabel, `${projectName}-${safeGroupName}.png`);
-    // 重置勾选框状态
-    refs.stlCheckbox.checked = true;
-    refs.stepCheckbox.checked = false;
-    refs.pngCheckbox.checked = false;
+    applyOptions(readStoredOptions());
     updateConfirmButton();
     refs.overlay.classList.remove("hidden");
   };
@@ -109,16 +151,13 @@ export function createExportUI(refs: ExportUIRefs, deps: ExportUIDeps): ExportUI
   };
 
   const handleExport = () => {
-    const options: ExportOptions = {
-      exportStl: refs.stlCheckbox.checked,
-      exportStep: refs.stepCheckbox.checked,
-      exportPng: refs.pngCheckbox.checked,
-    };
+    const options = getCurrentOptions();
     deps.onExport(options);
     closeExport();
   };
 
   const handleCheckboxChange = () => {
+    writeStoredOptions(getCurrentOptions());
     updateConfirmButton();
   };
 

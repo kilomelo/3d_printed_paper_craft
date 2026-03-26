@@ -64,7 +64,7 @@ import { createOperationHints } from "./modules/operationHints";
 import { createPreviewMeshCacheManager } from "./modules/previewMeshCache";
 import { bindHistorySystem } from "./modules/historyBindings";
 import { bindGroupPreviewActions, createExportCallback } from "./modules/groupPreviewActions";
-import { getLuminaLayersRefs, createLuminaLayersTool } from "./modules/luminaLayersTool";
+import { getLuminaLayersRefs, createLuminaLayersTool } from "./modules/luminaLayers/luminaLayersTool";
 import { downloadBlob } from "./modules/gifRecorder";
 import { loadHomeChangelog } from "./modules/homeChangelog";
 import { createGifCaptureController } from "./modules/gifCapture";

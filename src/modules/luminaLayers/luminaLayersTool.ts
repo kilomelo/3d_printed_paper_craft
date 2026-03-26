@@ -1,16 +1,17 @@
 // 叠色打印工具模块
 import * as THREE from "three";
-import { type GroupTextureTriangle, generateGroupTexture } from "./textureManager";
-import { downloadBlob } from "./gifRecorder";
-import type { PolygonWithEdgeInfo, PolygonContour } from "../types/geometryTypes";
-import { processThreeMf, ThreeMfDocument, getCompositeChildrenUnionBoundingBoxFrom3mf } from "./threeMF/threeMfProcessor";
+import { type GroupTextureTriangle, generateGroupTexture } from "../textureManager";
+import { downloadBlob } from "../gifRecorder";
+import type { PolygonWithEdgeInfo, PolygonContour } from "../../types/geometryTypes";
+import { processThreeMf, ThreeMfDocument, getCompositeChildrenUnionBoundingBoxFrom3mf } from "../threeMF/threeMfProcessor";
 import {
   validateExpectedThreeMfStructure,
   ThreeMfExpectedStructureErrorCode,
-} from "./threeMF/threeMfStructureValidator";
-import { buildMeshInWorker } from "./replicad/replicadWorkerClient";
-import { buildNegativeOutlineForLuminaLayers } from "./replicad/replicadModeling";
-import { getSettings } from "./settings";
+} from "../threeMF/threeMfStructureValidator";
+import { buildMeshInWorker } from "../replicad/replicadWorkerClient";
+import { buildNegativeOutlineForLuminaLayers } from "../replicad/replicadModeling";
+import { getSettings } from "../settings";
+import { LUMINA_LAYERS_EMBEDDED_VIDEO_ENABLED } from "./luminaLayersConfig";
 
 export type LuminaLayersDeps = {
   getPreviewGroupId: () => number | undefined;
@@ -29,14 +30,12 @@ export type LuminaLayersDeps = {
 
 export type LuminaLayersRefs = {
   overlay: HTMLDivElement;
-  groupNameLabel: HTMLSpanElement;
-  faceCountLabel: HTMLSpanElement;
   pngFileNameLabel: HTMLSpanElement;
   luminaLayersParaWidthLabel: HTMLSpanElement;
   exportPngBtn: HTMLButtonElement;
   dropZone: HTMLDivElement;
   closeBtn: HTMLButtonElement;
-  // videoIframe: HTMLIFrameElement;
+  videoIframe: HTMLIFrameElement | null;
 };
 
 export function getLuminaLayersRefs(): LuminaLayersRefs | null {
@@ -44,17 +43,22 @@ export function getLuminaLayersRefs(): LuminaLayersRefs | null {
 
   const refs: LuminaLayersRefs = {
     overlay: get<HTMLDivElement>("#lumina-layers-overlay"),
-    groupNameLabel: get<HTMLSpanElement>("#lumina-layers-group-name"),
-    faceCountLabel: get<HTMLSpanElement>("#lumina-layers-face-count"),
     pngFileNameLabel: get<HTMLSpanElement>("#lumina-layers-png-filename"),
     luminaLayersParaWidthLabel: get<HTMLSpanElement>("#lumina-layers-para-width"),
     exportPngBtn: get<HTMLButtonElement>("#lumina-layers-export-png-btn"),
     dropZone: get<HTMLDivElement>("#lumina-layers-drop-zone"),
     closeBtn: get<HTMLButtonElement>("#lumina-layers-close-btn"),
-    // videoIframe: get<HTMLIFrameElement>("#lumina-layers-video-iframe"),
+    videoIframe: document.querySelector<HTMLIFrameElement>("#lumina-layers-video-iframe"),
   };
 
-  const values = Object.values(refs);
+  const values = [
+    refs.overlay,
+    refs.pngFileNameLabel,
+    refs.luminaLayersParaWidthLabel,
+    refs.exportPngBtn,
+    refs.dropZone,
+    refs.closeBtn,
+  ];
   if (values.some((el) => !el)) {
     console.error("叠色打印工具 DOM 元素缺失:", values.map((el) => (el ? "ok" : "missing")));
     return null;
@@ -78,32 +82,34 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
     el.title = text;
   };
 
-  const open = (groupName: string, faceCount: number, projectName: string, pngFileName: string) => {
-    setTextWithTooltip(refs.groupNameLabel, groupName);
-    setTextWithTooltip(refs.faceCountLabel, faceCount.toString());
-    setTextWithTooltip(refs.pngFileNameLabel, `文件名：${pngFileName}`);
+  const open = (_groupName: string, _faceCount: number, _projectName: string, pngFileName: string) => {
+    setTextWithTooltip(refs.pngFileNameLabel, deps.t("luminaLayers.fileName", { fileName: pngFileName }));
     // 更新展开组尺寸
     const bounds = deps.getGroupBounds();
     const { scale } = getSettings();
     // 乘以 2 以提高ll导出模型精度，抗锯齿
     const width = 1 * scale * (bounds ? bounds.maxX - bounds.minX : 100);
-    const height = 1 * scale * (bounds ? bounds.maxY - bounds.minY : 100);
     if (bounds) {
-      setTextWithTooltip(refs.luminaLayersParaWidthLabel, `${width.toFixed(2)} × ${height.toFixed(2)}`);
+      setTextWithTooltip(
+        refs.luminaLayersParaWidthLabel,
+        deps.t("luminaLayers.step2.item1", { width: width.toFixed(2) }),
+      );
     } else {
-      setTextWithTooltip(refs.luminaLayersParaWidthLabel, "-");
+      setTextWithTooltip(refs.luminaLayersParaWidthLabel, deps.t("luminaLayers.step2.item1", { width: "-" }));
     }
-    // 延迟加载视频
-    // const dataSrc = refs.videoIframe.getAttribute("data-src");
-    // if (dataSrc) {
-    //   refs.videoIframe.setAttribute("src", dataSrc);
-    // }
+    if (LUMINA_LAYERS_EMBEDDED_VIDEO_ENABLED && refs.videoIframe) {
+      const dataSrc = refs.videoIframe.getAttribute("data-src");
+      if (dataSrc) {
+        refs.videoIframe.setAttribute("src", dataSrc);
+      }
+    }
     refs.overlay.classList.remove("hidden");
   };
 
   const close = () => {
-    // 清空视频 src 停止播放
-    // refs.videoIframe.src = "";
+    if (LUMINA_LAYERS_EMBEDDED_VIDEO_ENABLED && refs.videoIframe) {
+      refs.videoIframe.src = "";
+    }
     refs.overlay.classList.add("hidden");
   };
 
@@ -161,7 +167,7 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
     // 获取当前展开组的缓存 mesh
     const groupId = deps.getPreviewGroupId();
     if (groupId === undefined) {
-      deps.log("没有预览的展开组", "error");
+      deps.log(deps.t("log.lumina.noPreviewGroup"), "error");
       return;
     }
     const groupName = deps.getPreviewGroupName(groupId);
@@ -169,16 +175,16 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
 
     // 检查是否有自相交
     if (deps.hasGroupIntersection(groupId)) {
-      deps.log("展开组存在自相交，无法生成模型", "error");
+      deps.log(deps.t("log.lumina.groupIntersect"), "error");
       return;
     }
 
     const polygons = deps.getGroupPolygonsData(groupId);
     if (!polygons.length) {
-      deps.log("展开组没有面数据", "error");
+      deps.log(deps.t("log.lumina.noFaces"), "error");
       return;
     }
-    deps.log("正在生成展开组模型...", "info");
+    deps.log(deps.t("log.lumina.buildModel.start"), "info");
 
     let geometry: THREE.BufferGeometry;
     try {
@@ -191,22 +197,22 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
       geometry = mesh.geometry;
     } catch (err) {
       console.error("生成展开组模型失败:", err);
-      deps.log("生成展开组模型失败", "error");
+      deps.log(deps.t("log.lumina.buildModel.fail"), "error");
       return;
     }
 
     const { scale } = getSettings();
     if (!polygons.length) {
-      deps.log("展开组没有面数据", "error");
+      deps.log(deps.t("log.lumina.noFaces"), "error");
       return;
     }
-    deps.log("正在生成负轮廓几何体...", "info");
+    deps.log(deps.t("log.lumina.negativeOutline.start"), "info");
     const triangles = deps.getGroupPolygonsData(groupId, true);
     let negativeGeometry: THREE.BufferGeometry;
     try {
       const solid = await buildNegativeOutlineForLuminaLayers(triangles);
       if (!solid) {
-        deps.log("负轮廓几何体生成失败", "error");
+        deps.log(deps.t("log.lumina.negativeOutline.fail"), "error");
         return;
       }
       const meshTolerance = 0.1;
@@ -222,7 +228,7 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
       negativeGeometry.computeBoundingBox();
     } catch (err) {
       console.error("生成负轮廓几何体失败:", err);
-      deps.log("生成负轮廓几何体失败", "error");
+      deps.log(deps.t("log.lumina.negativeOutline.fail"), "error");
       return;
     }
     const bbox = await getCompositeChildrenUnionBoundingBoxFrom3mf(file, { includeBuildItemTransform: true,});
@@ -282,12 +288,12 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
     }
     catch (err) {
       console.error("处理 3MF 失败:", err);
-      deps.log("处理 3MF 失败", "error");
+      deps.log(deps.t("log.lumina.process3mf.fail"), "error");
     }
     finally {
       geometry.dispose();
     }
-    deps.log("3MF 文件处理完成，已下载", "success");
+    deps.log(deps.t("log.lumina.process3mf.success"), "success");
   };
 
   const handleDropZoneClick = () => {
@@ -307,22 +313,19 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
   const handleDropZoneDragOver = (event: DragEvent) => {
     event.preventDefault();
     event.stopPropagation();
-    refs.dropZone.style.borderColor = "#2196F3";
-    refs.dropZone.style.background = "#E3F2FD";
+    refs.dropZone.classList.add("is-dragover");
   };
 
   const handleDropZoneDragLeave = (event: DragEvent) => {
     event.preventDefault();
     event.stopPropagation();
-    refs.dropZone.style.borderColor = "#ccc";
-    refs.dropZone.style.background = "";
+    refs.dropZone.classList.remove("is-dragover");
   };
 
   const handleDropZoneDrop = async (event: DragEvent) => {
     event.preventDefault();
     event.stopPropagation();
-    refs.dropZone.style.borderColor = "#ccc";
-    refs.dropZone.style.background = "";
+    refs.dropZone.classList.remove("is-dragover");
 
     const file = event.dataTransfer?.files?.[0];
     if (file && file.name.endsWith(".3mf")) {

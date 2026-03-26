@@ -1415,27 +1415,36 @@ textarea {
 
 /* Lumina-Layers dialog */
 .lumina-layers-modal {
-  width: min(760px, calc(100vw - 32px));
-  max-width: 760px;
+  width: min(1080px, calc(100vw - 32px));
+  max-width: 1080px;
   max-height: calc(100vh - 32px);
 }
 
 .lumina-layers-body {
-  padding: 14px;
-  overflow: auto;
+  padding: 12px;
+  overflow: hidden;
 }
 
 .lumina-layers-content {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  width: 100%;
+}
+
+.lumina-guide-section,
+.lumina-workspace-section,
+.lumina-steps-section {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  width: 100%;
+  gap: 12px;
+  min-height: 0;
 }
 
 .lumina-hero-card,
 .lumina-info-card,
-.lumina-meta-card,
-.lumina-action-card {
+.lumina-step-card {
   border: 1px solid var(--border);
   background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.03));
   border-radius: 14px;
@@ -1445,8 +1454,13 @@ textarea {
 .lumina-hero-card {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 16px 18px;
+  gap: 20px;
+  padding: 14px 16px;
+}
+
+.lumina-guide-card {
+  flex-direction: column;
+  align-items: stretch;
 }
 
 .lumina-hero-badge {
@@ -1484,17 +1498,9 @@ textarea {
   color: var(--text);
 }
 
-.lumina-info-grid,
-.lumina-action-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-
 .lumina-info-card,
-.lumina-action-card,
-.lumina-meta-card {
-  padding: 16px;
+.lumina-step-card {
+  padding: 14px;
 }
 
 .lumina-card-head {
@@ -1523,6 +1529,28 @@ textarea {
   color: var(--muted);
   font-size: 11px;
   letter-spacing: 0.04em;
+}
+
+.lumina-video-stage {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  background:
+    radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 48%),
+    linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lumina-video-iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
 }
 
 .lumina-link-pill {
@@ -1559,20 +1587,18 @@ textarea {
   font-size: 14px;
 }
 
-.lumina-step-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.lumina-step-head {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 12px;
 }
 
-.lumina-step-item {
-  display: grid;
-  grid-template-columns: 24px 1fr;
-  gap: 10px;
-  align-items: flex-start;
+.lumina-step-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
 }
 
 .lumina-step-index {
@@ -1587,24 +1613,46 @@ textarea {
   color: #dff6ff;
   font-size: 12px;
   font-weight: 700;
+  flex: 0 0 24px;
 }
 
 .lumina-step-text {
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.5;
   color: var(--text);
 }
 
-.lumina-meta-card {
+.lumina-step-meta {
   display: flex;
   flex-direction: column;
+  gap: 6px;
+}
+
+.lumina-step-meta-compact {
+  flex-direction: row;
+  align-items: center;
   gap: 10px;
+  min-width: 0;
+}
+
+.lumina-step-detail-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lumina-step-detail-item {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text);
 }
 
 .lumina-meta-row {
   display: grid;
-  grid-template-columns: 116px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 10px;
   align-items: center;
 }
 
@@ -1616,7 +1664,7 @@ textarea {
 .lumina-parameter-guide,
 .lumina-meta-info {
   min-width: 0;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text);
   text-align: left;
 }
@@ -1632,21 +1680,19 @@ textarea {
   white-space: nowrap;
 }
 
-.lumina-action-card {
+.lumina-step-card {
   display: flex;
   flex-direction: column;
-  min-height: 188px;
+  gap: 10px;
 }
 
 .lumina-action-btn {
-  width: 100%;
+  width: fit-content;
+  min-width: 168px;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  margin-top: auto;
-  text-align: left;
+  margin-left: 36px;
 }
 
 .lumina-action-btn-label {
@@ -1661,19 +1707,20 @@ textarea {
 }
 
 .lumina-drop-zone {
-  margin-top: auto;
-  min-height: 108px;
+  margin-left: 36px;
+  min-height: 72px;
   border: 1px dashed rgba(255, 255, 255, 0.18);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.04);
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 16px;
+  gap: 10px;
+  padding: 12px 14px;
   cursor: pointer;
   transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
 
+.lumina-drop-zone.is-dragover,
 .lumina-drop-zone:hover,
 .lumina-drop-zone:focus-visible {
   outline: none;
@@ -1684,16 +1731,16 @@ textarea {
 
 .lumina-drop-icon {
   flex: 0 0 auto;
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: rgba(56, 189, 248, 0.12);
   border: 1px solid rgba(56, 189, 248, 0.22);
   color: #dff6ff;
-  font-size: 20px;
+  font-size: 18px;
   font-family: Arial, sans-serif;
 }
 
@@ -1701,19 +1748,12 @@ textarea {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
 }
 
 .lumina-drop-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text);
-}
-
-.lumina-drop-hint {
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.5;
 }
 
 @media (max-width: 780px) {
@@ -1722,17 +1762,27 @@ textarea {
     max-height: calc(100vh - 20px);
   }
 
-  .lumina-hero-card {
-    flex-direction: column;
-    align-items: flex-start;
+  .lumina-layers-body {
+    overflow: auto;
   }
 
-  .lumina-info-grid,
-  .lumina-action-grid {
+  .lumina-layers-content {
     grid-template-columns: 1fr;
+  }
+
+  .lumina-link-card {
+    min-height: 0;
+  }
+  .lumina-video-stage {
+    aspect-ratio: 16 / 9;
   }
 
   .lumina-meta-row {
     grid-template-columns: 96px minmax(0, 1fr);
+  }
+
+  .lumina-action-btn,
+  .lumina-drop-zone {
+    margin-left: 0;
   }
 }
