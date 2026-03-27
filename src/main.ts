@@ -22,6 +22,7 @@ import { exportEdgeJoinTypes, getModel, importEdgeJoinTypes } from "./modules/mo
 import {
   onWorkerBusyChange,
 } from "./modules/replicad/replicadWorkerClient";
+import { extractReplicadErrorCode } from "./modules/replicad/replicadErrors";
 import { buildTabClip } from "./modules/replicad/replicadModeling";
 import { startNewProject, getCurrentProject } from "./modules/project";
 import { historyManager } from "./modules/history";
@@ -1571,8 +1572,9 @@ exportTabClipBtn?.addEventListener("click", async () => {
     URL.revokeObjectURL(url);
     log(t("log.export.seamClip.success", { fileName }), "success");
   } catch (error) {
-    console.error("拼接边固定夹导出失败", error);
-    log(t("log.export.seamClip.fail"), "error");
+    const code = extractReplicadErrorCode(error);
+    console.error("[Main] Failed to export seam clip", error);
+    log(t(code ?? "log.export.seamClip.fail"), "error");
   } finally {
     exportTabClipBtn.disabled = false;
   }

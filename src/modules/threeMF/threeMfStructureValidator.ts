@@ -45,7 +45,6 @@ export type ThreeMfExpectedStructureValidationResult =
   | {
       ok: false;
       code: ThreeMfExpectedStructureErrorCode;
-      message: string;
       details?: Record<string, unknown>;
     };
 
@@ -449,11 +448,10 @@ function resolveComponentObject(
 
 function fail(
   code: ThreeMfExpectedStructureErrorCode,
-  message: string,
   details?: Record<string, unknown>,
 ): ThreeMfExpectedStructureValidationResult {
-  warn(code, message, details ?? {});
-  return { ok: false, code, message, details };
+  warn(code, details ?? {});
+  return { ok: false, code, details };
 }
 
 export async function validateExpectedThreeMfStructure(
@@ -464,10 +462,7 @@ export async function validateExpectedThreeMfStructure(
 
   const primaryModelPath = await findPrimaryModelPath(zip);
   if (!primaryModelPath) {
-    return fail(
-      ThreeMfExpectedStructureErrorCode.PRIMARY_MODEL_NOT_FOUND,
-      "未找到 3MF 主 model part。",
-    );
+    return fail(ThreeMfExpectedStructureErrorCode.PRIMARY_MODEL_NOT_FOUND);
   }
 
   const modelParts = await loadAllModelParts(zip);
@@ -476,7 +471,6 @@ export async function validateExpectedThreeMfStructure(
   if (!primaryEntry) {
     return fail(
       ThreeMfExpectedStructureErrorCode.PRIMARY_MODEL_NOT_FOUND,
-      `主 model part 不存在：${primaryModelPath}`,
       { primaryModelPath },
     );
   }
@@ -491,7 +485,6 @@ export async function validateExpectedThreeMfStructure(
   if (!plateInfo || plateInfo.count == null) {
     return fail(
       ThreeMfExpectedStructureErrorCode.PLATE_METADATA_NOT_FOUND,
-      "未在项目元数据中找到可用于判断 plate 数量的信息。",
       {
         primaryModelPath,
         checkedSources: [
@@ -507,7 +500,6 @@ export async function validateExpectedThreeMfStructure(
   if (plateCount !== 1) {
     return fail(
       ThreeMfExpectedStructureErrorCode.INVALID_PLATE_COUNT,
-      `预期文件只包含 1 个盘，实际为 ${plateCount} 个。`,
       {
         plateCount,
         primaryModelPath,
@@ -524,7 +516,6 @@ export async function validateExpectedThreeMfStructure(
   if (rootObjects.length !== 1 || buildItems.length !== 1) {
     return fail(
       ThreeMfExpectedStructureErrorCode.INVALID_MODEL_OBJECT_COUNT,
-      `预期唯一盘里只有 1 个模型对象；实际 primary model 中 object=${rootObjects.length}, build/item=${buildItems.length}。`,
       {
         primaryModelPath,
         objectCount: rootObjects.length,
@@ -540,7 +531,6 @@ export async function validateExpectedThreeMfStructure(
   if (componentElements.length === 0) {
     return fail(
       ThreeMfExpectedStructureErrorCode.ROOT_OBJECT_NOT_COMPOSITE,
-      "唯一模型对象不是组合对象（未找到任何 component）。",
       { primaryModelPath, rootObjectId },
     );
   }
@@ -548,7 +538,6 @@ export async function validateExpectedThreeMfStructure(
   if (componentElements.length < 2) {
     return fail(
       ThreeMfExpectedStructureErrorCode.COMPONENT_COUNT_TOO_SMALL,
-      `组合对象子对象数量不足，预期至少 2 个，实际为 ${componentElements.length} 个。`,
       { primaryModelPath, rootObjectId, componentCount: componentElements.length },
     );
   }
@@ -564,7 +553,6 @@ export async function validateExpectedThreeMfStructure(
     if (!objectId) {
       return fail(
         ThreeMfExpectedStructureErrorCode.REFERENCED_OBJECT_NOT_FOUND,
-        `component[${i}] 缺少 objectid。`,
         { primaryModelPath, rootObjectId, componentIndex: i },
       );
     }
@@ -573,7 +561,6 @@ export async function validateExpectedThreeMfStructure(
     if (!resolved) {
       return fail(
         ThreeMfExpectedStructureErrorCode.REFERENCED_OBJECT_NOT_FOUND,
-        `component[${i}] 无法解析其引用对象。`,
         {
           primaryModelPath,
           rootObjectId,
@@ -605,7 +592,6 @@ export async function validateExpectedThreeMfStructure(
   if (backingCount !== 1) {
     return fail(
       ThreeMfExpectedStructureErrorCode.INVALID_BACKING_COUNT,
-      `预期子对象中有且仅有 1 个名称为 Backing，实际为 ${backingCount} 个。`,
       {
         primaryModelPath,
         rootObjectId,
@@ -632,10 +618,9 @@ export class ThreeMfStructureValidationError extends Error {
 
   constructor(
     code: ThreeMfExpectedStructureErrorCode,
-    message: string,
     details?: Record<string, unknown>,
   ) {
-    super(message);
+    super(code);
     this.name = "ThreeMfStructureValidationError";
     this.code = code;
     this.details = details;
@@ -647,6 +632,6 @@ export async function assertExpectedThreeMfStructure(
 ): Promise<void> {
   const result = await validateExpectedThreeMfStructure(input);
   if (!result.ok) {
-    throw new ThreeMfStructureValidationError(result.code, result.message, result.details);
+    throw new ThreeMfStructureValidationError(result.code, result.details);
   }
 }

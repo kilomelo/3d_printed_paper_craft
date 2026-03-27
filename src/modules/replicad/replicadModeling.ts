@@ -22,21 +22,11 @@ import {
   arcByCenterStartAngleSafe,
   extrudeRingFromOuterAndInnerContours,
 } from "./replicadUtils";
-import { t, initI18n, setLanguage } from "../i18n";
-
-let i18nReady: Promise<void> | null = null;
-let desiredLang: string | null = null;
-export const setReplicadModelingLang = (lang: string) => {
-  desiredLang = lang;
-};
-const ensureI18nReady = async (lang?: string) => {
-  if (!i18nReady) i18nReady = initI18n();
-  await i18nReady;
-  const target = lang ?? desiredLang;
-  if (target) {
-    await setLanguage(target);
-  }
-};
+import {
+  createReplicadError,
+  OFFSET_FAIL_CODE_MAP,
+  REPLICAD_LOG_CODES,
+} from "./replicadErrors";
 
 type OcFactory = (opts?: { locateFile?: (path: string) => string }) => Promise<OpenCascadeInstance>;
 let ocReady: Promise<void> | null = null;
@@ -76,6 +66,25 @@ const tabClipGemometry = () => {
   return { tabClipKeelThickness, tabClipWingThickness, tabClipWingLength, tabClipMinSpacing, tabClipMaxSpacing, clipGap };
 };
 
+const reportReplicadIssue = (
+  onLog: ((msg: string) => void) | undefined,
+  code: string,
+  context?: Record<string, unknown>,
+) => {
+  onLog?.(code);
+  console.log("[ReplicadModeling]", code, context ?? {});
+};
+
+const throwReplicadIssue = (
+  onLog: ((msg: string) => void) | undefined,
+  code: string,
+  description: string,
+  context?: Record<string, unknown>,
+): never => {
+  reportReplicadIssue(onLog, code, context);
+  throw createReplicadError(code, description);
+};
+
 // 实际实行参数化建模的方法【核心逻辑】
 // 这里已经从"按三角形输入"改为"按多边形输入"。
 // 多边形的边按 points[i] -> points[(i + 1) % n] 解释。
@@ -84,12 +93,10 @@ const buildSolidFromPolygonsWithAngles = async (
   polygonsWithAngles: PolygonWithEdgeInfo[],
   onProgress?: (progress: number) => void,
   onLog?: (msg: string) => void,
-  lang?: string,
   mode: "normal" | "lumina" = "normal",
 ): Promise<{ solid: Shape3D }> => {
   const [gc, cleanup] = localGC();
   try {
-    await ensureI18nReady(lang);
     onProgress?.(0);
     const {
       layerHeight,
@@ -115,24 +122,23 @@ const buildSolidFromPolygonsWithAngles = async (
     // 第一步：生成连接层和主体
     const outerResult  = polygons2Outer(polygonsWithAngles);
     if (!outerResult || !outerResult.outer || outerResult.outer.length < 3) {
-      onLog?.(t("log.replicad.outer.fail"));
-      throw new Error("外轮廓查找失败");
+      throwReplicadIssue(onLog, REPLICAD_LOG_CODES.outerFail, "Failed to resolve outer contour");
     }
+    const validOuterResult = outerResult!;
     const connectionBase = extrudeFromContourPoints(
-      outerResult.outer,
+      validOuterResult.outer,
       "XY",
-      -outerResult.maxEdgeLen,
-      connectionThickness + bodyThickness + outerResult.maxEdgeLen,
+      -validOuterResult.maxEdgeLen,
+      connectionThickness + bodyThickness + validOuterResult.maxEdgeLen,
     );
     if (!connectionBase) {
-      onLog?.(t("log.replicad.connSketch.fail"));
-      throw new Error("连接层草图生成失败");
+      throwReplicadIssue(onLog, REPLICAD_LOG_CODES.connSketchFail, "Failed to build connection-layer sketch");
     }
-    let connectionSolid = connectionBase.simplify();
+    const validConnectionBase = connectionBase!;
+    let connectionSolid = validConnectionBase.simplify();
     
     if (!connectionSolid) {
-      onLog?.(t("log.replicad.connModel.fail"));
-      throw new Error("连接层建模失败");
+      throwReplicadIssue(onLog, REPLICAD_LOG_CODES.connModelFail, "Failed to build connection-layer solid");
     }
     onProgress?.(2);
     const progressPerPolygon = 48 / polygonsWithAngles.length;
@@ -159,8 +165,7 @@ const buildSolidFromPolygonsWithAngles = async (
       });
       const points = polyData.points;
       if (points.length < 3 || polyData.edges.length !== points.length) {
-        onLog?.(t("log.replicad.outer.fail"));
-        console.warn("[ReplicadModeling] invalid polygon input, skip this polygon", polyData);
+        reportReplicadIssue(onLog, REPLICAD_LOG_CODES.polygonInvalid, { polygon: polyData });
         return;
       }
       // polygon 自身边界顶点角度（优先使用数据生产层新增的数据）。
@@ -171,7 +176,7 @@ const buildSolidFromPolygonsWithAngles = async (
         polygonPointAngleMap.set(pointKey(item.point), item.angle);
       });
       const getPolygonPointAngle = (pt: Point2D): number | undefined => {
-        return polygonPointAngleMap.get(pointKey(pt)) ?? outerResult.outerPointAngleMap.get(pointKey(pt));
+        return polygonPointAngleMap.get(pointKey(pt)) ?? validOuterResult.outerPointAngleMap.get(pointKey(pt));
       };
       // 为每条边构造一个垂直切割平面。
       // 这里沿用旧三角形版本的约定：以边的反向向量作为平面法向。
@@ -187,8 +192,7 @@ const buildSolidFromPolygonsWithAngles = async (
         return makeVerticalPlaneNormalAB(pointA, pointB);
       });
       if (!planes.every(isDefined) || !planesReversed.every(isDefined)) {
-        onLog?.(t("log.replicad.edgePlane.fail"));
-        console.warn("[ReplicadModeling] failed to create edge cutting planes for polygon, skip this polygon", polyData);
+        reportReplicadIssue(onLog, REPLICAD_LOG_CODES.edgePlaneFail, { polygon: polyData });
         return;
       }
       const dists = points.map((pointA, edgeIdx) => {
@@ -211,8 +215,7 @@ const buildSolidFromPolygonsWithAngles = async (
           dists[edgeIdx] + 2 * cutToolMargin,
         ));
       if (!edgeCutTools.every(isDefined) || !edgeCutToolsReversed.every(isDefined)) {
-        onLog?.(t("log.replicad.edgeSketch.fail"));
-        console.warn("[ReplicadModeling] failed to create edge cut tools for polygon, skip this polygon", polyData);
+        reportReplicadIssue(onLog, REPLICAD_LOG_CODES.edgeSketchFail, { polygon: polyData });
         return;
       }
 
@@ -263,15 +266,13 @@ const buildSolidFromPolygonsWithAngles = async (
               [0, slopToolHeight], [-slopeTopOffset, slopToolHeight]],
             edgePerpendicularPlane, -cutToolMargin, distAB + 2 * cutToolMargin);
           if (!slopeToolBase) {
-            onLog?.(t("log.replicad.slopeSketch.fail"));
-            console.warn('[ReplicadModeling] failed to create slope tool sketch for edge, skip this edge', edge);
+            reportReplicadIssue(onLog, REPLICAD_LOG_CODES.slopeSketchFail, { edge });
             return;
           }
           // 超量挤出了坡度刀具并切掉两头超出的部分，以更好地应付钝角
           const slopeTool = slopeToolBase.cut(adjEdgeCutToolL.clone()).cut(adjEdgeCutToolR.clone()).simplify();
           if (!slopeTool) {
-            onLog?.(t("log.replicad.slopeTool.fail"));
-            console.warn('[ReplicadModeling] failed to create slope tool for edge, skip this edge', edge);
+            reportReplicadIssue(onLog, REPLICAD_LOG_CODES.slopeToolFail, { edge });
             return;
           }
           slopeTools.push(slopeTool);
@@ -287,7 +288,7 @@ const buildSolidFromPolygonsWithAngles = async (
             const tabAngleB = edge.tabAngle[1];
             const tabPointByAngle = buildTriangleByEdgeAndAngles(pointA, pointB, degToRad(tabAngleA), degToRad(tabAngleB));
             if (!tabPointByAngle) {
-              onLog?.(t("log.replicad.tabPoint.fallback"));
+              reportReplicadIssue(onLog, REPLICAD_LOG_CODES.tabPointFallback, { edge });
             }
             const tabPoint = tabPointByAngle ?? calculateIsoscelesRightTriangle(pointA, pointB)[0];
             const distAP = Math.hypot(tabPoint[0] - pointA[0], tabPoint[1] - pointA[1]);
@@ -332,8 +333,7 @@ const buildSolidFromPolygonsWithAngles = async (
             const tabStartZ = mode === "lumina" ? connectionThickness: layerHeight;
             const tabSolidBase = extrudeFromContourPoints(tabTrapezoid, "XY", tabStartZ, tabThickness);
             if (!tabSolidBase) {
-              onLog?.(t("log.replicad.tabSketch.fail"));
-              console.warn('[ReplicadModeling] failed to create tab sketch for edge, skip this edge', edge);
+              reportReplicadIssue(onLog, REPLICAD_LOG_CODES.tabSketchFail, { edge });
               return null;
             }
             let tabSolid = tabSolidBase;
@@ -343,8 +343,7 @@ const buildSolidFromPolygonsWithAngles = async (
             const grooveDepth = tabActualWidth - tabExtraWidth + tabClipWingExtrWidth;
             // 舌片宽度达不到挖槽要求则不挖槽
             if (grooveDepth < 1e-1) {
-              onLog?.(t("log.replicad.tabGroove.tooNarrow"));
-              console.warn('[ReplicadModeling] tab width is too narrow due to geometry constraint, skip this edge', edge);
+              reportReplicadIssue(onLog, REPLICAD_LOG_CODES.tabGrooveTooNarrow, { edge, grooveDepth });
             }
             else {
               const tabClipGroovingPlane = new Plane(tabMiddlePoint, [(pointA[0]-pointB[0]) / distAB, (pointA[1]-pointB[1]) / distAB, 0], [0, 0, 1]);
@@ -357,12 +356,11 @@ const buildSolidFromPolygonsWithAngles = async (
                 .lineTo([1.5 * tabClipKeelThickness / 2 + tabClipGrooveClearance, 0])
                 .close();
               if (!tabClipGroovingSketch) {
-                onLog?.(t("log.replicad.tabGrooveSketch.fail"));
-                console.warn('[ReplicadModeling] failed to create tab clip grooving sketch for edge, skip this edge', edge);
+                reportReplicadIssue(onLog, REPLICAD_LOG_CODES.tabGrooveSketchFail, { edge });
               }
               else {
                 if (grooveDepth < tabWidth + tabClipWingExtrWidth - 1e-6) {
-                  onLog?.(t("log.replicad.tabGroove.mayLoose"));
+                  reportReplicadIssue(onLog, REPLICAD_LOG_CODES.tabGrooveMayLoose, { edge, grooveDepth });
                 }
                 const tabClipGroovingTool = tabClipGroovingSketch.extrude(tabThickness + 2 * layerHeight);
                 const dirAB = [(pointA[0] - pointB[0]) / distAB, (pointA[1] - pointB[1]) / distAB];
@@ -388,8 +386,7 @@ const buildSolidFromPolygonsWithAngles = async (
               [ -tabThickness, tabThickness + tabStartZ + 1e-1],
             ], edgePerpendicularPlane, -tabExtendMargin, distAB + 2 * tabExtendMargin);
             if (!tabChamferTool || !tabEndChamferSolid) {
-              onLog?.(t("log.replicad.tabChamfer.fail"));
-              console.warn('[ReplicadModeling] failed to create tab chamfer sketch for edge, skip chamfer', edge);
+              reportReplicadIssue(onLog, REPLICAD_LOG_CODES.tabChamferFail, { edge });
             } else {
               tabSolid = tabSolid.cut(tabChamferTool).simplify();
               tabSolid = tabSolid.cut(tabEndChamferSolid.clone().rotate(-tabAngleA, [pointA[0], pointA[1], 0], [0,0,1])).simplify();
@@ -404,8 +401,8 @@ const buildSolidFromPolygonsWithAngles = async (
             if (edge.angle > 180) {
               const pointAKey = pointKey(pointA);
               const pointBKey = pointKey(pointB);
-              const pointAAngle = outerResult.outerPointAngleMap.get(pointAKey);
-              const pointBAngle = outerResult.outerPointAngleMap.get(pointBKey);
+              const pointAAngle = validOuterResult.outerPointAngleMap.get(pointAKey);
+              const pointBAngle = validOuterResult.outerPointAngleMap.get(pointBKey);
               // console.log('[ReplicadModeling] edge info for tab', { pointAAngle, pointBAngle });
               // 只有拼接边与拼接边相邻，且拼接边与拼接边相邻的顶点角度小于180度（阴角）时才需要进行防干涉
               if (pointAAngle && pointAAngle > 180) {
@@ -443,21 +440,20 @@ const buildSolidFromPolygonsWithAngles = async (
             // 这里可以比舌片的策略激进一些，因为爪大概率不会分布在拼接边的端点附近
             const tabAngleA = edge.tabAngle[0] + (edge.tabAngle[0] > 45 ? 0 : (45 - edge.tabAngle[0]) * 0.7);
             const tabAngleB = edge.tabAngle[1] + (edge.tabAngle[1] > 45 ? 0 : (45 - edge.tabAngle[1]) * 0.7);
-            console.log('[ReplicadModeling] tabAngleA, tabAngleB', { tabAngleA, tabAngleB }, edge.tabAngle);
+            // console.log('[ReplicadModeling] tabAngleA, tabAngleB', { tabAngleA, tabAngleB }, edge.tabAngle);
             const tabPointByAngle = buildTriangleByEdgeAndAngles(
               pointA, pointB,
               degToRad(tabAngleA),
               degToRad(tabAngleB));
             if (!tabPointByAngle) {
-              onLog?.(t("log.replicad.tabPoint.fallback"));
+              reportReplicadIssue(onLog, REPLICAD_LOG_CODES.tabPointFallback, { edge });
             }
             const tabPoint = tabPointByAngle ?? calculateIsoscelesRightTriangle(pointA, pointB)[0];
             const foot = footOfPerpendicularToSegmentLine(tabPoint, pointA, pointB)??[(pointA[0] + pointB[0]) / 2, (pointA[1] + pointB[1]) / 2];
             const triHeight = Math.hypot(foot[0] - tabPoint[0], foot[1] - tabPoint[1]);
             // 没有足够的位置生成爪子
             if (triHeight < clawTargetRadius) {
-              onLog?.(t("log.replicad.claw.fail"));
-              console.log(t("log.replicad.claw.fail"), 'triHeight, clawTargetRadius', { triHeight, clawTargetRadius });
+              reportReplicadIssue(onLog, REPLICAD_LOG_CODES.clawFail, { edge, triHeight, clawTargetRadius });
               return false;
             }
             // 爪的伸出角度最大为90度，所以对于大于90度的拼接边，需要补一个基座，并且回退爪的位置
@@ -487,15 +483,13 @@ const buildSolidFromPolygonsWithAngles = async (
             const tabTrapezoid = trapezoid(pointA, pointB, tabPoint, actualClawRadius);
             // 没有足够的位置生成爪子
             if (tabTrapezoid.length === 3) {
-              onLog?.(t("log.replicad.claw.fail"));
-              console.log(t("log.replicad.claw.fail"), tabTrapezoid);
+              reportReplicadIssue(onLog, REPLICAD_LOG_CODES.clawFail, { edge, tabTrapezoid });
               return false;
             }
             const tabLength = Math.hypot(tabTrapezoid[2][0] - tabTrapezoid[3][0], tabTrapezoid[2][1] - tabTrapezoid[3][1]);
             // 没有足够的位置生成爪子
             if (tabLength < clawCylinderWidth) {
-              onLog?.(t("log.replicad.claw.fail"));
-              console.log(t("log.replicad.claw.fail"), 'tabLength, actualClawWidth', { tabLength, actualClawWidth: clawCylinderWidth });
+              reportReplicadIssue(onLog, REPLICAD_LOG_CODES.clawFail, { edge, tabLength, actualClawWidth: clawCylinderWidth });
               return false;
             }
             const clawSetCount = Math.max(1, Math.floor(tabLength / (clawWidth * 3)));
@@ -648,14 +642,6 @@ const buildSolidFromPolygonsWithAngles = async (
       onProgress?.(Math.floor(2 + progressPerPolygon * (i + 1)));
 
       if (hollowStyle) {
-        const msg: Record<OffsetFailReason, string> = {
-          DEGENERATE_INPUT: t("log.replicad.offset.reason.degenerateInput"),
-          PARALLEL_SHIFTED_LINES: t("log.replicad.offset.reason.parallelShiftedLines"),
-          DEGENERATE_RESULT: t("log.replicad.offset.reason.degenerateResult"),
-          FLIPPED: t("log.replicad.offset.reason.flipped"),
-          OUTSIDE_ORIGINAL: t("log.replicad.offset.reason.outsideOriginal"),
-          INFEASIBLE_OFFSETS: t("log.replicad.offset.reason.infeasibleOffsets"),
-        };
           // 镂空
           const offsets = polyData.edges.map(e => {
             return (e.isOuter && !e.isSeam) ? wireframeThickness : (wireframeThickness / 2);
@@ -663,14 +649,17 @@ const buildSolidFromPolygonsWithAngles = async (
           // 根据当前数据生产约束，镂空模式下输入应保持为三角形。
           // 这里仍加显式保护，避免后续改动破坏这个前提时静默产出错误结果。
           if (points.length !== 3) {
-            console.warn("[ReplicadModeling] hollow mode expects triangle polygons, skip this polygon", polyData);
+            reportReplicadIssue(onLog, REPLICAD_LOG_CODES.hollowNonTriangle, { polygon: polyData });
             return;
           }
           const triangleForHollow = [points[0], points[1], points[2]] as [Point2D, Point2D, Point2D];
           // console.log('[ReplicadModeling] offsetting triangle for hollow', { tri: triangleForHollow, offsets });
           const offsetResult = offsetTriangleSafe(triangleForHollow, offsets);
           if (!offsetResult.tri) {
-            onLog?.(t("log.replicad.offset.fail", { reason: msg[offsetResult.reason!] }));
+            reportReplicadIssue(onLog, OFFSET_FAIL_CODE_MAP[offsetResult.reason!], {
+              polygon: polyData,
+              reason: offsetResult.reason,
+            });
           }
           else
           {
@@ -687,8 +676,7 @@ const buildSolidFromPolygonsWithAngles = async (
     });
 
     if (!isOcctValid(connectionSolid)) {
-      onLog?.(t("log.replicad.invalid.afterTab"));
-      console.warn('[ReplicadModeling] after tab creation, solid is not valid OCCT shape');
+      reportReplicadIssue(onLog, REPLICAD_LOG_CODES.invalidAfterTab);
     }
     
     onProgress?.(50);
@@ -700,8 +688,7 @@ const buildSolidFromPolygonsWithAngles = async (
     });
     slopeTools.forEach((tool) => tool.delete());
     if (!isOcctValid(connectionSolid)) {
-      onLog?.(t("log.replicad.invalid.afterSlope"));
-      console.warn('[ReplicadModeling] after applying slope tools, solid is not valid OCCT shape');
+      reportReplicadIssue(onLog, REPLICAD_LOG_CODES.invalidAfterSlope);
     }
     if (interlockingClaws.length > 0) {
       connectionSolid = connectionSolid.fuse(interlockingClaws[0]).simplify();
@@ -712,24 +699,23 @@ const buildSolidFromPolygonsWithAngles = async (
     // 第五步，削平底部
     const margin = tabWidth + 1;
     const tool = makeBox(
-      [outerResult.min[0] - margin, outerResult.min[1] - margin, -outerResult.maxEdgeLen - 1] as Point,
-      [outerResult.max[0] + margin, outerResult.max[1] + margin, 0] as Point
+      [validOuterResult.min[0] - margin, validOuterResult.min[1] - margin, -validOuterResult.maxEdgeLen - 1] as Point,
+      [validOuterResult.max[0] + margin, validOuterResult.max[1] + margin, 0] as Point
     );
     connectionSolid = connectionSolid.cut(tool) as Shape3D;
 
     // 如果是为LuminaLayersTool生成的几何，则需要减去叠色模型所在的区域
     if (mode === "lumina") {
       console.log('[ReplicadModeling] cutting lumina layers solid');
-      const luminaLayersSolid = extrudeFromContourPoints(outerResult.outer, "XY", 0, connectionThickness);
+      const luminaLayersSolid = extrudeFromContourPoints(validOuterResult.outer, "XY", 0, connectionThickness);
       if (!luminaLayersSolid) {
-        // todo 报错
+        throwReplicadIssue(onLog, REPLICAD_LOG_CODES.luminaCutFail, "Failed to build lumina exclusion solid");
       } else connectionSolid = connectionSolid.cut(luminaLayersSolid) as Shape3D;
     }
     connectionSolid = connectionSolid.simplify().mirror("XY").rotate(180, [0, 0, 0], [0, 1, 0])
     onProgress?.(100);
     if (!isOcctValid(connectionSolid)) {
-      onLog?.(t("log.replicad.invalid.final"));
-      console.warn('[ReplicadModeling] final solid is not valid OCCT shape');
+      reportReplicadIssue(onLog, REPLICAD_LOG_CODES.invalidFinal);
     }
     console.log('[ReplicadModeling] final solid', connectionSolid);
     return { solid: connectionSolid };
@@ -766,7 +752,7 @@ export const buildTabClip = async () => {
     [tabThickness + tabClipWingThickness + clipGap - wingChamferSize, tabWidth + 1e-4],
   ], "YZ", 0, tabClipWingLength / 2 + 1);
   if (!tabClipSolidKeel || !tabClipSolidWing || !tabClipWingChamferTool) {
-    throw new Error("舌片卡子草图创建失败");
+    throw createReplicadError(REPLICAD_LOG_CODES.tabClipSketchFail, "Failed to build seam-clip sketch");
   }
   const tabClipSolidOneQuater = tabClipSolidKeel.fuse(tabClipSolidWing).cut(tabClipWingChamferTool).simplify();
   const tabClipSolidHalf = tabClipSolidOneQuater.fuse(tabClipSolidOneQuater.clone().mirror("YZ")).simplify();
@@ -774,24 +760,29 @@ export const buildTabClip = async () => {
 };
 
 export const buildNegativeOutlineForLuminaLayers = async (
-  polygonsWithAngles: PolygonWithEdgeInfo[]
+  polygonsWithAngles: PolygonWithEdgeInfo[],
+  onProgress?: (progress: number) => void,
+  onLog?: (msg: string) => void,
 ) => {
   if (!polygonsWithAngles.length) return undefined;
   await ensureReplicadOC();
+  onProgress?.(0);
 
   const outerResult  = polygons2Outer(polygonsWithAngles);
   if (!outerResult || !outerResult.outer || outerResult.outer.length < 3) {
-    // onLog?.(t("log.replicad.outer.fail"));
-    throw new Error("生成负物体时外轮廓查找失败");
+    throwReplicadIssue(onLog, REPLICAD_LOG_CODES.negativeOuterFail, "Failed to resolve outer contour for negative outline");
   }
+  const validOuterResult = outerResult!;
 
   const { luminaLayersTotalHeight } = getSettings();
   const offsetAmount = 1;
   let outerSolid: Shape3D | undefined;
+  const progressPerPolygon = 90 / polygonsWithAngles.length;
 
-  polygonsWithAngles.forEach((polygon, index) => {
+  for (let index = 0; index < polygonsWithAngles.length; index += 1) {
+    const polygon = polygonsWithAngles[index];
     if (polygon.points.length !== 3) {
-      throw new Error(`生成负物体时第 ${index + 1} 个 polygon 不是三角形`);
+      throwReplicadIssue(onLog, REPLICAD_LOG_CODES.negativeNonTriangle, `Negative outline expects triangles only at polygon index ${index}`);
     }
     const triangle = [polygon.points[0], polygon.points[1], polygon.points[2]] as [Point2D, Point2D, Point2D];
     const offsetResult = offsetTriangleSafe(
@@ -800,32 +791,48 @@ export const buildNegativeOutlineForLuminaLayers = async (
       { requireInside: false }
     );
     if (!offsetResult.tri) {
-      throw new Error(`生成负物体时第 ${index + 1} 个三角形偏移失败: ${offsetResult.reason}`);
+      throwReplicadIssue(
+        onLog,
+        REPLICAD_LOG_CODES.negativeOffsetFail,
+        `Failed to offset triangle ${index} for negative outline: ${offsetResult.reason}`,
+        { polygonIndex: index, reason: offsetResult.reason },
+      );
     }
-    const extrudedTriangle = extrudeFromContourPoints(offsetResult.tri, "XY", 0, luminaLayersTotalHeight);
+    const offsetTriangle = offsetResult.tri!;
+    const extrudedTriangle = extrudeFromContourPoints(offsetTriangle, "XY", 0, luminaLayersTotalHeight);
     if (!extrudedTriangle) {
-      throw new Error(`生成负物体时第 ${index + 1} 个三角形挤出失败`);
+      throwReplicadIssue(
+        onLog,
+        REPLICAD_LOG_CODES.negativeExtrudeTriangleFail,
+        `Failed to extrude triangle ${index} for negative outline`,
+        { polygonIndex: index },
+      );
     }
-    outerSolid = outerSolid ? outerSolid.fuse(extrudedTriangle).simplify() : extrudedTriangle;
-  });
-  const innerSolid = extrudeFromContourPoints(outerResult.outer, "XY", 0, luminaLayersTotalHeight);
-  if (!outerSolid || !innerSolid) {
-    throw new Error("生成负物体时挤出失败");
+    const validExtrudedTriangle = extrudedTriangle!;
+    outerSolid = outerSolid ? outerSolid.fuse(validExtrudedTriangle).simplify() : validExtrudedTriangle;
+    onProgress?.(Math.min(90, progressPerPolygon * (index + 1)));
   }
-  return outerSolid.cut(innerSolid).mirror("YZ").simplify();
+  const innerSolid = extrudeFromContourPoints(validOuterResult.outer, "XY", 0, luminaLayersTotalHeight);
+  if (!outerSolid || !innerSolid) {
+    throwReplicadIssue(onLog, REPLICAD_LOG_CODES.negativeExtrudeFail, "Failed to extrude negative outline solids");
+  }
+  const validOuterSolid = outerSolid!;
+  const validInnerSolid = innerSolid!;
+  onProgress?.(90);
+  const resultSolid = validOuterSolid.cut(validInnerSolid).mirror("YZ").simplify();
+  onProgress?.(100);
+  return resultSolid;
 }
 
 export async function buildGroupStepFromPolygons(
   polygonsWithAngles: PolygonWithEdgeInfo[],
   onProgress?: (msg: number) => void,
   onLog?: (msg: string) => void,
-  lang?: string,
 ): Promise<Blob> {
   if (!polygonsWithAngles.length) {
-    onLog?.(t("log.replicad.noTriangles"));
-    throw new Error("没有可用于建模的展开面片");
+    throwReplicadIssue(onLog, REPLICAD_LOG_CODES.noTriangles, "No unfolded polygons available for STEP export");
   }
-  const { solid } = await buildSolidFromPolygonsWithAngles(polygonsWithAngles, onProgress, onLog, lang);
+  const { solid } = await buildSolidFromPolygonsWithAngles(polygonsWithAngles, onProgress, onLog);
   return solid.blobSTEP();
 }
 
@@ -836,15 +843,12 @@ export async function buildGroupStlFromPolygons(
   polygonsWithAngles: PolygonWithEdgeInfo[],
   onProgress?: (msg: number) => void,
   onLog?: (msg: string) => void,
-  lang?: string,
   mode: "normal" | "lumina" = "normal",
 ): Promise<Blob> {
-  console.log('[buildGroupStlFromPolygons] 开始执行', { polygonsCount: polygonsWithAngles.length, mode });
   if (!polygonsWithAngles.length) {
-    onLog?.(t("log.replicad.noTriangles"));
-    throw new Error("没有可用于建模的展开面片");
+    throwReplicadIssue(onLog, REPLICAD_LOG_CODES.noTriangles, "No unfolded polygons available for STL export");
   }
-  const { solid } = await buildSolidFromPolygonsWithAngles(polygonsWithAngles, onProgress, onLog, lang, mode);
+  const { solid } = await buildSolidFromPolygonsWithAngles(polygonsWithAngles, onProgress, onLog, mode);
   return solid.blobSTL({ binary: true, tolerance: buildMeshTolerance, angularTolerance: buildMeshAngularTolerance });
 }
 
@@ -852,10 +856,9 @@ export async function buildGroupMeshFromPolygons(
   polygonsWithAngles: PolygonWithEdgeInfo[],
   onProgress?: (msg: number) => void,
   onLog?: (msg: string) => void,
-  lang?: string,
   mode: "normal" | "lumina" = "normal",
 ): Promise<{ mesh: Mesh }> {
-  const { vertices, normals, triangles } = await buildGroupMeshDataFromPolygons(polygonsWithAngles, onProgress, onLog, lang, mode);
+  const { vertices, normals, triangles } = await buildGroupMeshDataFromPolygons(polygonsWithAngles, onProgress, onLog, mode);
   const geometry = new BufferGeometry();
   const position = new Float32BufferAttribute(vertices, 3);
   const normal = new Float32BufferAttribute(normals, 3);
@@ -880,14 +883,12 @@ export async function buildGroupMeshDataFromPolygons(
   polygonsWithAngles: PolygonWithEdgeInfo[],
   onProgress?: (msg: number) => void,
   onLog?: (msg: string) => void,
-  lang?: string,
   mode: "normal" | "lumina" = "normal",
 ): Promise<{ vertices: Float32Array; normals: Float32Array; triangles: Uint16Array | Uint32Array }> {
   if (!polygonsWithAngles.length) {
-    onLog?.(t("log.replicad.noTriangles"));
-    throw new Error("没有可用于建模的展开面片");
+    throwReplicadIssue(onLog, REPLICAD_LOG_CODES.noTriangles, "No unfolded polygons available for mesh generation");
   }
-  const { solid } = await buildSolidFromPolygonsWithAngles(polygonsWithAngles, onProgress, onLog, lang, mode);
+  const { solid } = await buildSolidFromPolygonsWithAngles(polygonsWithAngles, onProgress, onLog, mode);
   const mesh = solid.mesh({ tolerance: buildMeshTolerance, angularTolerance: buildMeshAngularTolerance });
 
   const indexArray =

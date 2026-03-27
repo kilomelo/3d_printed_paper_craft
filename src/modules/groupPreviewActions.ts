@@ -9,6 +9,7 @@ import {
   buildStlInWorker,
   buildMeshInWorker,
 } from "./replicad/replicadWorkerClient";
+import { extractReplicadErrorCode } from "./replicad/replicadErrors";
 import { generateGroupTexture } from "./textureManager";
 import type { GroupTextureOptions } from "./textureManager";
 import type { createPreviewMeshCacheManager } from "./previewMeshCache";
@@ -37,6 +38,15 @@ type BindGroupPreviewActionsOptions = {
 
 export const bindGroupPreviewActions = (opts: BindGroupPreviewActionsOptions) => {
   const stlLoader = new STLLoader();
+  const forwardReplicadLog = (msg: string, tone?: "info" | "success" | "error") => {
+    opts.log(opts.t(msg), tone ?? "error");
+  };
+  const handleReplicadFailure = (error: unknown, fallbackKey: string, consoleMessage: string) => {
+    console.error(consoleMessage, error);
+    if (!extractReplicadErrorCode(error)) {
+      opts.log(opts.t(fallbackKey), "error");
+    }
+  };
 
   if (opts.exportGroupStlBtn) {
     const stlBtn = opts.exportGroupStlBtn;
@@ -61,7 +71,7 @@ export const bindGroupPreviewActions = (opts: BindGroupPreviewActionsOptions) =>
           const { blob } = await buildStlInWorker(
             polygonsWithAngles,
             (progress) => opts.log(progress, "progress"),
-            (msg, tone) => opts.log(msg, (tone as any) ?? "error"),
+            forwardReplicadLog,
           );
           const buffer = await blob.arrayBuffer();
           const geometry = stlLoader.parse(buffer);
@@ -77,8 +87,7 @@ export const bindGroupPreviewActions = (opts: BindGroupPreviewActionsOptions) =>
           downloadMesh(groupName, cached.mesh);
         }
       } catch (error) {
-        console.error("展开组 STL 导出失败", error);
-        opts.log(opts.t("log.export.stl.fail"), "error");
+        handleReplicadFailure(error, "log.export.stl.fail", "[GroupPreviewActions] Failed to export STL");
       } finally {
         stlBtn.disabled = false;
       }
@@ -106,7 +115,7 @@ export const bindGroupPreviewActions = (opts: BindGroupPreviewActionsOptions) =>
         const { mesh } = await buildMeshInWorker(
           polygonsWithAngles,
           (progress) => opts.log(progress, "progress"),
-          (msg, tone) => opts.log(msg, (tone as any) ?? "error"),
+          forwardReplicadLog,
         );
         snapGeometryPositions(mesh.geometry);
         opts.previewMeshCacheManager.addCachedPreviewMesh(targetGroupId, mesh, opts.getCurrentHistoryUid());
@@ -116,8 +125,7 @@ export const bindGroupPreviewActions = (opts: BindGroupPreviewActionsOptions) =>
       }
       opts.changeWorkspaceState("previewGroupModel");
     } catch (error) {
-      console.error("Replicad mesh 生成失败", error);
-      opts.log(opts.t("log.replicad.mesh.fail"), "error");
+      handleReplicadFailure(error, "log.replicad.mesh.fail", "[GroupPreviewActions] Failed to build preview mesh");
     } finally {
       opts.previewGroupModelBtn.disabled = false;
     }
@@ -186,6 +194,15 @@ export function createExportCallback(opts: {
   t: (key: string, params?: Record<string, string | number>) => string;
 }): ExportCallback {
   const stlLoader = new STLLoader();
+  const forwardReplicadLog = (msg: string, tone?: "info" | "success" | "error") => {
+    opts.log(opts.t(msg), tone ?? "error");
+  };
+  const handleReplicadFailure = (error: unknown, fallbackKey: string, consoleMessage: string) => {
+    console.error(consoleMessage, error);
+    if (!extractReplicadErrorCode(error)) {
+      opts.log(opts.t(fallbackKey), "error");
+    }
+  };
 
   function getCachedPreviewMesh(groupId: number) {
     return opts.previewMeshCacheManager.getCachedPreviewMesh(
@@ -239,40 +256,48 @@ export function createExportCallback(opts: {
 
     // 导出 STL
     if (options.exportStl) {
-      const cached = getCachedPreviewMesh(targetGroupId);
-      if (!cached) {
-        opts.log(opts.t("log.export.stl.start"), "info");
-        const { blob } = await buildStlInWorker(
-          polygonsWithAngles,
-          (progress) => opts.log(progress, "progress"),
-          (msg, tone) => opts.log(msg, (tone as any) ?? "error"),
-        );
-        const buffer = await blob.arrayBuffer();
-        const geometry = stlLoader.parse(buffer);
-        snapGeometryPositions(geometry);
-        const mesh = new Mesh(geometry);
-        mesh.name = "Replicad Mesh";
-        opts.previewMeshCacheManager.addCachedPreviewMesh(targetGroupId, mesh, opts.getCurrentHistoryUid());
-        opts.onPreviewMeshCacheMutated?.();
-        const refreshedCached = getCachedPreviewMesh(targetGroupId);
-        if (refreshedCached) downloadMesh(groupName, refreshedCached.mesh);
-      } else {
-        opts.log(opts.t("log.export.stl.cached"), "info");
-        downloadMesh(groupName, cached.mesh);
+      try {
+        const cached = getCachedPreviewMesh(targetGroupId);
+        if (!cached) {
+          opts.log(opts.t("log.export.stl.start"), "info");
+          const { blob } = await buildStlInWorker(
+            polygonsWithAngles,
+            (progress) => opts.log(progress, "progress"),
+            forwardReplicadLog,
+          );
+          const buffer = await blob.arrayBuffer();
+          const geometry = stlLoader.parse(buffer);
+          snapGeometryPositions(geometry);
+          const mesh = new Mesh(geometry);
+          mesh.name = "Replicad Mesh";
+          opts.previewMeshCacheManager.addCachedPreviewMesh(targetGroupId, mesh, opts.getCurrentHistoryUid());
+          opts.onPreviewMeshCacheMutated?.();
+          const refreshedCached = getCachedPreviewMesh(targetGroupId);
+          if (refreshedCached) downloadMesh(groupName, refreshedCached.mesh);
+        } else {
+          opts.log(opts.t("log.export.stl.cached"), "info");
+          downloadMesh(groupName, cached.mesh);
+        }
+      } catch (error) {
+        handleReplicadFailure(error, "log.export.stl.fail", "[GroupPreviewActions] Failed to export STL");
       }
     }
 
     // 导出 STEP
     if (options.exportStep) {
-      const projectName = opts.getProjectName() || "未命名工程";
-      opts.log(opts.t("log.export.step.start"), "info");
-      const { blob } = await buildStepInWorker(
-        polygonsWithAngles,
-        (progress) => opts.log(progress, "progress"),
-        (msg, tone) => opts.log(msg, (tone as any) ?? "error"),
-      );
-      downloadBlob(blob, `${projectName}-${groupName}.step`);
-      opts.log(opts.t("log.export.step.success", { fileName: `${projectName}-${groupName}.step` }), "success");
+      try {
+        const projectName = opts.getProjectName() || "未命名工程";
+        opts.log(opts.t("log.export.step.start"), "info");
+        const { blob } = await buildStepInWorker(
+          polygonsWithAngles,
+          (progress) => opts.log(progress, "progress"),
+          forwardReplicadLog,
+        );
+        downloadBlob(blob, `${projectName}-${groupName}.step`);
+        opts.log(opts.t("log.export.step.success", { fileName: `${projectName}-${groupName}.step` }), "success");
+      } catch (error) {
+        handleReplicadFailure(error, "log.export.step.fail", "[GroupPreviewActions] Failed to export STEP");
+      }
     }
 
     // 导出 PNG

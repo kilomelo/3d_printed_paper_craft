@@ -1756,6 +1756,108 @@ textarea {
   color: var(--text);
 }
 
+.lumina-wait-modal {
+  width: min(520px, calc(100vw - 32px));
+  max-width: 520px;
+}
+
+.lumina-wait-content {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px;
+}
+
+.lumina-wait-message {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--text);
+  text-align: center;
+}
+
+.lumina-wait-advice {
+  margin-top: -6px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--text);
+  text-align: center;
+}
+
+.lumina-wait-submessage {
+  margin-top: -6px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+  text-align: center;
+}
+
+.lumina-wait-action {
+  min-height: 52px;
+}
+
+.lumina-wait-progress {
+  position: relative;
+  width: 100%;
+  min-height: 52px;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.lumina-wait-progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  max-width: 100%;
+  border-radius: 12px 0 0 12px;
+  background:
+    linear-gradient(135deg, rgba(56, 189, 248, 0.9), rgba(34, 197, 94, 0.72)),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.14) 0 12px,
+      rgba(255, 255, 255, 0.04) 12px 24px
+    );
+  background-size: 100% 100%, 32px 32px;
+  background-position: 0 0, 0 0;
+  transition: width 0.35s ease;
+  animation: lumina-wait-stripes 1.1s linear infinite;
+}
+
+.lumina-wait-progress-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #dff6ff;
+  text-align: center;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.4);
+  z-index: 1;
+}
+
+.lumina-wait-close-btn {
+  width: 100%;
+  min-height: 52px;
+}
+
+@keyframes lumina-wait-stripes {
+  from {
+    background-position: 0 0, 0 0;
+  }
+
+  to {
+    background-position: 0 0, 32px 0;
+  }
+}
+
 @media (max-width: 780px) {
   .lumina-layers-modal {
     width: min(720px, calc(100vw - 20px));
@@ -1784,5 +1886,17 @@ textarea {
   .lumina-action-btn,
   .lumina-drop-zone {
     margin-left: 0;
+  }
+
+  .lumina-wait-modal {
+    width: min(520px, calc(100vw - 20px));
+  }
+
+  .lumina-wait-content {
+    padding: 20px;
+  }
+
+  .lumina-wait-message {
+    font-size: 16px;
   }
 }

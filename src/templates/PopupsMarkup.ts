@@ -480,4 +480,36 @@ export const renderLuminaLayersDialog = () => `
       </div>
     </div>
   </div>
+
+  <div id="lumina-layers-wait-overlay" class="settings-overlay hidden">
+    <div class="settings-modal lumina-wait-modal">
+      <div class="lumina-wait-content">
+        <div id="lumina-layers-wait-message" class="lumina-wait-message" data-i18n="luminaLayers.wait.running">该操作耗时较长，请耐心等待</div>
+        <div id="lumina-layers-wait-advice" class="lumina-wait-advice hidden"></div>
+        <div id="lumina-layers-wait-submessage" class="lumina-wait-submessage hidden"></div>
+        <div class="lumina-wait-action">
+          <div
+            id="lumina-layers-wait-progress"
+            class="lumina-wait-progress"
+            aria-live="polite"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+          >
+            <div id="lumina-layers-wait-progress-fill" class="lumina-wait-progress-fill"></div>
+            <span id="lumina-layers-wait-progress-label" class="lumina-wait-progress-label"></span>
+          </div>
+          <button
+            id="lumina-layers-wait-close-btn"
+            class="btn primary lumina-wait-close-btn hidden"
+            data-i18n="luminaLayers.wait.finishBtn"
+            type="button"
+          >
+            完成
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 `;

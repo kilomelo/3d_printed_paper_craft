@@ -8,8 +8,8 @@ import {
   validateExpectedThreeMfStructure,
   ThreeMfExpectedStructureErrorCode,
 } from "../threeMF/threeMfStructureValidator";
-import { buildMeshInWorker } from "../replicad/replicadWorkerClient";
-import { buildNegativeOutlineForLuminaLayers } from "../replicad/replicadModeling";
+import { buildMeshInWorker, buildNegativeOutlineMeshInWorker } from "../replicad/replicadWorkerClient";
+import { extractReplicadErrorCode } from "../replicad/replicadErrors";
 import { getSettings } from "../settings";
 import { LUMINA_LAYERS_EMBEDDED_VIDEO_ENABLED } from "./luminaLayersConfig";
 
@@ -30,11 +30,19 @@ export type LuminaLayersDeps = {
 
 export type LuminaLayersRefs = {
   overlay: HTMLDivElement;
+  waitOverlay: HTMLDivElement;
   pngFileNameLabel: HTMLSpanElement;
   luminaLayersParaWidthLabel: HTMLSpanElement;
   exportPngBtn: HTMLButtonElement;
   dropZone: HTMLDivElement;
   closeBtn: HTMLButtonElement;
+  waitMessage: HTMLDivElement;
+  waitAdvice: HTMLDivElement;
+  waitSubmessage: HTMLDivElement;
+  waitProgress: HTMLDivElement;
+  waitProgressFill: HTMLDivElement;
+  waitProgressLabel: HTMLSpanElement;
+  waitCloseBtn: HTMLButtonElement;
   videoIframe: HTMLIFrameElement | null;
 };
 
@@ -43,21 +51,37 @@ export function getLuminaLayersRefs(): LuminaLayersRefs | null {
 
   const refs: LuminaLayersRefs = {
     overlay: get<HTMLDivElement>("#lumina-layers-overlay"),
+    waitOverlay: get<HTMLDivElement>("#lumina-layers-wait-overlay"),
     pngFileNameLabel: get<HTMLSpanElement>("#lumina-layers-png-filename"),
     luminaLayersParaWidthLabel: get<HTMLSpanElement>("#lumina-layers-para-width"),
     exportPngBtn: get<HTMLButtonElement>("#lumina-layers-export-png-btn"),
     dropZone: get<HTMLDivElement>("#lumina-layers-drop-zone"),
     closeBtn: get<HTMLButtonElement>("#lumina-layers-close-btn"),
+    waitMessage: get<HTMLDivElement>("#lumina-layers-wait-message"),
+    waitAdvice: get<HTMLDivElement>("#lumina-layers-wait-advice"),
+    waitSubmessage: get<HTMLDivElement>("#lumina-layers-wait-submessage"),
+    waitProgress: get<HTMLDivElement>("#lumina-layers-wait-progress"),
+    waitProgressFill: get<HTMLDivElement>("#lumina-layers-wait-progress-fill"),
+    waitProgressLabel: get<HTMLSpanElement>("#lumina-layers-wait-progress-label"),
+    waitCloseBtn: get<HTMLButtonElement>("#lumina-layers-wait-close-btn"),
     videoIframe: document.querySelector<HTMLIFrameElement>("#lumina-layers-video-iframe"),
   };
 
   const values = [
     refs.overlay,
+    refs.waitOverlay,
     refs.pngFileNameLabel,
     refs.luminaLayersParaWidthLabel,
     refs.exportPngBtn,
     refs.dropZone,
     refs.closeBtn,
+    refs.waitMessage,
+    refs.waitAdvice,
+    refs.waitSubmessage,
+    refs.waitProgress,
+    refs.waitProgressFill,
+    refs.waitProgressLabel,
+    refs.waitCloseBtn,
   ];
   if (values.some((el) => !el)) {
     console.error("叠色打印工具 DOM 元素缺失:", values.map((el) => (el ? "ok" : "missing")));
@@ -74,7 +98,24 @@ export type LuminaLayersApi = {
   dispose: () => void;
 };
 
+const LUMINA_WAIT_PROGRESS = {
+  initial: 2,
+  validationDone: 5,
+  buildModelDone: 85,
+  negativeOutlineDone: 98,
+  finished: 100,
+} as const;
+
+const mapProgressToRange = (progress: number, start: number, end: number) => {
+  const clamped = Math.max(0, Math.min(100, progress));
+  return start + ((end - start) * clamped) / 100;
+};
+
+type WaitModalState = "running" | "finished" | "error";
+
 export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayersDeps): LuminaLayersApi {
+  let waitModalState: WaitModalState = "running";
+  let lastOpenState: { groupName: string; faceCount: number; projectName: string; pngFileName: string } | null = null;
   const isOpen = () => !refs.overlay.classList.contains("hidden");
 
   const setTextWithTooltip = (el: HTMLElement, text: string) => {
@@ -82,7 +123,47 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
     el.title = text;
   };
 
-  const open = (_groupName: string, _faceCount: number, _projectName: string, pngFileName: string) => {
+  const getValidationErrorReason = (
+    code: ThreeMfExpectedStructureErrorCode,
+    details?: Record<string, unknown>,
+  ) => {
+    switch (code) {
+      case ThreeMfExpectedStructureErrorCode.INVALID_PLATE_COUNT:
+        return deps.t("luminaLayers.wait.error.reason.INVALID_PLATE_COUNT", {
+          plateCount: details?.plateCount ?? "?",
+        });
+      case ThreeMfExpectedStructureErrorCode.INVALID_MODEL_OBJECT_COUNT:
+        return deps.t("luminaLayers.wait.error.reason.INVALID_MODEL_OBJECT_COUNT", {
+          objectCount: details?.objectCount ?? "?",
+          buildItemCount: details?.buildItemCount ?? "?",
+        });
+      case ThreeMfExpectedStructureErrorCode.ROOT_OBJECT_NOT_COMPOSITE:
+        return deps.t("luminaLayers.wait.error.reason.ROOT_OBJECT_NOT_COMPOSITE");
+      case ThreeMfExpectedStructureErrorCode.COMPONENT_COUNT_TOO_SMALL:
+        return deps.t("luminaLayers.wait.error.reason.COMPONENT_COUNT_TOO_SMALL", {
+          componentCount: details?.componentCount ?? "?",
+        });
+      case ThreeMfExpectedStructureErrorCode.INVALID_BACKING_COUNT:
+        return deps.t("luminaLayers.wait.error.reason.INVALID_BACKING_COUNT", {
+          backingCount: details?.backingCount ?? "?",
+        });
+      case ThreeMfExpectedStructureErrorCode.PRIMARY_MODEL_NOT_FOUND:
+        return deps.t("luminaLayers.wait.error.reason.PRIMARY_MODEL_NOT_FOUND");
+      case ThreeMfExpectedStructureErrorCode.PRIMARY_MODEL_XML_INVALID:
+        return deps.t("luminaLayers.wait.error.reason.PRIMARY_MODEL_XML_INVALID");
+      case ThreeMfExpectedStructureErrorCode.REFERENCED_MODEL_NOT_FOUND:
+        return deps.t("luminaLayers.wait.error.reason.REFERENCED_MODEL_NOT_FOUND");
+      case ThreeMfExpectedStructureErrorCode.REFERENCED_OBJECT_NOT_FOUND:
+        return deps.t("luminaLayers.wait.error.reason.REFERENCED_OBJECT_NOT_FOUND");
+      case ThreeMfExpectedStructureErrorCode.PLATE_METADATA_NOT_FOUND:
+        return deps.t("luminaLayers.wait.error.reason.PLATE_METADATA_NOT_FOUND");
+      default:
+        return deps.t("luminaLayers.wait.error.reason.generic");
+    }
+  };
+
+  const open = (groupName: string, faceCount: number, projectName: string, pngFileName: string) => {
+    lastOpenState = { groupName, faceCount, projectName, pngFileName };
     setTextWithTooltip(refs.pngFileNameLabel, deps.t("luminaLayers.fileName", { fileName: pngFileName }));
     // 更新展开组尺寸
     const bounds = deps.getGroupBounds();
@@ -111,6 +192,107 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
       refs.videoIframe.src = "";
     }
     refs.overlay.classList.add("hidden");
+  };
+
+  const setWaitingProgress = (progress: number, label: string) => {
+    const clampedProgress = Math.max(0, Math.min(100, progress));
+    refs.waitProgressFill.style.width = `${clampedProgress}%`;
+    refs.waitProgress.setAttribute("aria-valuenow", String(Math.round(clampedProgress)));
+    refs.waitProgressLabel.textContent = label;
+    refs.waitProgressLabel.title = label;
+  };
+
+  const openWaitingModal = () => {
+    waitModalState = "running";
+    refs.waitMessage.textContent = deps.t("luminaLayers.wait.running");
+    refs.waitAdvice.textContent = "";
+    refs.waitAdvice.classList.add("hidden");
+    refs.waitSubmessage.textContent = "";
+    refs.waitSubmessage.classList.add("hidden");
+    refs.waitProgress.classList.remove("hidden");
+    refs.waitCloseBtn.classList.add("hidden");
+    refs.waitCloseBtn.disabled = true;
+    refs.waitCloseBtn.textContent = deps.t("luminaLayers.wait.finishBtn");
+    setWaitingProgress(LUMINA_WAIT_PROGRESS.initial, deps.t("luminaLayers.wait.step.validate"));
+    refs.waitOverlay.classList.remove("hidden");
+  };
+
+  const closeWaitingModal = () => {
+    waitModalState = "running";
+    refs.waitOverlay.classList.add("hidden");
+    refs.waitProgress.classList.remove("hidden");
+    refs.waitCloseBtn.classList.add("hidden");
+    refs.waitCloseBtn.disabled = true;
+    refs.waitCloseBtn.textContent = deps.t("luminaLayers.wait.finishBtn");
+    refs.waitMessage.textContent = deps.t("luminaLayers.wait.running");
+    refs.waitAdvice.textContent = "";
+    refs.waitAdvice.classList.add("hidden");
+    refs.waitSubmessage.textContent = "";
+    refs.waitSubmessage.classList.add("hidden");
+    setWaitingProgress(LUMINA_WAIT_PROGRESS.initial, deps.t("luminaLayers.wait.step.validate"));
+  };
+
+  const finishWaitingModal = (startedAt: number) => {
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    const minutes = Math.floor(elapsedSeconds / 60);
+    const seconds = elapsedSeconds % 60;
+    waitModalState = "finished";
+    refs.waitMessage.textContent = deps.t("luminaLayers.wait.done", { minutes, seconds });
+    refs.waitAdvice.textContent = "";
+    refs.waitAdvice.classList.add("hidden");
+    refs.waitSubmessage.textContent = "";
+    refs.waitSubmessage.classList.add("hidden");
+    setWaitingProgress(LUMINA_WAIT_PROGRESS.finished, deps.t("luminaLayers.wait.step.process3mf"));
+    refs.waitProgress.classList.add("hidden");
+    refs.waitCloseBtn.classList.remove("hidden");
+    refs.waitCloseBtn.disabled = false;
+    refs.waitCloseBtn.textContent = deps.t("luminaLayers.wait.finishBtn");
+  };
+
+  const interruptWaitingModalWithValidationError = (
+    code: ThreeMfExpectedStructureErrorCode,
+    details?: Record<string, unknown>,
+  ) => {
+    waitModalState = "error";
+    refs.waitMessage.textContent = deps.t("luminaLayers.wait.error.title");
+    refs.waitAdvice.textContent = deps.t("luminaLayers.wait.error.advice");
+    refs.waitAdvice.classList.remove("hidden");
+    refs.waitSubmessage.textContent = getValidationErrorReason(code, details);
+    refs.waitSubmessage.classList.remove("hidden");
+    refs.waitProgress.classList.add("hidden");
+    refs.waitCloseBtn.classList.remove("hidden");
+    refs.waitCloseBtn.disabled = false;
+    refs.waitCloseBtn.textContent = deps.t("luminaLayers.wait.error.backBtn");
+  };
+
+  const getRuntimeErrorReason = (error: unknown) => {
+    const code = extractReplicadErrorCode(error);
+    if (code) {
+      const translated = deps.t(code);
+      if (translated !== code) {
+        return translated;
+      }
+    }
+    if (error instanceof Error && error.message) {
+      return error.message;
+    }
+    if (typeof error === "string" && error) {
+      return error;
+    }
+    return deps.t("luminaLayers.wait.error.reason.runtimeGeneric");
+  };
+
+  const interruptWaitingModalWithRuntimeError = (title: string, reason: string) => {
+    waitModalState = "error";
+    refs.waitMessage.textContent = title;
+    refs.waitAdvice.textContent = deps.t("luminaLayers.wait.error.retryAdvice");
+    refs.waitAdvice.classList.remove("hidden");
+    refs.waitSubmessage.textContent = reason;
+    refs.waitSubmessage.classList.remove("hidden");
+    refs.waitProgress.classList.add("hidden");
+    refs.waitCloseBtn.classList.remove("hidden");
+    refs.waitCloseBtn.disabled = false;
+    refs.waitCloseBtn.textContent = deps.t("luminaLayers.wait.error.backBtn");
   };
 
   const handleExportPng = async () => {
@@ -152,113 +334,142 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
   // 处理 3MF 文件的通用函数
   const process3mfFile = async (file: File) => {
     console.log(`已载入 ${file.name}`);
+    close();
+    openWaitingModal();
+
+    const startedAt = Date.now();
+    let succeeded = false;
+    let geometry: THREE.BufferGeometry | null = null;
+    let negativeGeometry: THREE.BufferGeometry | null = null;
+
     try {
       // 返回结果式
       const result = await validateExpectedThreeMfStructure(file);
       if (!result.ok) {
-        console.error(result.code, result.message, result.details);
-        // 这里根据 result.code 给用户弹提示
+        console.error(result.code, result.details);
+        interruptWaitingModalWithValidationError(result.code, result.details);
         return;
       }
-    } catch (err) {
-      console.error("处理 3MF 失败:", err);
-    }
-      
-    // 获取当前展开组的缓存 mesh
-    const groupId = deps.getPreviewGroupId();
-    if (groupId === undefined) {
-      deps.log(deps.t("log.lumina.noPreviewGroup"), "error");
-      return;
-    }
-    const groupName = deps.getPreviewGroupName(groupId);
-    const groupAngle = deps.getGroupPlaceAngle(groupId);
 
-    // 检查是否有自相交
-    if (deps.hasGroupIntersection(groupId)) {
-      deps.log(deps.t("log.lumina.groupIntersect"), "error");
-      return;
-    }
-
-    const polygons = deps.getGroupPolygonsData(groupId);
-    if (!polygons.length) {
-      deps.log(deps.t("log.lumina.noFaces"), "error");
-      return;
-    }
-    deps.log(deps.t("log.lumina.buildModel.start"), "info");
-
-    let geometry: THREE.BufferGeometry;
-    try {
-      const { mesh } = await buildMeshInWorker(
-        polygons as PolygonWithEdgeInfo[],
-        (progress) => deps.log(progress, "progress"),
-        (msg, tone) => deps.log(msg, tone as "info" | "success" | "error" | "progress"),
-        "lumina",
-      );
-      geometry = mesh.geometry;
-    } catch (err) {
-      console.error("生成展开组模型失败:", err);
-      deps.log(deps.t("log.lumina.buildModel.fail"), "error");
-      return;
-    }
-
-    const { scale } = getSettings();
-    if (!polygons.length) {
-      deps.log(deps.t("log.lumina.noFaces"), "error");
-      return;
-    }
-    deps.log(deps.t("log.lumina.negativeOutline.start"), "info");
-    const triangles = deps.getGroupPolygonsData(groupId, true);
-    let negativeGeometry: THREE.BufferGeometry;
-    try {
-      const solid = await buildNegativeOutlineForLuminaLayers(triangles);
-      if (!solid) {
-        deps.log(deps.t("log.lumina.negativeOutline.fail"), "error");
+      const groupId = deps.getPreviewGroupId();
+      if (groupId === undefined) {
         return;
       }
-      const meshTolerance = 0.1;
-      const meshAngularTolerance = 0.5;
-      const mesh = solid.mesh({ tolerance: meshTolerance, angularTolerance: meshAngularTolerance });
-      negativeGeometry = new THREE.BufferGeometry();
-      negativeGeometry.setAttribute("position", new THREE.Float32BufferAttribute(mesh.vertices, 3));
-      negativeGeometry.setAttribute("normal", new THREE.Float32BufferAttribute(mesh.normals, 3));
-      const indexArray = mesh.vertices.length / 3 > 65535
-        ? new THREE.Uint32BufferAttribute(mesh.triangles, 1)
-        : new THREE.Uint16BufferAttribute(mesh.triangles, 1);
-      negativeGeometry.setIndex(indexArray);
-      negativeGeometry.computeBoundingBox();
-    } catch (err) {
-      console.error("生成负轮廓几何体失败:", err);
-      deps.log(deps.t("log.lumina.negativeOutline.fail"), "error");
-      return;
-    }
-    const bbox = await getCompositeChildrenUnionBoundingBoxFrom3mf(file, { includeBuildItemTransform: true,});
-    
-    console.log('[LuminaLayersTool] bbox of model in 3mf ', bbox, 'scale', scale);
+      const groupName = deps.getPreviewGroupName(groupId);
+      const groupAngle = deps.getGroupPlaceAngle(groupId);
 
-    let maxX = -Infinity;
-    let minY = Infinity;
-    polygons.forEach((polygon) => {
-      polygon.points.forEach((point) => {
-        maxX = Math.max(maxX, point[0]);
-        minY = Math.min(minY, point[1]);
-      })
-    })
-    console.log('[LuminaLayersTool] polygons min ', -maxX, minY);
+      // 检查是否有自相交
+      if (deps.hasGroupIntersection(groupId)) {
+        return;
+      }
+      setWaitingProgress(LUMINA_WAIT_PROGRESS.validationDone, deps.t("luminaLayers.wait.step.buildModel"));
 
+      const polygons = deps.getGroupPolygonsData(groupId);
+      if (!polygons.length) {
+        return;
+      }
 
-    // 应用展开组旋转角度
-    if (groupAngle && Math.abs(groupAngle) > 1e-9) {
-      console.log('[LuminaLayersTool] apply group angle', groupAngle);
-      geometry.rotateZ(-groupAngle);
-      negativeGeometry.rotateZ(-groupAngle);
-    }
-    // 对其模型
-    geometry.translate(maxX, -minY, 0);
-    negativeGeometry.translate(maxX, -minY, 0);
-    // 先放大 2 倍，因为后面还需要缩小 2 倍
-    // geometry.scale(2, 2, 1)
-    
-    try {
+      try {
+        const handleBuildMeshProgress = (progress: number) => {
+          setWaitingProgress(
+            mapProgressToRange(progress, LUMINA_WAIT_PROGRESS.validationDone, LUMINA_WAIT_PROGRESS.buildModelDone),
+            deps.t("luminaLayers.wait.step.buildModel"),
+          );
+        };
+        const handleBuildMeshLog = (msg: string, tone?: "info" | "success" | "error") => {
+          deps.log(deps.t(msg), tone);
+        };
+        const { mesh } = await buildMeshInWorker(
+          polygons as PolygonWithEdgeInfo[],
+          handleBuildMeshProgress,
+          handleBuildMeshLog,
+          "lumina",
+        );
+        geometry = mesh.geometry;
+      } catch (err) {
+        console.error("[LuminaLayersTool] Failed to build unfolded-group mesh", err);
+        interruptWaitingModalWithRuntimeError(
+          deps.t("luminaLayers.wait.error.buildModel.title"),
+          getRuntimeErrorReason(err),
+        );
+        return;
+      }
+      setWaitingProgress(LUMINA_WAIT_PROGRESS.buildModelDone, deps.t("luminaLayers.wait.step.negativeOutline"));
+
+      const { scale } = getSettings();
+      const triangles = deps.getGroupPolygonsData(groupId, true);
+      try {
+        const handleNegativeOutlineProgress = (progress: number) => {
+          setWaitingProgress(
+            mapProgressToRange(progress, LUMINA_WAIT_PROGRESS.buildModelDone, LUMINA_WAIT_PROGRESS.negativeOutlineDone),
+            deps.t("luminaLayers.wait.step.negativeOutline"),
+          );
+        };
+        const handleNegativeOutlineLog = (msg: string) => {
+          deps.log(deps.t(msg), "error");
+        };
+        const { vertices, normals, triangles: meshTriangles, trianglesType } = await buildNegativeOutlineMeshInWorker(
+          triangles,
+          handleNegativeOutlineProgress,
+          handleNegativeOutlineLog,
+        );
+        if (!vertices.length) {
+          interruptWaitingModalWithRuntimeError(
+            deps.t("luminaLayers.wait.error.negativeOutline.title"),
+            deps.t("luminaLayers.wait.error.reason.EMPTY_NEGATIVE_MESH"),
+          );
+          return;
+        }
+        negativeGeometry = new THREE.BufferGeometry();
+        negativeGeometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+        negativeGeometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+        const indexArray = trianglesType === "uint32"
+          ? new THREE.Uint32BufferAttribute(meshTriangles, 1)
+          : new THREE.Uint16BufferAttribute(meshTriangles, 1);
+        negativeGeometry.setIndex(indexArray);
+        negativeGeometry.computeBoundingBox();
+      } catch (err) {
+        if (!extractReplicadErrorCode(err)) {
+          console.error("[LuminaLayersTool] Failed to build negative outline geometry", err);
+        } else {
+          console.error("[LuminaLayersTool] Replicad negative outline failed", err);
+        }
+        interruptWaitingModalWithRuntimeError(
+          deps.t("luminaLayers.wait.error.negativeOutline.title"),
+          getRuntimeErrorReason(err),
+        );
+        return;
+      }
+      setWaitingProgress(LUMINA_WAIT_PROGRESS.negativeOutlineDone, deps.t("luminaLayers.wait.step.process3mf"));
+      const bbox = await getCompositeChildrenUnionBoundingBoxFrom3mf(file, { includeBuildItemTransform: true });
+
+      console.log("[LuminaLayersTool] bbox of model in 3mf ", bbox, "scale", scale);
+
+      let maxX = -Infinity;
+      let minY = Infinity;
+      polygons.forEach((polygon) => {
+        polygon.points.forEach((point) => {
+          maxX = Math.max(maxX, point[0]);
+          minY = Math.min(minY, point[1]);
+        });
+      });
+      console.log("[LuminaLayersTool] polygons min ", -maxX, minY);
+
+      // 应用展开组旋转角度
+      if (groupAngle && Math.abs(groupAngle) > 1e-9 && geometry && negativeGeometry) {
+        console.log("[LuminaLayersTool] apply group angle", groupAngle);
+        geometry.rotateZ(-groupAngle);
+        negativeGeometry.rotateZ(-groupAngle);
+      }
+      if (!geometry || !negativeGeometry) {
+        return;
+      }
+      // 对齐模型
+      geometry.translate(maxX, -minY, 0);
+      negativeGeometry.translate(maxX, -minY, 0);
+      // 先放大 2 倍，因为后面还需要缩小 2 倍
+      // geometry.scale(2, 2, 1)
+
       const doc = await processThreeMf(file, [
         ThreeMfDocument.processors.removeChildObjectsByName("Backing"),
         // 缩小 2 倍
@@ -274,7 +485,7 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
         }),
         ThreeMfDocument.processors.addChildObjectFromGeometry({
           childName: groupName || "3D打印纸艺模型",
-          geometry: geometry as THREE.BufferGeometry,
+          geometry,
           partKind: "normal",
         }),
         ThreeMfDocument.processors.addHeightRangeModifier({
@@ -285,15 +496,29 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
         ThreeMfDocument.processors.renameCompositeRootObject(groupName || "3D打印纸艺模型"),
       ]);
       await doc.download("modified.3mf");
+      succeeded = true;
+      finishWaitingModal(startedAt);
+    } catch (err) {
+      console.error("[LuminaLayersTool] Failed to process 3MF", err);
+    } finally {
+      geometry?.dispose();
+      negativeGeometry?.dispose();
     }
-    catch (err) {
-      console.error("处理 3MF 失败:", err);
-      deps.log(deps.t("log.lumina.process3mf.fail"), "error");
+
+    if (!succeeded) {
+      closeWaitingModal();
     }
-    finally {
-      geometry.dispose();
+  };
+
+  const handleWaitClose = () => {
+    const currentState = waitModalState;
+    if (currentState === "running") {
+      return;
     }
-    deps.log(deps.t("log.lumina.process3mf.success"), "success");
+    closeWaitingModal();
+    if (currentState === "error" && lastOpenState) {
+      open(lastOpenState.groupName, lastOpenState.faceCount, lastOpenState.projectName, lastOpenState.pngFileName);
+    }
   };
 
   const handleDropZoneClick = () => {
@@ -341,6 +566,7 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
 
   // 绑定事件
   refs.closeBtn.addEventListener("click", close);
+  refs.waitCloseBtn.addEventListener("click", handleWaitClose);
   refs.exportPngBtn.addEventListener("click", handleExportPng);
   refs.dropZone.addEventListener("click", handleDropZoneClick);
   refs.dropZone.addEventListener("dragover", handleDropZoneDragOver);
@@ -354,6 +580,7 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
     close,
     dispose: () => {
       refs.closeBtn.removeEventListener("click", close);
+      refs.waitCloseBtn.removeEventListener("click", handleWaitClose);
       refs.exportPngBtn.removeEventListener("click", handleExportPng);
       refs.dropZone.removeEventListener("click", handleDropZoneClick);
       refs.dropZone.removeEventListener("dragover", handleDropZoneDragOver);
