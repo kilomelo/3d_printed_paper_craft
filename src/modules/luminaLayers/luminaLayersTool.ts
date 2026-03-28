@@ -111,6 +111,31 @@ const mapProgressToRange = (progress: number, start: number, end: number) => {
   return start + ((end - start) * clamped) / 100;
 };
 
+const computeAlignmentOffsetFromPolygons = (
+  polygons: PolygonWithEdgeInfo[],
+  rotationRad: number,
+) => {
+  let maxX = -Infinity;
+  let minY = Infinity;
+  const hasRotation = Math.abs(rotationRad) > 1e-9;
+  const cos = Math.cos(rotationRad);
+  const sin = Math.sin(rotationRad);
+
+  polygons.forEach((polygon) => {
+    polygon.points.forEach(([x, y]) => {
+      const rotatedX = hasRotation ? x * cos - y * sin : x;
+      const rotatedY = hasRotation ? x * sin + y * cos : y;
+      maxX = Math.max(maxX, rotatedX);
+      minY = Math.min(minY, rotatedY);
+    });
+  });
+
+  return {
+    offsetX: Number.isFinite(maxX) ? maxX : 0,
+    offsetY: Number.isFinite(minY) ? -minY : 0,
+  };
+};
+
 type WaitModalState = "running" | "finished" | "error";
 
 export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayersDeps): LuminaLayersApi {
@@ -445,16 +470,6 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
 
       console.log("[LuminaLayersTool] bbox of model in 3mf ", bbox, "scale", scale);
 
-      let maxX = -Infinity;
-      let minY = Infinity;
-      polygons.forEach((polygon) => {
-        polygon.points.forEach((point) => {
-          maxX = Math.max(maxX, point[0]);
-          minY = Math.min(minY, point[1]);
-        });
-      });
-      console.log("[LuminaLayersTool] polygons min ", -maxX, minY);
-
       // 应用展开组旋转角度
       if (groupAngle && Math.abs(groupAngle) > 1e-9 && geometry && negativeGeometry) {
         console.log("[LuminaLayersTool] apply group angle", groupAngle);
@@ -464,9 +479,11 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
       if (!geometry || !negativeGeometry) {
         return;
       }
+      const { offsetX, offsetY } = computeAlignmentOffsetFromPolygons(polygons, (groupAngle ?? 0));
+      console.log("[LuminaLayersTool] alignment offset", { offsetX, offsetY });
       // 对齐模型
-      geometry.translate(maxX, -minY, 0);
-      negativeGeometry.translate(maxX, -minY, 0);
+      geometry.translate(offsetX, offsetY, 0);
+      negativeGeometry.translate(offsetX, offsetY, 0);
       // 先放大 2 倍，因为后面还需要缩小 2 倍
       // geometry.scale(2, 2, 1)
 
@@ -489,6 +506,7 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
           partKind: "normal",
         }),
         ThreeMfDocument.processors.addHeightRangeModifier({
+          // todo 改为从setting里读取叠色层厚度值
           minZ: 0.4,
           maxZ: 100,
           slicerOptions: {},

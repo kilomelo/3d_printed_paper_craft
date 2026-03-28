@@ -646,9 +646,9 @@ export async function generateGroupTexture(options: GroupTextureOptions): Promis
   });
 
   // 根据包围盒尺寸动态设置画布分辨率（保持宽高比）
-  const PIXELS_PER_UNIT = 20;
+  const PIXELS_PER_UNIT = 25;
   const MIN_SIZE = 64;
-  const MAX_SIZE = 4096;
+  const MAX_SIZE = 9192;
   const rawWidth = Math.ceil((maxX - minX) * PIXELS_PER_UNIT);
   const rawHeight = Math.ceil((maxY - minY) * PIXELS_PER_UNIT);
 

@@ -1,6 +1,9 @@
 import GIF from "gif.js";
 import gifWorkerScriptUrl from "gif.js/dist/gif.worker.js?url";
 
+// 使用范例：
+// http://localhost:5173/?gifTool=1&gifFps=60
+
 type Renderer3DForGifCapture = {
   hasActiveDisplayModel: () => boolean;
   getRendererCanvas: () => HTMLCanvasElement;

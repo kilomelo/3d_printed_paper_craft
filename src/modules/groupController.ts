@@ -157,9 +157,17 @@ export function createGroupController(
     }
   }
 
-  function applyImportedGroups(groups: PPCFile["groups"], groupColorCursor?: number) {
+  function applyImportedGroups(
+    groups: PPCFile["groups"],
+    groupColorCursor?: number,
+    options?: { replaceLegacyPaletteColors?: boolean },
+  ) {
     if (!groups || !groups.length) return;
-    applyImportedGroupsData(groups as NonNullable<PPCFile["groups"]>, getFaceAdjacency());
+    applyImportedGroupsData(
+      groups as NonNullable<PPCFile["groups"]>,
+      getFaceAdjacency(),
+      options,
+    );
     setGroupColorCursor(groupColorCursor ?? 0);
     const groupIds = getGroupIdsData();
     groupVisibility.clear();

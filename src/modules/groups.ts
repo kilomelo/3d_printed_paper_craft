@@ -11,7 +11,8 @@ export type GroupData = {
   placeAngle: number;
 };
 
-const GROUP_COLOR_PALETTE = [0x86a6ee, 0xea7c7c, 0xffe770, 0x3ecb3e, 0x20bfbf, 0xed82ed];
+const GROUP_COLOR_PALETTE_LEGACY = [0x86a6ee, 0xea7c7c, 0xbfbf20, 0x3ecb3e, 0x20bfbf, 0xed82ed];
+const GROUP_COLOR_PALETTE = [0x7088ff, 0xffe770, 0xff7088, 0x88ff70, 0xe770ff, 0x70ffe7];
 
 const groups: GroupData[] = [];
 const faceGroupMap: Map<number, number | null> = new Map();
@@ -310,19 +311,30 @@ export function applyImportedGroups(
     placeAngle?: number;
   }[]>,
   faceAdjacency: Map<number, Set<number>>,
+  options?: {
+    replaceLegacyPaletteColors?: boolean;
+  },
 ) {
   if (!imported || !imported.length) return;
   groups.length = 0;
   faceGroupMap.clear();
   groupColorCursor = 0;
+  const replaceLegacyPaletteColors = options?.replaceLegacyPaletteColors === true;
 
   imported
     .sort((a, b) => a.id - b.id)
     .forEach((g) => {
+      const importedColor = new Color(g.color);
+      if (replaceLegacyPaletteColors) {
+        const legacyColorIndex = GROUP_COLOR_PALETTE_LEGACY.findIndex((hex) => hex === importedColor.getHex());
+        if (legacyColorIndex >= 0 && legacyColorIndex < GROUP_COLOR_PALETTE.length) {
+          importedColor.setHex(GROUP_COLOR_PALETTE[legacyColorIndex]);
+        }
+      }
       const data: GroupData = {
         id: g.id,
         faces: [],
-        color: new Color(g.color),
+        color: importedColor,
         treeParent: new Map<number, number | null>(),
         name: g.name ?? `展开组 ${g.id}`,
         placeAngle: typeof g.placeAngle === "number" ? g.placeAngle : 0,

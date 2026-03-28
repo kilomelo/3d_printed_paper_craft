@@ -1,10 +1,9 @@
 [
   {
-    "id": "panda",
-    "filePath": "demo/panda/熊猫头_demo.3dppc",
-    "gifPath": "/demo/panda/熊猫头_demo.gif",
-    "stillPath": "/demo/panda/熊猫头_demo.png",
-    "jumpLink": "https://makerworld.com.cn/zh/models/2161222-3dda-yin-zhi-yi-xiong-mao-tou-kai-yuan-sheng-cheng"
+    "id": "horse",
+    "filePath": "demo/horse/呆呆马_demo.3dppc",
+    "gifPath": "/demo/horse/呆呆马_demo.gif",
+    "stillPath": "/demo/horse/呆呆马_demo.png"
   },
   {
     "id": "orca",
@@ -14,9 +13,10 @@
     "jumpLink": "https://makerworld.com.cn/zh/models/2254383-3dda-yin-zhi-yi-hu-jing-deepseek#profileId-2536072"
   },
   {
-    "id": "horse",
-    "filePath": "demo/horse/马_demo.3dppc",
-    "gifPath": "/demo/horse/马_demo.gif",
-    "stillPath": "/demo/horse/马_demo.png"
+    "id": "panda",
+    "filePath": "demo/panda/熊猫头_demo.3dppc",
+    "gifPath": "/demo/panda/熊猫头_demo.gif",
+    "stillPath": "/demo/panda/熊猫头_demo.png",
+    "jumpLink": "https://makerworld.com.cn/zh/models/2161222-3dda-yin-zhi-yi-xiong-mao-tou-kai-yuan-sheng-cheng"
   }
 ]

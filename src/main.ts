@@ -983,7 +983,9 @@ const handleFileSelectedFromFile = async (file: File) => {
       log(t("log.scale.autoAdjusted", { scale: suggestedScale }));
     }
     if (importedGroups && importedGroups.length) {
-      groupController.applyImportedGroups(importedGroups, importedColorCursor);
+      groupController.applyImportedGroups(importedGroups, importedColorCursor, {
+        replaceLegacyPaletteColors: ext === "3dppc",
+      });
     }
     // 边级拼接方式依赖于当前模型已完成几何索引构建。
     // 因此必须放在 applyObject 之后恢复；同时又要早于 projectChanged，
