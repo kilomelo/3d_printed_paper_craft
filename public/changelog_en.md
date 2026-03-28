@@ -1,3 +1,11 @@
+## v1.2.0.0 | 2026-03-29
+- Added: Texture import, generation, preview, and a texture editing mode.
+- Added: A multi-color tool with support for Lumina-Layers.
+- Added: A new sample project: Dull Horse.
+- Improved: The interaction flow and UI for exporting unfolded groups.
+- Fixed: An issue where loading a .3dppc file could create an extra unfolded group.
+- Fixed: An issue where unfolded groups containing no triangles could still enter the export process in some cases.
+
 ## v1.1.0.5 | 2026-03-17
 - Improved: In seam edit mode, only edges facing the camera can be picked.
 - Improved: Refined the display and wording of menu bar buttons.
