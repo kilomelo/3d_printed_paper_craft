@@ -381,6 +381,7 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
         return;
       }
       const groupName = deps.getPreviewGroupName(groupId);
+      const projectName = deps.getProjectName() || "未命名工程";
       const groupAngle = deps.getGroupPlaceAngle(groupId);
 
       // 检查是否有自相交
@@ -513,7 +514,7 @@ export function createLuminaLayersTool(refs: LuminaLayersRefs, deps: LuminaLayer
         }),
         ThreeMfDocument.processors.renameCompositeRootObject(groupName || "3D打印纸艺模型"),
       ]);
-      await doc.download("modified.3mf");
+      await doc.download(`${projectName}-${groupName || "未命名展开组"}.3mf`);
       succeeded = true;
       finishWaitingModal(startedAt);
     } catch (err) {

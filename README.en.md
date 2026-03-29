@@ -125,6 +125,12 @@ npm run dev
 This project is released under the **GPL-3.0** license. See [LICENSE](LICENSE).  
 If you distribute a modified version or a derivative work (including commercial distribution), comply with GPL-3.0 terms such as preserving copyright notices, providing source code, and licensing derivatives under GPL-3.0.
 
+## Related Projects
+
+- [Lumina-Layers](https://github.com/MOVIBALE/Lumina-Layers/) - Physics-Based Multi-Material FDM Color System
+
+---
+
 ## Support / Donations
 
 If you find this project helpful, consider supporting it with any amount to help cover hosting and ongoing development.
