@@ -560,7 +560,9 @@ export function createUnfold2dManager(
         const p1 = unfoldedEdge.unfoldedPos[0];
         const p2 = unfoldedEdge.unfoldedPos[1];
         const lineGeom = new LineSegmentsGeometry();
-        lineGeom.setPositions(new Float32Array([p1.x, p1.y, 0, p2.x, p2.y, 1]));
+        // 线段两端必须处于同一 z 平面，否则 computeLineDistances 会额外计入固定 z 差，
+        // 造成不同模型尺寸下虚线密度不稳定。
+        lineGeom.setPositions(new Float32Array([p1.x, p1.y, 1, p2.x, p2.y, 1]));
         const mat =
         isCoplanarInnerEdge
         ? createUnfoldEdgeLineCoplanarMaterial({ width: sizeVec.x || 1, height: sizeVec.y || 1 })
