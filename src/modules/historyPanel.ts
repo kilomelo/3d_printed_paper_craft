@@ -15,6 +15,7 @@ const ACTION_I18N_KEYS: Record<string, string> = {
   groupRename: "history.group.rename.description",
   faceAdd: "history.face.add.description",
   faceRemove: "history.face.remove.description",
+  groupReorder: "history.group.reorder.description",
   groupRotate: "history.group.rotate.description",
   settingsChange: "history.settings.change.description",
   seamJoinTypeChange: "history.seam.joinTypeChange.description",
@@ -30,6 +31,8 @@ const buildActionParams = (action: MetaAction): Record<string, string | number> 
     case "faceAdd":
     case "faceRemove":
       return { count: (payload.count as number) ?? 0, group: (payload.group as string) ?? "" };
+    case "groupReorder":
+      return { group: (payload.group as string) ?? "" };
     case "groupRotate":
       return {
         angle: typeof payload.angle === "number" ? payload.angle.toFixed(1) : (payload.angle as string | number) ?? "",

@@ -197,6 +197,7 @@
   "op.group.rename": "左键长按标签改名",
   "op.group.face.add": "左键添加面到展开组",
   "op.group.face.remove": "右键移出展开组三角面",
+  "op.group.reorder": "左键重排面结构",
   "op.group.rotate": "左键旋转展开组",
 
   "group.default.prefix": "展开组",
@@ -207,6 +208,7 @@
   "history.group.rename.description": "展开组重命名为 {name}",
   "history.face.add.description": "添加 {count} 个面到 {group}",
   "history.face.remove.description": "从 {group} 移除 {count} 个面",
+  "history.group.reorder.description": "对 {group} 进行重排",
   "history.group.rotate.description": "旋转展开组 {angle}°",
   "history.settings.change.description": "修改了 {count} 个设置项",
   "history.seam.joinTypeChange.description": "修改了 {count} 条拼接边的类型",
@@ -262,6 +264,7 @@
   "log.group.removeWillDisconnect": "该面所在的组移出后会断开，未加入当前组",
   "log.group.noSharedEdge": "该面与当前组无共边，未加入当前组",
   "log.group.faceAdded": "已加入 {group}",
+  "log.group.reordered": "已重排 {group} 的面结构",
   "log.group.seamChanged": "已修改拼接边类型 {previous} -> {current}",
   "log.group.deleteKeepOne": "至少保留一个展开组，删除取消",
   "log.group.deleted": "已删除 {group}",

@@ -26,6 +26,20 @@ type BindHistorySystemOptions = {
   t: (key: string, params?: Record<string, string | number>) => string;
 };
 
+const SETTINGS_NOT_AFFECTING_PREVIEW_CACHE = new Set<string>([
+  // 贴图设置（仅影响贴图读写/显示，不影响展开组预览 mesh 几何）
+  "includeTextureInProject",
+  "textureColorSpace",
+  "textureFlipY",
+  "generatedTextureResolution",
+  // 叠色设置（仅用于叠色建模链路，不影响常规展开组预览 mesh）
+  "luminaLayersTotalHeight",
+]);
+
+function shouldInvalidatePreviewCacheForSettings(changedItems: string[]): boolean {
+  return changedItems.some((item) => !SETTINGS_NOT_AFFECTING_PREVIEW_CACHE.has(item));
+}
+
 export const bindHistorySystem = (opts: BindHistorySystemOptions): HistoryPanelUI => {
   const renderHistoryPanel = () => historyPanelUI.render();
 
@@ -82,6 +96,22 @@ export const bindHistorySystem = (opts: BindHistorySystemOptions): HistoryPanelU
     }
   });
 
+  appEventBus.on("groupTreeReordered", ({ groupName }) => {
+    const pushResult = historyManager.push(opts.captureProjectState(), {
+      name: "groupReorder",
+      timestamp: Date.now(),
+      payload: { group: groupName },
+    });
+    if (pushResult) {
+      // 重排会改变展开树拓扑，可能影响所有组的可用预览缓存。
+      opts.previewMeshCacheManager.abandonCurrentActiveCaches(historyManager.getCurrentSnapshotUid() ?? -1);
+      opts.previewMeshCacheManager.rememberAbandonRule(pushResult.uid);
+      opts.onPreviewMeshCacheMutated?.();
+      renderHistoryPanel();
+    }
+    opts.setFileSaved(false);
+  });
+
   appEventBus.on("groupPlaceAngleRotateDone", ({ deltaAngle }) => {
     historyManager.push(opts.captureProjectState(), {
       name: "groupRotate",
@@ -111,9 +141,11 @@ export const bindHistorySystem = (opts: BindHistorySystemOptions): HistoryPanelU
       payload: { changedItems, count: changedItems.length },
     });
     if (pushResult) {
-      opts.previewMeshCacheManager.abandonCurrentActiveCaches(historyManager.getCurrentSnapshotUid() ?? -1);
-      opts.previewMeshCacheManager.rememberAbandonRule(pushResult.uid);
-      opts.onPreviewMeshCacheMutated?.();
+      if (shouldInvalidatePreviewCacheForSettings(changedItems)) {
+        opts.previewMeshCacheManager.abandonCurrentActiveCaches(historyManager.getCurrentSnapshotUid() ?? -1);
+        opts.previewMeshCacheManager.rememberAbandonRule(pushResult.uid);
+        opts.onPreviewMeshCacheMutated?.();
+      }
       renderHistoryPanel();
     }
     opts.setFileSaved(false);

@@ -36,6 +36,7 @@ export function createRenderer2D(
   mountRenderer: (canvas: HTMLElement) => void,
   getCurrentGroupPlaceAngle: () => number,
   updateCurrentGroupPlaceAngle: (deltaAngle: number) => void,
+  onReorderFaces?: (groupId: number, parentFaceId: number, movedFaceId: number) => boolean,
 ): Renderer2DContext {
   const { width, height } = getViewport();
   const { scene, camera, renderer, bboxRuler } = createScene2D(width, height);
@@ -53,6 +54,24 @@ export function createRenderer2D(
   let isRotating = false;
   let rotateAngleDeltaTotal = 0;
   const panStart = { x: 0, y: 0 };
+  const leftDownPos = { x: 0, y: 0 };
+  let leftPointerActive = false;
+  let leftRotateTriggeredDuringPointerCycle = false;
+  let pendingReorderEdge: { groupId: number; edgeId: number; clickedFaceId: number } | null = null;
+  const reorderTrace = (stage: string, payload?: unknown) => {
+    if (payload === undefined) {
+      console.log(`[ReorderTrace][2D] ${stage}`);
+      return;
+    }
+    console.log(`[ReorderTrace][2D] ${stage}`, payload);
+  };
+  const reorderWarn = (stage: string, payload?: unknown) => {
+    if (payload === undefined) {
+      console.warn(`[ReorderTrace][2D] ${stage}`);
+      return;
+    }
+    console.warn(`[ReorderTrace][2D] ${stage}`, payload);
+  };
   let hoverFaceLines: [LineSegments2, LineSegments2, LineSegments2] | null = null;
   let seamConnectLines: [LineSegments2, LineSegments2, LineSegments2] | null = null;
   let edgeQueryProviders: EdgeQueryProviders | null = null;
@@ -145,6 +164,62 @@ export function createRenderer2D(
     return { x: worldX, y: worldY };
   }
 
+  const startRotate = () => {
+    if (isRotating) return;
+    if (!isSafari()) renderer.domElement.requestPointerLock?.();
+    isRotating = true;
+    rotateAngleDeltaTotal = 0;
+    cancelHoverLineState();
+    appEventBus.emit("userOperation", { side: "right", op: "group-rotate", highlightDuration: 0 });
+  };
+
+  const tryReorderPendingEdge = () => {
+    reorderTrace("tryReorderPendingEdge.enter", {
+      pendingReorderEdge,
+      hasEdgeQueryProviders: !!edgeQueryProviders,
+      hasOnReorderFaces: !!onReorderFaces,
+    });
+    if (!pendingReorderEdge || !edgeQueryProviders || !onReorderFaces) {
+      reorderWarn("tryReorderPendingEdge.abort.missing-deps");
+      return false;
+    }
+    const rec = edgeQueryProviders.getEdges().get(pendingReorderEdge.groupId)?.edges.get(pendingReorderEdge.edgeId);
+    if (!rec || rec.length !== 2) {
+      reorderWarn("tryReorderPendingEdge.abort.invalid-edge-cache", {
+        recLength: rec?.length ?? 0,
+      });
+      return false;
+    }
+    const faceIds = Array.from(new Set(rec.map((item) => item.faceId)));
+    if (faceIds.length !== 2) {
+      reorderWarn("tryReorderPendingEdge.abort.invalid-face-pair", { faceIds });
+      return false;
+    }
+    if (!faceIds.includes(pendingReorderEdge.clickedFaceId)) {
+      reorderWarn("tryReorderPendingEdge.abort.clicked-face-not-on-edge", {
+        clickedFaceId: pendingReorderEdge.clickedFaceId,
+        faceIds,
+      });
+      return false;
+    }
+    const parentFaceId = pendingReorderEdge.clickedFaceId;
+    const movedFaceId = faceIds[0] === parentFaceId ? faceIds[1] : faceIds[0];
+    reorderTrace("tryReorderPendingEdge.invoke-onReorderFaces", {
+      groupId: pendingReorderEdge.groupId,
+      parentFaceId,
+      movedFaceId,
+    });
+    const ok = onReorderFaces(pendingReorderEdge.groupId, parentFaceId, movedFaceId);
+    reorderTrace("tryReorderPendingEdge.onReorderFaces-return", { ok });
+    if (!ok) {
+      reorderWarn("tryReorderPendingEdge.abort.onReorderFaces-false");
+      return false;
+    }
+    appEventBus.emit("userOperation", { side: "right", op: "group-reorder", highlightDuration: 500 });
+    reorderTrace("tryReorderPendingEdge.success");
+    return true;
+  };
+
   const onPointerDown = (event: PointerEvent) => {
     if (event.button === 2) {
       if (!isSafari()) renderer.domElement.requestPointerLock?.();
@@ -153,16 +228,64 @@ export function createRenderer2D(
       panStart.y = event.clientY;
       cancelHoverLineState();
       appEventBus.emit("userOperation", { side: "right", op: "view-pan", highlightDuration: 0 });
-    } else if (event.button === 0 && getWorkspaceState() === "editingGroup") {
-      if (!isSafari()) renderer.domElement.requestPointerLock?.();
-      isRotating = true;
-      rotateAngleDeltaTotal = 0;
-      cancelHoverLineState();
-      appEventBus.emit("userOperation", { side: "right", op: "group-rotate", highlightDuration: 0 });
+      return;
     }
+
+    if (event.button !== 0 || getWorkspaceState() !== "editingGroup") return;
+    leftPointerActive = true;
+    leftRotateTriggeredDuringPointerCycle = false;
+    leftDownPos.x = event.clientX;
+    leftDownPos.y = event.clientY;
+    pendingReorderEdge = null;
+    reorderTrace("pointerdown.left.editingGroup", {
+      clientX: event.clientX,
+      clientY: event.clientY,
+      lastHitEdge,
+    });
+
+    if (edgeQueryProviders && lastHitEdge && lastHitEdge.groupId === edgeQueryProviders.getPreviewGroupId()) {
+      const rec = edgeQueryProviders.getEdges().get(lastHitEdge.groupId)?.edges.get(lastHitEdge.edgeId);
+      if (rec && rec.length === 2) {
+        pendingReorderEdge = {
+          groupId: lastHitEdge.groupId,
+          edgeId: lastHitEdge.edgeId,
+          clickedFaceId: lastHitEdge.cache.faceId,
+        };
+        reorderTrace("pointerdown.left.arm-reorder-edge", pendingReorderEdge);
+        return;
+      }
+      reorderWarn("pointerdown.left.not-arm-reorder.invalid-rec", {
+        recLength: rec?.length ?? 0,
+      });
+    } else {
+      reorderWarn("pointerdown.left.not-arm-reorder.no-qualified-hit-edge", {
+        hasEdgeQueryProviders: !!edgeQueryProviders,
+        lastHitEdge,
+        previewGroupId: edgeQueryProviders?.getPreviewGroupId(),
+      });
+    }
+    leftRotateTriggeredDuringPointerCycle = true;
+    reorderTrace("pointerdown.left.fallback-rotate");
+    startRotate();
   };
   let lastHitEdge: { groupId: number; edgeId: number; cache: EdgeCache } | null = null;
   const onPointerMove = (event: PointerEvent) => {
+    if (
+      !isRotating &&
+      leftPointerActive &&
+      pendingReorderEdge !== null &&
+      getWorkspaceState() === "editingGroup" &&
+      (event.buttons & 1) === 1
+    ) {
+      const dx = event.clientX - leftDownPos.x;
+      const dy = event.clientY - leftDownPos.y;
+      if (dx * dx + dy * dy > 9) {
+        pendingReorderEdge = null;
+        leftRotateTriggeredDuringPointerCycle = true;
+        reorderTrace("pointermove.cancel-reorder-and-start-rotate", { dx, dy });
+        startRotate();
+      }
+    }
     if (isPanning) {
       const locked = document.pointerLockElement === renderer.domElement;
       const dx = locked ? event.movementX : event.clientX - panStart.x;
@@ -267,6 +390,7 @@ export function createRenderer2D(
   };
 
   const stopPan = () => {
+    if (!isPanning) return;
     isPanning = false;
     if (document.pointerLockElement === renderer.domElement) {
       document.exitPointerLock();
@@ -275,6 +399,7 @@ export function createRenderer2D(
   };
 
   const stopRotate = () => {
+    if (!isRotating) return;
     isRotating = false;
     if (rotateAngleDeltaTotal > 1e-5 || rotateAngleDeltaTotal < -1e-5) {
       appEventBus.emit("groupPlaceAngleRotateDone", { deltaAngle: radToDeg(rotateAngleDeltaTotal) });
@@ -290,7 +415,27 @@ export function createRenderer2D(
     if (event.button === 2) {
       stopPan();
     } else if (event.button === 0) {
+      reorderTrace("pointerup.left", {
+        leftPointerActive,
+        pendingReorderEdge,
+        leftRotateTriggeredDuringPointerCycle,
+        workspaceState: getWorkspaceState(),
+      });
+      if (
+        leftPointerActive &&
+        pendingReorderEdge !== null &&
+        !leftRotateTriggeredDuringPointerCycle &&
+        getWorkspaceState() === "editingGroup"
+      ) {
+        const reordered = tryReorderPendingEdge();
+        reorderTrace("pointerup.left.tryReorderPendingEdge.return", { reordered });
+      } else {
+        reorderWarn("pointerup.left.skip-reorder-conditions-not-met");
+      }
       stopRotate();
+      leftPointerActive = false;
+      leftRotateTriggeredDuringPointerCycle = false;
+      pendingReorderEdge = null;
     }
     onPointerMove(event);
   };
@@ -348,11 +493,17 @@ export function createRenderer2D(
   appEventBus.on("groupFaceRemoved", ({ groupId, faceId }) => {
     updateHoverFaceByFaceIdNextFrame = faceId;
   });
+  appEventBus.on("groupTreeReordered", ({ movedFaceId }) => {
+    updateHoverFaceByFaceIdNextFrame = movedFaceId;
+  });
   appEventBus.on("clearAppStates", () => {
     hoverFaceLines?.forEach((l) => (l.visible = false));
     seamConnectLines?.forEach((l) => (l.visible = false));
     if (hoverLine) hoverLine.visible = false;
     lastHitEdge = null;
+    leftPointerActive = false;
+    leftRotateTriggeredDuringPointerCycle = false;
+    pendingReorderEdge = null;
   });
 
   const animate = () => {

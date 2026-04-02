@@ -67,6 +67,7 @@ export function createSeamManager(
   appEventBus.on("projectChanged", rebuildFull);
   appEventBus.on("groupFaceAdded", rebuildFull);
   appEventBus.on("groupFaceRemoved", rebuildFull);
+  appEventBus.on("groupTreeReordered", rebuildFull);
   appEventBus.on("groupRemoved", rebuildFull);
   appEventBus.on("groupVisibilityChanged", rebuildFull);
   appEventBus.on("historyApplied", rebuildFull);

@@ -197,6 +197,7 @@
   "op.group.rename": "Click and hold group tab to rename",
   "op.group.face.add": "Left-click to add face to group",
   "op.group.face.remove": "Right-click to remove face from group",
+  "op.group.reorder": "Left-click to reorder face structure",
   "op.group.rotate": "Left-click to rotate group",
 
   "group.default.prefix": "Group",
@@ -207,6 +208,7 @@
   "history.group.rename.description": "Renamed group to {name}",
   "history.face.add.description": "Added {count} faces to {group}",
   "history.face.remove.description": "Removed {count} faces from {group}",
+  "history.group.reorder.description": "Reordered {group}",
   "history.group.rotate.description": "Rotated group {angle}°",
   "history.settings.change.description": "Updated {count} settings",
   "history.seam.joinTypeChange.description": "Updated {count} seam joins",
@@ -262,6 +264,7 @@
   "log.group.removeWillDisconnect": "Removing this face would disconnect its group. Not added to the current group",
   "log.group.noSharedEdge": "This face shares no edge with the current group. Not added",
   "log.group.faceAdded": "Added to {group}",
+  "log.group.reordered": "Reordered face hierarchy in {group}",
   "log.group.seamChanged": "Seam type changed: {previous} -> {current}",
   "log.group.deleteKeepOne": "At least one group must remain. Deletion canceled",
   "log.group.deleted": "Deleted {group}",

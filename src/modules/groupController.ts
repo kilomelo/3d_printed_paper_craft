@@ -3,10 +3,10 @@ import { Color } from "three";
 import {
   getGroupColor as getGroupColorData,
   setGroupColor as setGroupColorData,
-  setFaceGroup as assignFaceToGroup,
+  addFaceToGroup as addFaceToGroupData,
+  removeFaceFromGroup as removeFaceFromGroupData,
   shareEdgeWithGroup as shareEdgeWithGroupData,
   canRemoveFace as canRemoveFaceData,
-  rebuildGroupTree as rebuildGroupTreeData,
   deleteGroup as deleteGroupData,
   applyImportedGroups as applyImportedGroupsData,
   getGroupIds as getGroupIdsData,
@@ -19,6 +19,7 @@ import {
   setGroupName as setGroupNameData,
   getGroupPlaceAngle as getGroupPlaceAngleData,
   setGroupPlaceAngle as setGroupPlaceAngleData,
+  reorderGroupTree as reorderGroupTreeData,
   resetGroups,
   setGroupColorCursor,
   // sharedEdgeIsSeam,
@@ -80,8 +81,7 @@ export function createGroupController(
     const groupSet = getGroupFacesData(groupId) ?? new Set<number>();
     const size = groupSet.size;
     if (size <= 2 || canRemoveFaceData(groupId, faceId, getFaceAdjacency())) {
-      if (assignFaceToGroup(faceId, null)) {
-        rebuildGroupTreeData(groupId, getFaceAdjacency());
+      if (removeFaceFromGroupData(faceId, groupId, getFaceAdjacency())) {
         const groupName = getGroupNameData(groupId) ?? `展开组 ${getGroupIdsData().indexOf(groupId) + 1}`;
         log(t("log.group.faceRemoved", { group: groupName }), "success");
         appEventBus.emit("groupFaceRemoved", { groupId: groupId, faceId });
@@ -118,9 +118,16 @@ export function createGroupController(
       return false;
     }
 
-    if (!assignFaceToGroup(faceId, groupId)) return false;
-    rebuildGroupTreeData(groupId, getFaceAdjacency());
-    if (currentGroup) rebuildGroupTreeData(currentGroup, getFaceAdjacency());
+    if (currentGroup !== null && !removeFaceFromGroupData(faceId, currentGroup, getFaceAdjacency())) {
+      log(t("log.group.removeFail"), "error");
+      return false;
+    }
+    if (!addFaceToGroupData(faceId, groupId, getFaceAdjacency())) {
+      if (currentGroup !== null) {
+        addFaceToGroupData(faceId, currentGroup, getFaceAdjacency());
+      }
+      return false;
+    }
 
     const groupName = getGroupNameData(groupId) ?? `展开组 ${getGroupIdsData().indexOf(groupId) + 1}`;
     log(t("log.group.faceAdded", { group: groupName }), "success");
@@ -128,6 +135,42 @@ export function createGroupController(
     if (currentGroup !== null) {
       appEventBus.emit("groupFaceRemoved", { groupId: currentGroup, faceId });
     }
+    return true;
+  }
+
+  function reorderFaces(parentFaceId: number, movedFaceId: number, groupId: number | null): boolean {
+    console.log("[ReorderTrace][GroupController] reorderFaces.enter", {
+      groupId,
+      parentFaceId,
+      movedFaceId,
+    });
+    if (groupId === null) {
+      console.warn("[ReorderTrace][GroupController] reorderFaces.abort.group-null");
+      return false;
+    }
+    const result = reorderGroupTreeData(groupId, parentFaceId, movedFaceId, getFaceAdjacency());
+    if (!result.ok) {
+      console.warn("[ReorderTrace][GroupController] reorderFaces.abort.reorderGroupTree-failed", {
+        reason: result.reason,
+      });
+      return false;
+    }
+
+    const groupName = getGroupNameData(groupId) ?? `展开组 ${getGroupIdsData().indexOf(groupId) + 1}`;
+    log(t("log.group.reordered", { group: groupName }), "success");
+    console.log("[ReorderTrace][GroupController] reorderFaces.success", {
+      groupId,
+      movedFaceId: result.movedFaceId,
+      previousParentFaceId: result.previousParentFaceId,
+      nextParentFaceId: result.nextParentFaceId,
+    });
+    appEventBus.emit("groupTreeReordered", {
+      groupId,
+      groupName,
+      movedFaceId: result.movedFaceId,
+      previousParentFaceId: result.previousParentFaceId,
+      nextParentFaceId: result.nextParentFaceId,
+    });
     return true;
   }
 
@@ -230,6 +273,7 @@ export function createGroupController(
     updateCurrentGroupPlaceAngle,
     removeFace,
     addFace,
+    reorderFaces,
     deleteGroup,
     applyImportedGroups,
     addGroup,

@@ -30,7 +30,8 @@ export type PPCFile = {
   groups?: {
     id: number;
     color: string;
-    faces: number[];
+    treeParent?: [number, number | null][];
+    faces?: number[]; // legacy: <=1.2 使用 faces 顺序持久化
     name?: string;
     placeAngle?: number;
   }[];
@@ -48,7 +49,7 @@ export type PPCFile = {
   textureBinaries?: ArrayBuffer[];
 };
 
-const FORMAT_VERSION = "1.2"; // 升级版本号以支持贴图元数据
+const FORMAT_VERSION = "1.3"; // 1.3 起展开组持久化 treeParent，faces 仅保留旧版本兼容读取
 const MAGIC = "3DPPCBIN";
 
 async function computeChecksum(payload: unknown): Promise<string> {
@@ -84,7 +85,7 @@ export async function build3dppcData(object: Group): Promise<PPCFile> {
     groupsData.push({
       id: g.id,
       color: `#${g.color.toString(16).padStart(6, "0")}`,
-      faces: [...g.faces],
+      treeParent: [...g.treeParent],
       name: g.name,
       placeAngle: g.placeAngle,
     });

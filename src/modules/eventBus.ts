@@ -42,6 +42,13 @@ export type AppEvents = {
   groupCurrentChanged: number; // 新的当前组ID
   groupFaceAdded: { groupId: number; faceId: number };
   groupFaceRemoved: { groupId: number; faceId: number };
+  groupTreeReordered: {
+    groupId: number;
+    groupName: string;
+    movedFaceId: number;
+    previousParentFaceId: number | null;
+    nextParentFaceId: number;
+  };
   brushOperationDone: { facePaintedCnt: number };
   groupPlaceAngleRotateDone: { deltaAngle: number };
   groupPlaceAngleChanged: { groupId: number; newAngle: number; oldAngle: number };

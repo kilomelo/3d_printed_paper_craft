@@ -1227,6 +1227,23 @@ export function createUnfold2dManager(
     if (groupId !== current) return;
     rebuildGroup2D(groupId, true);
   });
+  appEventBus.on("groupTreeReordered", ({ groupId }) => {
+    console.log("[ReorderTrace][Unfold2D] on groupTreeReordered", {
+      groupId,
+      currentPreviewGroupId: getPreviewGroupId(),
+    });
+    cachedSnapped = null;
+    const current = getPreviewGroupId();
+    if (groupId !== current) {
+      console.log("[ReorderTrace][Unfold2D] skip rebuildGroup2D because group is not current preview", {
+        groupId,
+        currentPreviewGroupId: current,
+      });
+      return;
+    }
+    console.log("[ReorderTrace][Unfold2D] rebuildGroup2D by groupTreeReordered", { groupId });
+    rebuildGroup2D(groupId, true);
+  });
   type XY = { x: number; y: number };
 
   // 获取面的 UV 坐标

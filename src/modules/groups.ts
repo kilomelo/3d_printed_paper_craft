@@ -4,7 +4,7 @@ import { t } from "./i18n";
 
 export type GroupData = {
   id: number;
-  faces: number[]; // 有序数组，按加入顺序存储
+  faces: number[]; // 运行时派生缓存；持久化真相是 treeParent
   color: Color;
   treeParent: Map<number, number | null>;
   name: string;
@@ -26,6 +26,235 @@ function nextPaletteColor(): Color {
 
 function findGroup(id: number): GroupData | undefined {
   return groups.find((g) => g.id === id);
+}
+
+function getGroupFaceIdSet(group: GroupData | undefined): Set<number> | undefined {
+  if (!group) return undefined;
+  const faceIds = new Set<number>(group.faces);
+  group.treeParent.forEach((_parentFaceId, faceId) => faceIds.add(faceId));
+  return faceIds;
+}
+
+function buildFacesCacheFromParentMap(
+  parentMap: Map<number, number | null>,
+  previousFaces?: number[],
+): number[] {
+  if (parentMap.size === 0) return [];
+
+  const roots = Array.from(parentMap.entries())
+    .filter(([, parentFaceId]) => parentFaceId === null)
+    .map(([faceId]) => faceId);
+  if (roots.length !== 1) {
+    return previousFaces ? Array.from(new Set(previousFaces.filter((faceId) => parentMap.has(faceId)))) : Array.from(parentMap.keys());
+  }
+
+  const previousOrderIndex = new Map<number, number>();
+  previousFaces?.forEach((faceId, index) => previousOrderIndex.set(faceId, index));
+
+  const childrenByParent = new Map<number | null, number[]>();
+  parentMap.forEach((parentFaceId, faceId) => {
+    const key = parentFaceId;
+    if (!childrenByParent.has(key)) childrenByParent.set(key, []);
+    childrenByParent.get(key)!.push(faceId);
+  });
+
+  childrenByParent.forEach((childFaceIds) => {
+    childFaceIds.sort((a, b) => {
+      const orderA = previousOrderIndex.get(a);
+      const orderB = previousOrderIndex.get(b);
+      if (orderA !== undefined && orderB !== undefined && orderA !== orderB) return orderA - orderB;
+      if (orderA !== undefined) return -1;
+      if (orderB !== undefined) return 1;
+      return a - b;
+    });
+  });
+
+  const traversalOrder: number[] = [];
+  const stack = [...roots].reverse();
+  while (stack.length) {
+    const faceId = stack.pop()!;
+    traversalOrder.push(faceId);
+    const childFaceIds = childrenByParent.get(faceId) ?? [];
+    for (let i = childFaceIds.length - 1; i >= 0; i -= 1) {
+      stack.push(childFaceIds[i]);
+    }
+  }
+
+  if (!previousFaces || previousFaces.length === 0) {
+    return traversalOrder;
+  }
+
+  // `faces` 作为运行时“加入顺序缓存”使用：
+  // - 对于树重排，不应被 DFS 顺序覆写；
+  // - 对于删面，只过滤掉已不存在的面；
+  // - 对于导入新树且缺少旧顺序时，再回退到遍历顺序。
+  const mergedOrder: number[] = [];
+  const seen = new Set<number>();
+  previousFaces.forEach((faceId) => {
+    if (!parentMap.has(faceId) || seen.has(faceId)) return;
+    seen.add(faceId);
+    mergedOrder.push(faceId);
+  });
+  traversalOrder.forEach((faceId) => {
+    if (seen.has(faceId)) return;
+    seen.add(faceId);
+    mergedOrder.push(faceId);
+  });
+  return mergedOrder;
+}
+
+function getRootFaceId(parentMap: Map<number, number | null>): number | null {
+  for (const [faceId, parentFaceId] of parentMap.entries()) {
+    if (parentFaceId === null) return faceId;
+  }
+  return null;
+}
+
+function syncGroupFacesCache(group: GroupData, previousFaces?: number[]) {
+  group.faces = buildFacesCacheFromParentMap(group.treeParent, previousFaces ?? group.faces);
+}
+
+function isAncestorFace(
+  ancestorFaceId: number,
+  faceId: number,
+  parentMap: Map<number, number | null>,
+): boolean | null {
+  const seen = new Set<number>();
+  let walk: number | null = faceId;
+  while (walk !== null) {
+    if (walk === ancestorFaceId) return true;
+    if (seen.has(walk)) return null;
+    seen.add(walk);
+    const parentFaceId = parentMap.get(walk);
+    if (parentFaceId === undefined) return null;
+    walk = parentFaceId;
+  }
+  return false;
+}
+
+function collectSubtreeFaceIds(rootFaceId: number, parentMap: Map<number, number | null>): Set<number> {
+  const subtree = new Set<number>();
+  const stack = [rootFaceId];
+  while (stack.length) {
+    const faceId = stack.pop()!;
+    if (subtree.has(faceId)) continue;
+    subtree.add(faceId);
+    parentMap.forEach((parentFaceId, childFaceId) => {
+      if (parentFaceId === faceId) {
+        stack.push(childFaceId);
+      }
+    });
+  }
+  return subtree;
+}
+
+function findPreferredAdjacentFaceOutsideSet(
+  faceId: number,
+  excludedFaceIds: Set<number>,
+  groupFaceIds: Set<number>,
+  faceAdjacency: Map<number, Set<number>>,
+  previousFaces: number[],
+): number | null {
+  const neighbors = faceAdjacency.get(faceId);
+  if (!neighbors) return null;
+  const orderIndex = new Map<number, number>();
+  previousFaces.forEach((candidateFaceId, index) => orderIndex.set(candidateFaceId, index));
+  let bestFaceId: number | null = null;
+  let bestOrder = -1;
+  neighbors.forEach((neighborFaceId) => {
+    if (!groupFaceIds.has(neighborFaceId) || excludedFaceIds.has(neighborFaceId)) return;
+    const order = orderIndex.get(neighborFaceId) ?? -1;
+    if (bestFaceId === null || order > bestOrder || (order === bestOrder && neighborFaceId < bestFaceId)) {
+      bestFaceId = neighborFaceId;
+      bestOrder = order;
+    }
+  });
+  return bestFaceId;
+}
+
+function choosePreferredRootFaceId(
+  faceIds: Set<number>,
+  previousParentMap: Map<number, number | null>,
+  previousFaces: number[],
+  preferredRootFaceId?: number | null,
+): number | null {
+  if (preferredRootFaceId !== undefined && preferredRootFaceId !== null && faceIds.has(preferredRootFaceId)) {
+    return preferredRootFaceId;
+  }
+  const previousRootFaceId = getRootFaceId(previousParentMap);
+  if (previousRootFaceId !== null && faceIds.has(previousRootFaceId)) {
+    return previousRootFaceId;
+  }
+  for (const faceId of previousFaces) {
+    if (faceIds.has(faceId)) return faceId;
+  }
+  return faceIds.values().next().value ?? null;
+}
+
+function buildPreferredSpanningTree(
+  faceIds: Set<number>,
+  faceAdjacency: Map<number, Set<number>>,
+  previousParentMap: Map<number, number | null>,
+  previousFaces: number[],
+  preferredRootFaceId?: number | null,
+): Map<number, number | null> | null {
+  if (faceIds.size === 0) return new Map<number, number | null>();
+  const rootFaceId = choosePreferredRootFaceId(faceIds, previousParentMap, previousFaces, preferredRootFaceId);
+  if (rootFaceId === null) return null;
+
+  const previousOrderIndex = new Map<number, number>();
+  previousFaces.forEach((faceId, index) => previousOrderIndex.set(faceId, index));
+
+  const nextParentMap = new Map<number, number | null>();
+  const visited = new Set<number>([rootFaceId]);
+  nextParentMap.set(rootFaceId, null);
+
+  while (visited.size < faceIds.size) {
+    let bestCandidate: {
+      parentFaceId: number;
+      childFaceId: number;
+      edgeScore: number;
+      childOrder: number;
+      parentOrder: number;
+    } | null = null;
+
+    visited.forEach((parentFaceId) => {
+      const neighbors = faceAdjacency.get(parentFaceId);
+      if (!neighbors) return;
+      neighbors.forEach((childFaceId) => {
+        if (!faceIds.has(childFaceId) || visited.has(childFaceId)) return;
+        let edgeScore = 2;
+        if (previousParentMap.get(childFaceId) === parentFaceId) {
+          edgeScore = 0;
+        } else if (previousParentMap.get(parentFaceId) === childFaceId) {
+          edgeScore = 1;
+        }
+        const childOrder = previousOrderIndex.get(childFaceId) ?? Number.MAX_SAFE_INTEGER;
+        const parentOrder = previousOrderIndex.get(parentFaceId) ?? Number.MAX_SAFE_INTEGER;
+        const candidate = { parentFaceId, childFaceId, edgeScore, childOrder, parentOrder };
+        if (
+          !bestCandidate ||
+          candidate.edgeScore < bestCandidate.edgeScore ||
+          (candidate.edgeScore === bestCandidate.edgeScore && candidate.childOrder < bestCandidate.childOrder) ||
+          (candidate.edgeScore === bestCandidate.edgeScore &&
+            candidate.childOrder === bestCandidate.childOrder &&
+            candidate.parentOrder < bestCandidate.parentOrder) ||
+          (candidate.edgeScore === bestCandidate.edgeScore &&
+            candidate.childOrder === bestCandidate.childOrder &&
+            candidate.parentOrder === bestCandidate.parentOrder &&
+            candidate.childFaceId < bestCandidate.childFaceId)
+        ) {
+          bestCandidate = candidate;
+        }
+      });
+    });
+
+    if (!bestCandidate) return null;
+    visited.add(bestCandidate.childFaceId);
+    nextParentMap.set(bestCandidate.childFaceId, bestCandidate.parentFaceId);
+  }
+
+  return nextParentMap;
 }
 
 function nextGroupId(): number {
@@ -109,8 +338,7 @@ export function getFaceGroupMap() {
 }
 
 export function getGroupFaces(id: number): Set<number> | undefined {
-  const faces = findGroup(id)?.faces;
-  return faces ? new Set(faces) : undefined;
+  return getGroupFaceIdSet(findGroup(id));
 }
 
 export function getGroupColor(id: number): Color | undefined {
@@ -171,13 +399,13 @@ export function setGroupsPlaceAngles(data: { id: number; placeAngle?: number }[]
 export function exportGroupsData() {
   return groups.map((g) => ({
     id: g.id,
-    faces: Array.from(g.faces),
     color: g.color.getHex(),
     treeParent: Array.from(g.treeParent.entries()),
     name: g.name,
     placeAngle: Math.round(g.placeAngle * 100) / 100,
   }));
 }
+
 export function setFaceGroup(faceId: number, groupId: number | null): boolean {
   const prev = faceGroupMap.get(faceId) ?? null;
   if (prev === groupId) return false;
@@ -187,6 +415,7 @@ export function setFaceGroup(faceId: number, groupId: number | null): boolean {
     if (pg) {
       const idx = pg.faces.indexOf(faceId);
       if (idx >= 0) pg.faces.splice(idx, 1);
+      pg.treeParent.delete(faceId);
     }
   }
 
@@ -196,8 +425,86 @@ export function setFaceGroup(faceId: number, groupId: number | null): boolean {
     if (!g.faces.includes(faceId)) {
       g.faces.push(faceId);
     }
+    if (!g.treeParent.has(faceId)) {
+      g.treeParent.set(faceId, null);
+    }
   }
   faceGroupMap.set(faceId, groupId);
+  return true;
+}
+
+export function removeFaceFromGroup(
+  faceId: number,
+  groupId: number,
+  faceAdjacency: Map<number, Set<number>>,
+): boolean {
+  const group = findGroup(groupId);
+  if (!group) return false;
+  if (!group.treeParent.has(faceId)) return false;
+
+  const previousFaces = [...group.faces];
+  const previousParentMap = new Map(group.treeParent);
+  const remainingFaceIds = new Set<number>(group.treeParent.keys());
+  remainingFaceIds.delete(faceId);
+
+  group.treeParent.delete(faceId);
+  faceGroupMap.set(faceId, null);
+
+  if (remainingFaceIds.size === 0) {
+    group.faces = [];
+    return true;
+  }
+
+  const previousRootFaceId = getRootFaceId(previousParentMap);
+  const nextParentMap = buildPreferredSpanningTree(
+    remainingFaceIds,
+    faceAdjacency,
+    previousParentMap,
+    previousFaces.filter((id) => id !== faceId),
+    previousRootFaceId === faceId ? null : previousRootFaceId,
+  );
+  if (!nextParentMap) {
+    group.treeParent = previousParentMap;
+    faceGroupMap.set(faceId, groupId);
+    return false;
+  }
+
+  group.treeParent = nextParentMap;
+  syncGroupFacesCache(group, previousFaces.filter((id) => id !== faceId));
+  return true;
+}
+
+export function addFaceToGroup(
+  faceId: number,
+  groupId: number,
+  faceAdjacency: Map<number, Set<number>>,
+): boolean {
+  const group = findGroup(groupId);
+  if (!group) return false;
+  if (group.treeParent.has(faceId)) return false;
+
+  const previousFaces = [...group.faces];
+  let parentFaceId: number | null = null;
+  if (group.treeParent.size > 0) {
+    const neighbors = faceAdjacency.get(faceId);
+    if (!neighbors) return false;
+    const orderIndex = new Map<number, number>();
+    previousFaces.forEach((id, index) => orderIndex.set(id, index));
+    let bestParentOrder = -1;
+    neighbors.forEach((neighborFaceId) => {
+      if (!group.treeParent.has(neighborFaceId)) return;
+      const neighborOrder = orderIndex.get(neighborFaceId) ?? -1;
+      if (neighborOrder >= bestParentOrder) {
+        bestParentOrder = neighborOrder;
+        parentFaceId = neighborFaceId;
+      }
+    });
+    if (parentFaceId === null) return false;
+  }
+
+  group.treeParent.set(faceId, parentFaceId);
+  faceGroupMap.set(faceId, groupId);
+  syncGroupFacesCache(group, [...previousFaces, faceId]);
   return true;
 }
 
@@ -208,10 +515,10 @@ export function shareEdgeWithGroup(
 ): boolean {
   const neighbors = faceAdjacency.get(faceId);
   if (!neighbors) return false;
-  const groupFaces = findGroup(groupId)?.faces;
-  if (!groupFaces || groupFaces.length === 0) return false;
+  const groupFaces = getGroupFaceIdSet(findGroup(groupId));
+  if (!groupFaces || groupFaces.size === 0) return false;
   for (const n of neighbors) {
-    if (groupFaces.includes(n)) return true;
+    if (groupFaces.has(n)) return true;
   }
   return false;
 }
@@ -232,9 +539,10 @@ export function canRemoveFace(
   faceId: number,
   faceAdjacency: Map<number, Set<number>>,
 ): boolean {
-  const faces = findGroup(groupId)?.faces;
+  const faceSet = getGroupFaceIdSet(findGroup(groupId));
+  const faces = faceSet ? Array.from(faceSet) : undefined;
   if (!faces || faces.length <= 1) return true;
-  if (!faces.includes(faceId)) return true;
+  if (!faceSet?.has(faceId)) return true;
 
   const remaining = new Set(faces.filter((f) => f !== faceId));
   if (remaining.size === 0) return true;
@@ -262,6 +570,478 @@ export function canRemoveFace(
 function areFacesAdjacent(a: number, b: number, faceAdjacency: Map<number, Set<number>>): boolean {
   const set = faceAdjacency.get(a);
   return set ? set.has(b) : false;
+}
+
+function formatParentMap(parentMap: Map<number, number | null>): string[] {
+  return Array.from(parentMap.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([faceId, parentFaceId]) => `${faceId}<-${parentFaceId === null ? "root" : parentFaceId}`);
+}
+
+function formatTreeAdjacency(treeAdj: Map<number, Set<number>>): string[] {
+  return Array.from(treeAdj.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([faceId, neighbors]) => `${faceId}<->[${Array.from(neighbors).sort((a, b) => a - b).join(",")}]`);
+}
+
+function formatTreeStructure(parentMap: Map<number, number | null>, faceOrderHint?: number[]): string {
+  if (parentMap.size === 0) return "(empty)";
+  const rootFaceId = getRootFaceId(parentMap);
+  if (rootFaceId === null) return "(invalid:no-root)";
+
+  const orderIndex = new Map<number, number>();
+  faceOrderHint?.forEach((faceId, index) => orderIndex.set(faceId, index));
+
+  const childrenByParent = new Map<number | null, number[]>();
+  parentMap.forEach((parentFaceId, faceId) => {
+    const key = parentFaceId;
+    if (!childrenByParent.has(key)) childrenByParent.set(key, []);
+    childrenByParent.get(key)!.push(faceId);
+  });
+  childrenByParent.forEach((childFaceIds) => {
+    childFaceIds.sort((a, b) => {
+      const orderA = orderIndex.get(a);
+      const orderB = orderIndex.get(b);
+      if (orderA !== undefined && orderB !== undefined && orderA !== orderB) return orderA - orderB;
+      if (orderA !== undefined) return -1;
+      if (orderB !== undefined) return 1;
+      return a - b;
+    });
+  });
+
+  const visited = new Set<number>();
+  const render = (faceId: number): string => {
+    if (visited.has(faceId)) return `${faceId}(cycle)`;
+    visited.add(faceId);
+    const children = childrenByParent.get(faceId) ?? [];
+    if (children.length === 0) return `${faceId}`;
+    return `${faceId}[${children.map((childFaceId) => render(childFaceId)).join(",")}]`;
+  };
+
+  const rendered = render(rootFaceId);
+  if (visited.size !== parentMap.size) {
+    const detached = Array.from(parentMap.keys())
+      .filter((faceId) => !visited.has(faceId))
+      .sort((a, b) => a - b);
+    if (detached.length > 0) {
+      return `${rendered}|detached=[${detached.join(",")}]`;
+    }
+  }
+  return rendered;
+}
+
+function formatReorderTraceLine(label: string, data: Record<string, unknown>): string {
+  const serialized = Object.entries(data)
+    .map(([key, value]) => {
+      if (Array.isArray(value)) {
+        return `${key}=${JSON.stringify(value)}`;
+      }
+      if (value && typeof value === "object") {
+        return `${key}=${JSON.stringify(value)}`;
+      }
+      return `${key}=${String(value)}`;
+    })
+    .join(" | ");
+  return `[ReorderTrace][Groups] ${label} | ${serialized}`;
+}
+
+export type ReorderGroupTreeResult =
+  | {
+      ok: true;
+      movedFaceId: number;
+      previousParentFaceId: number | null;
+      nextParentFaceId: number;
+    }
+  | {
+      ok: false;
+      reason:
+        | "group-not-found"
+        | "face-not-in-group"
+        | "faces-not-adjacent"
+        | "same-face"
+        | "already-parent"
+        | "already-parent-child"
+        | "invalid-parent-map"
+        | "tree-rebuild-failed";
+    };
+
+function buildTreeAdjacency(parentMap: Map<number, number | null>): Map<number, Set<number>> | null {
+  const faceSet = new Set(parentMap.keys());
+  const treeAdj = new Map<number, Set<number>>();
+  let rootCount = 0;
+
+  faceSet.forEach((faceId) => treeAdj.set(faceId, new Set<number>()));
+
+  for (const faceId of faceSet) {
+    const parent = parentMap.get(faceId);
+    if (parent === undefined) return null;
+    if (parent === null) {
+      rootCount += 1;
+      continue;
+    }
+    if (parent === faceId || !faceSet.has(parent)) return null;
+    treeAdj.get(faceId)!.add(parent);
+    treeAdj.get(parent)!.add(faceId);
+  }
+
+  if (rootCount !== 1) return null;
+  if (faceSet.size === 0) return treeAdj;
+
+  const visited = new Set<number>();
+  const startFaceId = faceSet.values().next().value as number;
+  const stack = [startFaceId];
+  visited.add(startFaceId);
+  while (stack.length) {
+    const faceId = stack.pop()!;
+    treeAdj.get(faceId)?.forEach((neighbor) => {
+      if (visited.has(neighbor)) return;
+      visited.add(neighbor);
+      stack.push(neighbor);
+    });
+  }
+
+  return visited.size === faceSet.size ? treeAdj : null;
+}
+
+function cloneTreeAdjacency(treeAdj: Map<number, Set<number>>) {
+  const cloned = new Map<number, Set<number>>();
+  treeAdj.forEach((neighbors, faceId) => cloned.set(faceId, new Set(neighbors)));
+  return cloned;
+}
+
+function removeUndirectedEdge(treeAdj: Map<number, Set<number>>, a: number, b: number): boolean {
+  const aNeighbors = treeAdj.get(a);
+  const bNeighbors = treeAdj.get(b);
+  if (!aNeighbors || !bNeighbors || !aNeighbors.has(b) || !bNeighbors.has(a)) return false;
+  aNeighbors.delete(b);
+  bNeighbors.delete(a);
+  return true;
+}
+
+function addUndirectedEdge(treeAdj: Map<number, Set<number>>, a: number, b: number): boolean {
+  const aNeighbors = treeAdj.get(a);
+  const bNeighbors = treeAdj.get(b);
+  if (!aNeighbors || !bNeighbors || aNeighbors.has(b) || bNeighbors.has(a)) return false;
+  aNeighbors.add(b);
+  bNeighbors.add(a);
+  return true;
+}
+
+function findPathInTree(
+  startFaceId: number,
+  endFaceId: number,
+  treeAdj: Map<number, Set<number>>,
+): number[] | null {
+  if (!treeAdj.has(startFaceId) || !treeAdj.has(endFaceId)) return null;
+  const previous = new Map<number, number | null>();
+  const queue = [startFaceId];
+  previous.set(startFaceId, null);
+
+  while (queue.length) {
+    const current = queue.shift()!;
+    if (current === endFaceId) break;
+    treeAdj.get(current)?.forEach((neighbor) => {
+      if (previous.has(neighbor)) return;
+      previous.set(neighbor, current);
+      queue.push(neighbor);
+    });
+  }
+
+  if (!previous.has(endFaceId)) return null;
+  const path: number[] = [];
+  let walk: number | null = endFaceId;
+  while (walk !== null) {
+    path.push(walk);
+    walk = previous.get(walk) ?? null;
+  }
+  path.reverse();
+  return path;
+}
+
+function orientTreeFromRoot(
+  rootFaceId: number,
+  treeAdj: Map<number, Set<number>>,
+): Map<number, number | null> | null {
+  if (!treeAdj.has(rootFaceId)) return null;
+  const parentMap = new Map<number, number | null>();
+  const stack: Array<[number, number | null]> = [[rootFaceId, null]];
+
+  while (stack.length) {
+    const [faceId, parentFaceId] = stack.pop()!;
+    if (parentMap.has(faceId)) continue;
+    parentMap.set(faceId, parentFaceId);
+    treeAdj.get(faceId)?.forEach((neighbor) => {
+      if (neighbor === parentFaceId) return;
+      stack.push([neighbor, faceId]);
+    });
+  }
+
+  return parentMap.size === treeAdj.size ? parentMap : null;
+}
+
+export function reorderGroupTree(
+  groupId: number,
+  nextParentFaceId: number,
+  movedFaceId: number,
+  faceAdjacency: Map<number, Set<number>>,
+): ReorderGroupTreeResult {
+  console.log("[ReorderTrace][Groups] reorderGroupTree.enter", {
+    groupId,
+    nextParentFaceId,
+    movedFaceId,
+  });
+  const g = findGroup(groupId);
+  if (!g) {
+    console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.group-not-found");
+    return { ok: false, reason: "group-not-found" };
+  }
+  if (!g.treeParent.has(nextParentFaceId) || !g.treeParent.has(movedFaceId)) {
+    console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.face-not-in-group", {
+      faceIds: Array.from(g.treeParent.keys()),
+    });
+    return { ok: false, reason: "face-not-in-group" };
+  }
+  if (nextParentFaceId === movedFaceId) {
+    console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.same-face");
+    return { ok: false, reason: "same-face" };
+  }
+  if (!areFacesAdjacent(nextParentFaceId, movedFaceId, faceAdjacency)) {
+    console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.faces-not-adjacent");
+    return { ok: false, reason: "faces-not-adjacent" };
+  }
+  const previousParentFaceId = g.treeParent.get(movedFaceId);
+  if (previousParentFaceId === undefined) {
+    console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.previous-parent-undefined");
+    return { ok: false, reason: "invalid-parent-map" };
+  }
+  if (previousParentFaceId === nextParentFaceId) {
+    console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.already-parent", {
+      movedFaceId,
+      nextParentFaceId,
+    });
+    return { ok: false, reason: "already-parent" };
+  }
+
+  const currentTreeAdj = buildTreeAdjacency(g.treeParent);
+  if (!currentTreeAdj) {
+    console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.build-tree-adj");
+    return { ok: false, reason: "invalid-parent-map" };
+  }
+  console.log(
+    formatReorderTraceLine("reorderGroupTree.current-state", {
+      groupId,
+      faces: [...g.faces],
+      parentMap: formatParentMap(g.treeParent),
+      treeAdj: formatTreeAdjacency(currentTreeAdj),
+      tree: formatTreeStructure(g.treeParent, g.faces),
+    }),
+  );
+  const currentRootFaceId = getRootFaceId(g.treeParent);
+  const treePath = findPathInTree(movedFaceId, nextParentFaceId, currentTreeAdj);
+  if (!treePath || treePath.length < 2) {
+    console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.path-not-found", {
+      movedFaceId,
+      nextParentFaceId,
+    });
+    return { ok: false, reason: "invalid-parent-map" };
+  }
+  const nextTreeAdj = cloneTreeAdjacency(currentTreeAdj);
+  const nextParentIsDescendantOfMoved = isAncestorFace(movedFaceId, nextParentFaceId, g.treeParent);
+  if (nextParentIsDescendantOfMoved === null) {
+    console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.ancestor-check");
+    return { ok: false, reason: "invalid-parent-map" };
+  }
+
+  const detachedEdges: string[] = [];
+  const attachedEdges: string[] = [];
+  let nextRootFaceId = currentRootFaceId;
+  let selectedWFaceId: number | null = null;
+  let selectedKFaceId: number | null = null;
+
+  if (nextParentIsDescendantOfMoved) {
+    const movedSubtreeFaceIds = collectSubtreeFaceIds(movedFaceId, g.treeParent);
+    const groupFaceIds = new Set<number>(g.treeParent.keys());
+    const candidateWFaces = [...treePath].reverse().slice(0, -1);
+
+    for (const candidateWFaceId of candidateWFaces) {
+      const candidateKFaceId = findPreferredAdjacentFaceOutsideSet(
+        candidateWFaceId,
+        movedSubtreeFaceIds,
+        groupFaceIds,
+        faceAdjacency,
+        g.faces,
+      );
+      if (candidateKFaceId === null) continue;
+      selectedWFaceId = candidateWFaceId;
+      selectedKFaceId = candidateKFaceId;
+      break;
+    }
+
+    if (selectedWFaceId !== null && selectedKFaceId !== null) {
+      if (previousParentFaceId !== null) {
+        if (!removeUndirectedEdge(nextTreeAdj, movedFaceId, previousParentFaceId)) {
+          console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.remove-moved-from-parent", {
+            movedFaceId,
+            previousParentFaceId,
+            treePath,
+          });
+          return { ok: false, reason: "invalid-parent-map" };
+        }
+        detachedEdges.push(`${movedFaceId}-${previousParentFaceId}`);
+      }
+
+      const previousParentOfW = g.treeParent.get(selectedWFaceId);
+      if (previousParentOfW === undefined || previousParentOfW === null) {
+        console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.selected-w-parent", {
+          selectedWFaceId,
+          treePath,
+        });
+        return { ok: false, reason: "invalid-parent-map" };
+      }
+      if (!removeUndirectedEdge(nextTreeAdj, selectedWFaceId, previousParentOfW)) {
+        console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.remove-w-branch", {
+          selectedWFaceId,
+          previousParentOfW,
+          treePath,
+        });
+        return { ok: false, reason: "invalid-parent-map" };
+      }
+      detachedEdges.push(`${selectedWFaceId}-${previousParentOfW}`);
+
+      if (!addUndirectedEdge(nextTreeAdj, selectedWFaceId, selectedKFaceId)) {
+        console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.attach-w-to-k", {
+          selectedWFaceId,
+          selectedKFaceId,
+          treePath,
+        });
+        return { ok: false, reason: "invalid-parent-map" };
+      }
+      attachedEdges.push(`${selectedWFaceId}-${selectedKFaceId}`);
+
+      if (!addUndirectedEdge(nextTreeAdj, movedFaceId, nextParentFaceId)) {
+        console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.attach-moved-to-descendant", {
+          movedFaceId,
+          nextParentFaceId,
+          treePath,
+        });
+        return { ok: false, reason: "invalid-parent-map" };
+      }
+      attachedEdges.push(`${movedFaceId}-${nextParentFaceId}`);
+      nextRootFaceId = currentRootFaceId;
+    } else {
+      const childOnPathFaceId = treePath[1];
+      if (!childOnPathFaceId) {
+        console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.child-on-path-missing", {
+          movedFaceId,
+          nextParentFaceId,
+          treePath,
+        });
+        return { ok: false, reason: "invalid-parent-map" };
+      }
+      if (!removeUndirectedEdge(nextTreeAdj, movedFaceId, childOnPathFaceId)) {
+        console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.remove-m-branch", {
+          movedFaceId,
+          childOnPathFaceId,
+          treePath,
+        });
+        return { ok: false, reason: "invalid-parent-map" };
+      }
+      detachedEdges.push(`${movedFaceId}-${childOnPathFaceId}`);
+
+      if (!addUndirectedEdge(nextTreeAdj, movedFaceId, nextParentFaceId)) {
+        console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.attach-moved-to-descendant-fallback", {
+          movedFaceId,
+          nextParentFaceId,
+          treePath,
+        });
+        return { ok: false, reason: "invalid-parent-map" };
+      }
+      attachedEdges.push(`${movedFaceId}-${nextParentFaceId}`);
+      nextRootFaceId = childOnPathFaceId;
+    }
+  } else {
+    if (previousParentFaceId === null) {
+      console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.already-parent-child", {
+        movedFaceId,
+        nextParentFaceId,
+        treePath,
+        reason: "root-cannot-be-reparented-to-its-own-ancestor-side",
+      });
+      return { ok: false, reason: "already-parent-child" };
+    }
+    if (!removeUndirectedEdge(nextTreeAdj, movedFaceId, previousParentFaceId)) {
+      console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.remove-moved-edge", {
+        movedFaceId,
+        previousParentFaceId,
+        treePath,
+      });
+      return { ok: false, reason: "invalid-parent-map" };
+    }
+    detachedEdges.push(`${movedFaceId}-${previousParentFaceId}`);
+    if (!addUndirectedEdge(nextTreeAdj, movedFaceId, nextParentFaceId)) {
+      console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.add-new-edge", {
+        movedFaceId,
+        nextParentFaceId,
+        treePath,
+      });
+      return { ok: false, reason: "invalid-parent-map" };
+    }
+    attachedEdges.push(`${movedFaceId}-${nextParentFaceId}`);
+  }
+
+  console.log(
+    formatReorderTraceLine("reorderGroupTree.next-tree-adj", {
+      movedFaceId,
+      nextParentFaceId,
+      detachedEdges,
+      attachedEdges,
+      nextRootFaceId,
+      selectedWFaceId,
+      selectedKFaceId,
+      treeAdj: formatTreeAdjacency(nextTreeAdj),
+    }),
+  );
+  const nextParentMap = orientTreeFromRoot(nextRootFaceId ?? nextParentFaceId, nextTreeAdj);
+  if (!nextParentMap || nextParentMap.get(movedFaceId) !== nextParentFaceId) {
+    console.error(
+      formatReorderTraceLine("reorderGroupTree.fail.tree-rebuild-failed", {
+        groupId,
+        movedFaceId,
+        nextParentFaceId,
+        currentRootFaceId,
+        nextRootFaceId,
+        treePath,
+        detachedEdges,
+        attachedEdges,
+        selectedWFaceId,
+        selectedKFaceId,
+        nextTreeAdj: formatTreeAdjacency(nextTreeAdj),
+        nextParentMap: nextParentMap ? formatParentMap(nextParentMap) : null,
+      }),
+    );
+    return { ok: false, reason: "tree-rebuild-failed" };
+  }
+
+  const previousFaces = [...g.faces];
+  g.treeParent = nextParentMap;
+  syncGroupFacesCache(g, previousFaces);
+  console.log(
+    formatReorderTraceLine("reorderGroupTree.success", {
+      nextRootFaceId,
+      movedFaceId,
+      previousParentFaceId,
+      nextParentFaceId,
+      facesCache: g.faces,
+      committedParentMap: formatParentMap(g.treeParent),
+      tree: formatTreeStructure(g.treeParent, g.faces),
+    }),
+  );
+  return {
+    ok: true,
+    movedFaceId,
+    previousParentFaceId,
+    nextParentFaceId,
+  };
 }
 
 export function rebuildGroupTree(groupId: number, faceAdjacency: Map<number, Set<number>>) {
@@ -306,7 +1086,8 @@ export function applyImportedGroups(
   imported: NonNullable<{
     id: number;
     color: string;
-    faces: number[];
+    treeParent?: [number, number | null][];
+    faces?: number[];
     name?: string;
     placeAngle?: number;
   }[]>,
@@ -340,7 +1121,17 @@ export function applyImportedGroups(
         placeAngle: typeof g.placeAngle === "number" ? g.placeAngle : 0,
       };
       groups.push(data);
-      g.faces.forEach((fid) => setFaceGroup(fid, g.id));
+
+      if (Array.isArray(g.treeParent) && g.treeParent.length > 0) {
+        data.treeParent = new Map<number, number | null>(g.treeParent);
+        data.faces = buildFacesCacheFromParentMap(data.treeParent, g.faces);
+        data.treeParent.forEach((_parentFaceId, faceId) => {
+          faceGroupMap.set(faceId, g.id);
+        });
+        return;
+      }
+
+      (g.faces ?? []).forEach((fid) => setFaceGroup(fid, g.id));
       rebuildGroupTree(g.id, faceAdjacency);
     });
 

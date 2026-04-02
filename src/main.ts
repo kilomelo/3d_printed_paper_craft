@@ -200,7 +200,7 @@ const applyProjectState = (snap: Snapshot) => {
   const state = snap.data;
   const importedGroups = state.groups.map((g) => ({
     id: g.id,
-    faces: Array.from(g.faces),
+    treeParent: Array.from(g.treeParent),
     color: typeof g.color === "number" ? `#${g.color.toString(16).padStart(6, "0")}` : g.color,
     name: g.name,
     placeAngle: g.placeAngle,
@@ -1249,6 +1249,16 @@ const renderer2d = createRenderer2D(() => {
   (canvas) => groupPreview.appendChild(canvas),
   () => { return groupController.getGroupPlaceAngle(groupController.getPreviewGroupId()) ?? 0; },
   groupController.updateCurrentGroupPlaceAngle,
+  (groupId, parentFaceId, movedFaceId) => {
+    console.log("[ReorderTrace][Main] renderer2d->groupController.reorderFaces", {
+      groupId,
+      parentFaceId,
+      movedFaceId,
+    });
+    const ok = groupController.reorderFaces(parentFaceId, movedFaceId, groupId);
+    console.log("[ReorderTrace][Main] groupController.reorderFaces return", { ok });
+    return ok;
+  },
 );
 const unfold2d = createUnfold2dManager(
   geometryContext.angleIndex,
@@ -1381,6 +1391,14 @@ appEventBus.on("groupFaceRemoved", ({ groupId }) => {
   groupUI.render(buildGroupUIState());
   setFileSaved(false);
   refreshExportDialogTriggerState();
+});
+appEventBus.on("groupTreeReordered", ({ groupId }) => {
+  console.log("[ReorderTrace][Main] on groupTreeReordered", { groupId });
+  groupUI.render(buildGroupUIState());
+  setFileSaved(false);
+  refreshExportDialogTriggerState();
+  previewMeshCacheManager.abandonCurrentActiveCaches(historyManager.getCurrentSnapshotUid() ?? -1);
+  refreshPreviewMeshCacheIndicator();
 });
 appEventBus.on("groupRemoved", () => {
   groupUI.render(buildGroupUIState());
