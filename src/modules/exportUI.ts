@@ -10,15 +10,19 @@ export type ExportUIRefs = {
   groupNameLabel: HTMLSpanElement;
   faceCountLabel: HTMLSpanElement;
   validGroupCountLabel: HTMLSpanElement;
+  threeMfCheckbox: HTMLInputElement;
   stlCheckbox: HTMLInputElement;
   stepCheckbox: HTMLInputElement;
   pngCheckbox: HTMLInputElement;
+  threeMfOption: HTMLDivElement;
   stlOption: HTMLDivElement;
   stepOption: HTMLDivElement;
   pngOption: HTMLDivElement;
+  threeMfFileTitle: HTMLSpanElement;
   stlFileTitle: HTMLSpanElement;
   stepFileTitle: HTMLSpanElement;
   pngFileTitle: HTMLSpanElement;
+  threeMfFileNameLabel: HTMLSpanElement;
   stlFileNameLabel: HTMLSpanElement;
   stepFileNameLabel: HTMLSpanElement;
   pngFileNameLabel: HTMLSpanElement;
@@ -27,6 +31,7 @@ export type ExportUIRefs = {
 };
 
 export type ExportOptions = {
+  export3mf: boolean;
   exportStl: boolean;
   exportStep: boolean;
   exportPng: boolean;
@@ -69,15 +74,19 @@ export function getExportUIRefs(): ExportUIRefs | null {
     groupNameLabel: get<HTMLSpanElement>("#export-group-name"),
     faceCountLabel: get<HTMLSpanElement>("#export-face-count"),
     validGroupCountLabel: get<HTMLSpanElement>("#export-valid-group-count"),
+    threeMfCheckbox: get<HTMLInputElement>("#export-3mf-checkbox"),
     stlCheckbox: get<HTMLInputElement>("#export-stl-checkbox"),
     stepCheckbox: get<HTMLInputElement>("#export-step-checkbox"),
     pngCheckbox: get<HTMLInputElement>("#export-png-checkbox"),
+    threeMfOption: get<HTMLDivElement>("#export-3mf-option"),
     stlOption: get<HTMLDivElement>("#export-stl-option"),
     stepOption: get<HTMLDivElement>("#export-step-option"),
     pngOption: get<HTMLDivElement>("#export-png-option"),
+    threeMfFileTitle: get<HTMLSpanElement>("#export-3mf-file-title"),
     stlFileTitle: get<HTMLSpanElement>("#export-stl-file-title"),
     stepFileTitle: get<HTMLSpanElement>("#export-step-file-title"),
     pngFileTitle: get<HTMLSpanElement>("#export-png-file-title"),
+    threeMfFileNameLabel: get<HTMLSpanElement>("#export-3mf-filename"),
     stlFileNameLabel: get<HTMLSpanElement>("#export-stl-filename"),
     stepFileNameLabel: get<HTMLSpanElement>("#export-step-filename"),
     pngFileNameLabel: get<HTMLSpanElement>("#export-png-filename"),
@@ -96,7 +105,8 @@ export function getExportUIRefs(): ExportUIRefs | null {
 
 const EXPORT_OPTIONS_STORAGE_KEY = "export_ui_options";
 const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
-  exportStl: true,
+  export3mf: true,
+  exportStl: false,
   exportStep: false,
   exportPng: false,
   exportAllGroups: false,
@@ -112,7 +122,11 @@ export function createExportUI(refs: ExportUIRefs, deps: ExportUIDeps): ExportUI
       const raw = localStorage.getItem(EXPORT_OPTIONS_STORAGE_KEY);
       if (!raw) return { ...DEFAULT_EXPORT_OPTIONS };
       const parsed = JSON.parse(raw) as Partial<ExportOptions>;
+      if (typeof parsed.export3mf !== "boolean") {
+        return { ...DEFAULT_EXPORT_OPTIONS };
+      }
       return {
+        export3mf: parsed.export3mf,
         exportStl: typeof parsed.exportStl === "boolean" ? parsed.exportStl : DEFAULT_EXPORT_OPTIONS.exportStl,
         exportStep: typeof parsed.exportStep === "boolean" ? parsed.exportStep : DEFAULT_EXPORT_OPTIONS.exportStep,
         exportPng: typeof parsed.exportPng === "boolean" ? parsed.exportPng : DEFAULT_EXPORT_OPTIONS.exportPng,
@@ -141,6 +155,7 @@ export function createExportUI(refs: ExportUIRefs, deps: ExportUIDeps): ExportUI
   const getSafeGroupName = (groupName: string) => groupName.replace(/[^a-zA-Z0-9一-龥]/g, "_");
 
   const getCurrentOptions = (): ExportOptions => ({
+    export3mf: refs.threeMfCheckbox.checked,
     exportStl: refs.stlCheckbox.checked,
     exportStep: refs.stepCheckbox.checked,
     exportPng: refs.pngCheckbox.checked,
@@ -148,12 +163,14 @@ export function createExportUI(refs: ExportUIRefs, deps: ExportUIDeps): ExportUI
   });
 
   const applyOptions = (options: ExportOptions) => {
+    refs.threeMfCheckbox.checked = options.export3mf;
     refs.stlCheckbox.checked = options.exportStl;
     refs.stepCheckbox.checked = options.exportStep;
     refs.pngCheckbox.checked = options.exportPng;
   };
 
   const syncOptionState = () => {
+    refs.threeMfOption.classList.toggle("is-selected", refs.threeMfCheckbox.checked);
     refs.stlOption.classList.toggle("is-selected", refs.stlCheckbox.checked);
     refs.stepOption.classList.toggle("is-selected", refs.stepCheckbox.checked);
     refs.pngOption.classList.toggle("is-selected", refs.pngCheckbox.checked);
@@ -173,9 +190,11 @@ export function createExportUI(refs: ExportUIRefs, deps: ExportUIDeps): ExportUI
 
     if (exportAll) {
       setTextWithTooltip(refs.validGroupCountLabel, String(openPayload.validGroupCount));
+      setTextWithTooltip(refs.threeMfFileTitle, deps.t("export.outputInfo"));
       setTextWithTooltip(refs.stlFileTitle, deps.t("export.outputInfo"));
       setTextWithTooltip(refs.stepFileTitle, deps.t("export.outputInfo"));
       setTextWithTooltip(refs.pngFileTitle, deps.t("export.outputInfo"));
+      setTextWithTooltip(refs.threeMfFileNameLabel, deps.t("export.batchFileHint.3mf", { count: openPayload.validGroupCount }));
       setTextWithTooltip(refs.stlFileNameLabel, deps.t("export.batchFileHint.stl", { count: openPayload.validGroupCount }));
       setTextWithTooltip(refs.stepFileNameLabel, deps.t("export.batchFileHint.step", { count: openPayload.validGroupCount }));
       setTextWithTooltip(refs.pngFileNameLabel, deps.t("export.batchFileHint.png", { count: openPayload.validGroupCount }));
@@ -184,9 +203,11 @@ export function createExportUI(refs: ExportUIRefs, deps: ExportUIDeps): ExportUI
       setTextWithTooltip(refs.groupNameLabel, openPayload.groupName);
       setTextWithTooltip(refs.faceCountLabel, String(openPayload.faceCount));
       const safeGroupName = getSafeGroupName(openPayload.groupName);
+      setTextWithTooltip(refs.threeMfFileTitle, deps.t("export.3mfFileName"));
       setTextWithTooltip(refs.stlFileTitle, deps.t("export.stlFileName"));
       setTextWithTooltip(refs.stepFileTitle, deps.t("export.stepFileName"));
       setTextWithTooltip(refs.pngFileTitle, deps.t("export.pngFileName"));
+      setTextWithTooltip(refs.threeMfFileNameLabel, `${openPayload.projectName}-${safeGroupName}.3mf`);
       setTextWithTooltip(refs.stlFileNameLabel, `${openPayload.projectName}-${safeGroupName}.stl`);
       setTextWithTooltip(refs.stepFileNameLabel, `${openPayload.projectName}-${safeGroupName}.step`);
       setTextWithTooltip(refs.pngFileNameLabel, `${openPayload.projectName}-${safeGroupName}.png`);
@@ -196,7 +217,7 @@ export function createExportUI(refs: ExportUIRefs, deps: ExportUIDeps): ExportUI
 
   const updateConfirmButton = () => {
     if (!openPayload) return;
-    const hasSelection = refs.stlCheckbox.checked || refs.stepCheckbox.checked || refs.pngCheckbox.checked;
+    const hasSelection = refs.threeMfCheckbox.checked || refs.stlCheckbox.checked || refs.stepCheckbox.checked || refs.pngCheckbox.checked;
     const canExportTarget = exportAllGroups || openPayload.currentGroupValid;
     refs.confirmBtn.disabled = !hasSelection || !canExportTarget;
     syncOptionState();
@@ -256,6 +277,7 @@ export function createExportUI(refs: ExportUIRefs, deps: ExportUIDeps): ExportUI
 
   refs.cancelBtn.addEventListener("click", handleCancel);
   refs.confirmBtn.addEventListener("click", handleExport);
+  refs.threeMfCheckbox.addEventListener("change", handleCheckboxChange);
   refs.stlCheckbox.addEventListener("change", handleCheckboxChange);
   refs.stepCheckbox.addEventListener("change", handleCheckboxChange);
   refs.pngCheckbox.addEventListener("change", handleCheckboxChange);
@@ -270,6 +292,7 @@ export function createExportUI(refs: ExportUIRefs, deps: ExportUIDeps): ExportUI
     dispose: () => {
       refs.cancelBtn.removeEventListener("click", handleCancel);
       refs.confirmBtn.removeEventListener("click", handleExport);
+      refs.threeMfCheckbox.removeEventListener("change", handleCheckboxChange);
       refs.stlCheckbox.removeEventListener("change", handleCheckboxChange);
       refs.stepCheckbox.removeEventListener("change", handleCheckboxChange);
       refs.pngCheckbox.removeEventListener("change", handleCheckboxChange);

@@ -36,11 +36,17 @@ export const renderSettingsOverlay = () => `
             </div>
             <div class="setting-row">
               <div class="setting-label-row">
-                <label for="setting-layer-height" class="setting-label" data-i18n="settings.layerHeight.label">打印层高</label>
-                <span class="setting-desc" data-i18n="settings.layerHeight.desc">实际打印时的层高设置，最大${limits.layerHeight.max}，单位mm</span>
+                <span class="setting-label" data-i18n="settings.layerHeight.label">打印层高</span>
+                <span class="setting-desc" data-i18n="settings.layerHeight.desc">实际打印时的层高设置，单位mm</span>
               </div>
               <div class="setting-field">
-                <input id="setting-layer-height" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <div class="settings-toggle-group settings-toggle-group-fifths">
+                  <button id="setting-layer-height-008" class="btn settings-inline-btn">0.08</button>
+                  <button id="setting-layer-height-012" class="btn settings-inline-btn">0.12</button>
+                  <button id="setting-layer-height-016" class="btn settings-inline-btn">0.16</button>
+                  <button id="setting-layer-height-020" class="btn settings-inline-btn">0.20</button>
+                  <button id="setting-layer-height-024" class="btn settings-inline-btn">0.24</button>
+                </div>
                 <button id="setting-layer-height-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
@@ -345,9 +351,21 @@ export const renderExportDialog = () => `
           </div>
 
           <div class="export-section export-options-section">
+            <div id="export-3mf-option" class="export-option-card is-selected">
+              <label for="export-3mf-checkbox" class="export-option-header">
+                <input type="checkbox" id="export-3mf-checkbox" class="export-row-checkbox export-checkbox-input" checked />
+                <span class="export-checkbox-visual" aria-hidden="true"></span>
+                <span class="export-option-label" data-i18n="export.export3mf">导出 3MF</span>
+              </label>
+              <div class="export-row export-file-row">
+                <span id="export-3mf-file-title" class="export-row-title" data-i18n="export.3mfFileName">3MF 文件名</span>
+                <span id="export-3mf-filename" class="export-row-info export-truncate"></span>
+              </div>
+            </div>
+
             <div id="export-stl-option" class="export-option-card is-selected">
               <label for="export-stl-checkbox" class="export-option-header">
-                <input type="checkbox" id="export-stl-checkbox" class="export-row-checkbox export-checkbox-input" checked />
+                <input type="checkbox" id="export-stl-checkbox" class="export-row-checkbox export-checkbox-input" />
                 <span class="export-checkbox-visual" aria-hidden="true"></span>
                 <span class="export-option-label" data-i18n="export.exportStl">导出 STL</span>
               </label>

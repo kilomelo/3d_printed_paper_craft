@@ -64,7 +64,7 @@ import { importSettings, getSettings, resetSettings, applySettings } from "./mod
 import { createOperationHints } from "./modules/operationHints";
 import { createPreviewMeshCacheManager } from "./modules/previewMeshCache";
 import { bindHistorySystem } from "./modules/historyBindings";
-import { bindGroupPreviewActions, createExportCallback } from "./modules/groupPreviewActions";
+import { bindGroupOutputActions, createGroupExportCallback } from "./modules/groupOutputActions";
 import { getLuminaLayersRefs, createLuminaLayersTool } from "./modules/luminaLayers/luminaLayersTool";
 import { downloadBlob } from "./modules/gifRecorder";
 import { loadHomeChangelog } from "./modules/homeChangelog";
@@ -616,7 +616,7 @@ if (!exportRefs) {
 }
 
 // 创建导出回调函数
-const exportCallback = createExportCallback({
+const exportCallback = createGroupExportCallback({
   getPreviewGroupId: () => groupController.getPreviewGroupId(),
   getExportableGroupIds,
   getPreviewGroupName: (groupId) => groupController.getGroupName(groupId),
@@ -1546,9 +1546,9 @@ document.addEventListener("keydown", (e) => {
     }
   }
 });
-bindGroupPreviewActions({
+bindGroupOutputActions({
   exportGroupStlBtn: null as any,
-  previewGroupModelBtn,
+  previewModelBtn: previewGroupModelBtn,
   validateGroupOutputAccess: () => !!validateCurrentGroupForExportDialogs(),
   getPreviewGroupId: () => groupController.getPreviewGroupId(),
   getPreviewGroupName: (groupId) => groupController.getGroupName(groupId),

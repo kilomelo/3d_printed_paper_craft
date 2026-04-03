@@ -54,7 +54,11 @@ export type SettingsUIRefs = {
   wireframeThicknessInput: HTMLInputElement;
   wireframeThicknessResetBtn: HTMLButtonElement;
   wireframeRow: HTMLDivElement;
-  layerHeightInput: HTMLInputElement;
+  layerHeight008Btn: HTMLButtonElement;
+  layerHeight012Btn: HTMLButtonElement;
+  layerHeight016Btn: HTMLButtonElement;
+  layerHeight020Btn: HTMLButtonElement;
+  layerHeight024Btn: HTMLButtonElement;
   layerHeightResetBtn: HTMLButtonElement;
   luminaLayersTotalHeightInput: HTMLInputElement;
   luminaLayersTotalHeightResetBtn: HTMLButtonElement;
@@ -136,7 +140,11 @@ export function getSettingsUIRefs(): SettingsUIRefs | null {
     wireframeThicknessInput: get<HTMLInputElement>("#setting-wireframe-thickness"),
     wireframeThicknessResetBtn: get<HTMLButtonElement>("#setting-wireframe-thickness-reset"),
     wireframeRow: get<HTMLDivElement>("#setting-wireframe-row"),
-    layerHeightInput: get<HTMLInputElement>("#setting-layer-height"),
+    layerHeight008Btn: get<HTMLButtonElement>("#setting-layer-height-008"),
+    layerHeight012Btn: get<HTMLButtonElement>("#setting-layer-height-012"),
+    layerHeight016Btn: get<HTMLButtonElement>("#setting-layer-height-016"),
+    layerHeight020Btn: get<HTMLButtonElement>("#setting-layer-height-020"),
+    layerHeight024Btn: get<HTMLButtonElement>("#setting-layer-height-024"),
     layerHeightResetBtn: get<HTMLButtonElement>("#setting-layer-height-reset"),
     luminaLayersTotalHeightInput: get<HTMLInputElement>("#setting-lumina-layers-total-height"),
     luminaLayersTotalHeightResetBtn: get<HTMLButtonElement>("#setting-lumina-layers-total-height-reset"),
@@ -235,6 +243,14 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.generatedTextureResolution4096Btn.classList.toggle("active", settingsDraft.generatedTextureResolution === 4096);
   };
 
+  const updateLayerHeightButtons = () => {
+    refs.layerHeight008Btn.classList.toggle("active", settingsDraft.layerHeight === 0.08);
+    refs.layerHeight012Btn.classList.toggle("active", settingsDraft.layerHeight === 0.12);
+    refs.layerHeight016Btn.classList.toggle("active", settingsDraft.layerHeight === 0.16);
+    refs.layerHeight020Btn.classList.toggle("active", settingsDraft.layerHeight === 0.2);
+    refs.layerHeight024Btn.classList.toggle("active", settingsDraft.layerHeight === 0.24);
+  };
+
   const updateWireframeEnabled = () => {
     const enabled = settingsDraft.hollowStyle;
     refs.wireframeThicknessInput.disabled = !enabled;
@@ -259,7 +275,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     setRowModified(refs.clawRadiusAdaptiveOffBtn, settingsDraft.clawRadiusAdaptive !== defaults.clawRadiusAdaptive);
     setRowModified(refs.clawWidthInput, settingsDraft.clawWidth !== defaults.clawWidth);
     setRowModified(refs.clawFitGapInput, settingsDraft.clawFitGap !== defaults.clawFitGap);
-    setRowModified(refs.layerHeightInput, settingsDraft.layerHeight !== defaults.layerHeight);
+    setRowModified(refs.layerHeight008Btn, settingsDraft.layerHeight !== defaults.layerHeight);
     setRowModified(
       refs.luminaLayersTotalHeightInput,
       settingsDraft.luminaLayersTotalHeight !== defaults.luminaLayersTotalHeight,
@@ -371,7 +387,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     tabThickness: (val: number) =>
       !Number.isNaN(val) && val >= SETTINGS_LIMITS.tabThickness.min && val <= SETTINGS_LIMITS.tabThickness.max,
     layerHeight: (val: number) =>
-      !Number.isNaN(val) && val > SETTINGS_LIMITS.layerHeight.min && val <= SETTINGS_LIMITS.layerHeight.max,
+      !Number.isNaN(val) && SETTINGS_LIMITS.layerHeight.allowed.includes(val as (typeof SETTINGS_LIMITS.layerHeight.allowed)[number]),
     luminaLayersTotalHeight: (val: number) =>
       !Number.isNaN(val) &&
       val >= SETTINGS_LIMITS.luminaLayersTotalHeight.min &&
@@ -415,7 +431,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.clawWidthInput.value = String(settingsDraft.clawWidth);
     refs.clawFitGapInput.value = String(settingsDraft.clawFitGap);
     refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
-    refs.layerHeightInput.value = String(settingsDraft.layerHeight);
+    updateLayerHeightButtons();
     refs.luminaLayersTotalHeightInput.value = String(settingsDraft.luminaLayersTotalHeight);
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
     refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
@@ -430,7 +446,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateGeneratedTextureResolutionButtons();
     updateHollowButtons();
     updateWireframeEnabled();
-    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterlockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.clawFitGapInput, refs.layerHeightInput, refs.luminaLayersTotalHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
+    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterlockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.clawFitGapInput, refs.luminaLayersTotalHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
       updateInputColor(el, true),
     );
     updateModifiedIndicators();
@@ -559,6 +575,36 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
   refs.generatedTextureResolutionResetBtn.addEventListener("click", () => {
     settingsDraft.generatedTextureResolution = getDefaultSettings().generatedTextureResolution;
     updateGeneratedTextureResolutionButtons();
+    updateModifiedIndicators();
+  });
+  refs.layerHeight008Btn.addEventListener("click", () => {
+    settingsDraft.layerHeight = 0.08;
+    updateLayerHeightButtons();
+    updateModifiedIndicators();
+  });
+  refs.layerHeight012Btn.addEventListener("click", () => {
+    settingsDraft.layerHeight = 0.12;
+    updateLayerHeightButtons();
+    updateModifiedIndicators();
+  });
+  refs.layerHeight016Btn.addEventListener("click", () => {
+    settingsDraft.layerHeight = 0.16;
+    updateLayerHeightButtons();
+    updateModifiedIndicators();
+  });
+  refs.layerHeight020Btn.addEventListener("click", () => {
+    settingsDraft.layerHeight = 0.2;
+    updateLayerHeightButtons();
+    updateModifiedIndicators();
+  });
+  refs.layerHeight024Btn.addEventListener("click", () => {
+    settingsDraft.layerHeight = 0.24;
+    updateLayerHeightButtons();
+    updateModifiedIndicators();
+  });
+  refs.layerHeightResetBtn.addEventListener("click", () => {
+    settingsDraft.layerHeight = getDefaultSettings().layerHeight;
+    updateLayerHeightButtons();
     updateModifiedIndicators();
   });
   refs.clawRadiusAdaptiveOffBtn.addEventListener("click", () => {
@@ -693,15 +739,6 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     () => getDefaultSettings().clawFitGap,
   );
   bindNumericInput(
-    refs.layerHeightInput,
-    refs.layerHeightResetBtn,
-    (raw) => parseFloat(raw),
-    () => settingsDraft.layerHeight,
-    (v) => (settingsDraft.layerHeight = v),
-    validators.layerHeight,
-    () => getDefaultSettings().layerHeight,
-  );
-  bindNumericInput(
     refs.luminaLayersTotalHeightInput,
     refs.luminaLayersTotalHeightResetBtn,
     (raw) => parseFloat(raw),
@@ -780,7 +817,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateClawRadiusAdaptiveButtons();
     refs.clawWidthInput.value = String(settingsDraft.clawWidth);
     refs.clawFitGapInput.value = String(settingsDraft.clawFitGap);
-    refs.layerHeightInput.value = String(settingsDraft.layerHeight);
+    updateLayerHeightButtons();
     refs.luminaLayersTotalHeightInput.value = String(settingsDraft.luminaLayersTotalHeight);
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
     refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
@@ -795,7 +832,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateTextureFlipYButtons();
     updateGeneratedTextureResolutionButtons();
     updateHollowButtons();
-    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterlockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.clawFitGapInput, refs.layerHeightInput, refs.luminaLayersTotalHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
+    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterlockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.clawFitGapInput, refs.luminaLayersTotalHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
       updateInputColor(el, true),
     );
     updateModifiedIndicators();
@@ -925,7 +962,7 @@ export function applySettingsI18n() {
     }
   };
 
-  updateDesc('[data-i18n="settings.layerHeight.desc"]', "settings.layerHeight.desc", { max: limits.layerHeight.max });
+  updateDesc('[data-i18n="settings.layerHeight.desc"]', "settings.layerHeight.desc");
   updateDesc('[data-i18n="settings.luminaLayersTotalHeight.desc"]', "settings.luminaLayersTotalHeight.desc");
   updateDesc('[data-i18n="settings.connectionLayers.desc"]', "settings.connectionLayers.desc", { min: limits.connectionLayers.min, max: limits.connectionLayers.max });
   updateDesc('[data-i18n="settings.bodyLayers.desc"]', "settings.bodyLayers.desc", { min: limits.bodyLayers.min, max: limits.bodyLayers.max });

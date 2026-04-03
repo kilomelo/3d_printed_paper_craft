@@ -28,7 +28,7 @@ export type Settings = {
 
 export const SETTINGS_LIMITS = {
   scale: { min: 0 },
-  layerHeight: { min: 0, max: 0.5 },
+  layerHeight: { allowed: [0.08, 0.12, 0.16, 0.2, 0.24] as const },
   luminaLayersTotalHeight: { min: 0.4, max: 0.6 },
   includeTextureInProject: { allowed: ["include", "exclude"] as const },
   textureColorSpace: { allowed: ["srgb", "linear"] as const },
@@ -91,12 +91,7 @@ export function setJoinType(val: Settings["joinType"]) {
 }
 
 export function setLayerHeight(val: number) {
-  if (
-    Number.isNaN(val) ||
-    val <= SETTINGS_LIMITS.layerHeight.min ||
-    val > SETTINGS_LIMITS.layerHeight.max
-  )
-    return;
+  if (Number.isNaN(val) || !SETTINGS_LIMITS.layerHeight.allowed.includes(val as (typeof SETTINGS_LIMITS.layerHeight.allowed)[number])) return;
   current = { ...current, layerHeight: val };
 }
 
@@ -317,7 +312,10 @@ const sanitizeImportedSettings = (imported: Partial<Record<keyof Settings, unkno
   }
   const layerHeight = readFiniteNumber(imported.layerHeight);
   if (layerHeight != null) {
-    next.layerHeight = clamp(layerHeight, Number.EPSILON, SETTINGS_LIMITS.layerHeight.max);
+    const matchedLayerHeight = SETTINGS_LIMITS.layerHeight.allowed.find((allowed) => Math.abs(allowed - layerHeight) < 1e-9);
+    if (matchedLayerHeight !== undefined) {
+      next.layerHeight = matchedLayerHeight;
+    }
   }
   const luminaLayersTotalHeight = readFiniteNumber(imported.luminaLayersTotalHeight);
   if (luminaLayersTotalHeight != null) {

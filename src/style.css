@@ -1203,6 +1203,16 @@ textarea {
   flex: 1;
 }
 
+.settings-toggle-group-fifths {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.settings-toggle-group-fifths .settings-inline-btn {
+  min-width: 0;
+  width: 100%;
+}
+
 .settings-toggle-group .active {
   background: var(--panel-muted);
   color: var(--text);

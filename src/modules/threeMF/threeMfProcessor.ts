@@ -61,7 +61,20 @@ export { downloadBlob, meshDataFromBufferGeometry } from "./threeMfHelper";
 const RELS_PATH = "_rels/.rels";
 const START_PART_REL_TYPE = "http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel";
 const MODEL_SETTINGS_CONFIG_PATH = "Metadata/model_settings.config";
+const PROJECT_SETTINGS_CONFIG_PATH = "Metadata/project_settings.config";
 const LAYER_CONFIG_RANGES_PATH = "Metadata/layer_config_ranges.xml";
+
+const SUPPORTED_PROJECT_SETTING_KEYS = [
+  "bottom_surface_pattern",
+] as const;
+
+const PROJECT_SETTING_DEFAULT_VALUE_BY_KEY = {
+  bottom_surface_pattern: "monotonic",
+} as const;
+
+export type SupportedProjectSettingKey = typeof SUPPORTED_PROJECT_SETTING_KEYS[number];
+
+export type ProjectSettingsPatch = Partial<Record<SupportedProjectSettingKey, string>>;
 
 export type ThreeMfProcessor = (ctx: ThreeMfDocument) => void | Promise<void>;
 
@@ -162,6 +175,13 @@ export type CompositeChildrenUnionBoundingBoxOptions = {
   includeBuildItemTransform?: boolean;
 };
 
+export type CenterSingleBuildItemOnPrintableAreaOptions = {
+  /**
+   * 默认 true：只移动 XY，保留当前 Z 平移。
+   */
+  preserveZTranslation?: boolean;
+};
+
 export type HeightRangeModifierOptions = {
   minZ: number;
   maxZ: number;
@@ -178,6 +198,7 @@ export class ThreeMfDocument {
     private readonly modelParts: Map<string, XmlDocEntry>,
     private readonly primaryModelPath: string | null,
     private readonly modelSettingsDoc: XMLDocument | null,
+    private readonly projectSettingsConfig: Record<string, unknown> | null,
   ) {}
 
   static async from(input: File | Blob | ArrayBuffer | Uint8Array): Promise<ThreeMfDocument> {
@@ -191,7 +212,8 @@ export class ThreeMfDocument {
     }
 
     const modelSettingsDoc = await ThreeMfDocument.loadOptionalXml(zip, MODEL_SETTINGS_CONFIG_PATH);
-    return new ThreeMfDocument(zip, modelParts, primaryModelPath, modelSettingsDoc);
+    const projectSettingsConfig = await ThreeMfDocument.loadOptionalJsonObject(zip, PROJECT_SETTINGS_CONFIG_PATH);
+    return new ThreeMfDocument(zip, modelParts, primaryModelPath, modelSettingsDoc, projectSettingsConfig);
   }
 
   private static async loadOptionalXml(zip: JSZip, path: string): Promise<XMLDocument | null> {
@@ -199,6 +221,20 @@ export class ThreeMfDocument {
     if (!file) return null;
     const text = await file.async("string");
     return parseXml(text, path);
+  }
+
+  private static async loadOptionalJsonObject(
+    zip: JSZip,
+    path: string,
+  ): Promise<Record<string, unknown> | null> {
+    const file = zip.file(path);
+    if (!file) return null;
+    const text = await file.async("string");
+    const parsed = JSON.parse(text) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error(`${path} 不是有效的 JSON 对象`);
+    }
+    return parsed as Record<string, unknown>;
   }
 
   private static async findPrimaryModelPath(zip: JSZip): Promise<string | null> {
@@ -270,6 +306,10 @@ export class ThreeMfDocument {
 
   getModelSettingsXml(): XMLDocument | null {
     return this.modelSettingsDoc;
+  }
+
+  getProjectSettingsConfig(): Record<string, unknown> | null {
+    return this.projectSettingsConfig;
   }
 
   /**
@@ -349,7 +389,7 @@ export class ThreeMfDocument {
     return this;
   }
 
-    private async getOrCreateLayerConfigRangesDoc(): Promise<XMLDocument> {
+  private async getOrCreateLayerConfigRangesDoc(): Promise<XMLDocument> {
     const cached = getCachedLayerConfigRangesDoc(this);
     if (cached) return cached;
 
@@ -368,6 +408,96 @@ export class ThreeMfDocument {
 
     setCachedLayerConfigRangesDoc(this, doc);
     return doc;
+  }
+
+  /**
+   * 修改 Metadata/project_settings.config 中少量已验证过的切片参数。
+   * 注意：这里不尝试做通用 key/value 写入，只允许白名单字段，
+   * 且每个字段都走单独的已验证逻辑。
+   */
+  setProjectSettings(patch: ProjectSettingsPatch): this {
+    if (!this.projectSettingsConfig) {
+      throw new Error(`未找到 ${PROJECT_SETTINGS_CONFIG_PATH}，无法修改切片参数`);
+    }
+
+    for (const [rawKey, rawValue] of Object.entries(patch)) {
+      if (rawValue === undefined) continue;
+      if (!isSupportedProjectSettingKey(rawKey)) {
+        throw new Error(`不支持修改 3MF 切片参数: ${rawKey}`);
+      }
+      applyProjectSettingPatch(this.projectSettingsConfig, rawKey, String(rawValue));
+    }
+
+    return this;
+  }
+
+  /**
+   * 将主 model 中唯一 build/item 对应的模型居中到 printable_area 的包围盒中心。
+   * 这只改 build/item 的 transform，不改 mesh 顶点。
+   */
+  centerSingleBuildItemOnPrintableArea(
+    options: CenterSingleBuildItemOnPrintableAreaOptions = {},
+  ): this {
+    if (!this.projectSettingsConfig) {
+      throw new Error(`未找到 ${PROJECT_SETTINGS_CONFIG_PATH}，无法读取打印盘尺寸`);
+    }
+    if (!this.primaryModelPath) {
+      throw new Error("未找到主 model part，无法居中 build item");
+    }
+
+    const primaryEntry = this.modelParts.get(normalizeZipPath(this.primaryModelPath));
+    if (!primaryEntry) {
+      throw new Error(`主 model part 不存在：${this.primaryModelPath}`);
+    }
+
+    const printableAreaCenter = getPrintableAreaCenter(this.projectSettingsConfig);
+    const primaryDoc = primaryEntry.doc;
+    const rootObjects = getElementsByLocalName(primaryDoc, "object");
+    const buildItems = getElementsByLocalName(primaryDoc, "item");
+
+    if (rootObjects.length !== 1 || buildItems.length !== 1) {
+      throw new Error(
+        `预期主 model 中只有 1 个 object 和 1 个 build/item，实际 object=${rootObjects.length}, item=${buildItems.length}`,
+      );
+    }
+
+    const buildItem = buildItems[0];
+    const objectId = (buildItem.getAttribute("objectid") ?? "").trim();
+    if (!objectId) {
+      throw new Error("build/item 缺少 objectid");
+    }
+
+    const objectEl =
+      rootObjects.find((obj) => (obj.getAttribute("id") ?? "").trim() === objectId) ?? null;
+    if (!objectEl) {
+      throw new Error(`未找到 build/item 引用的 object: ${objectId}`);
+    }
+
+    const objectBBox = computeObjectBoundingBoxRecursive(
+      objectEl,
+      normalizeZipPath(this.primaryModelPath),
+      this.modelParts,
+    );
+    if (!objectBBox) {
+      throw new Error(`无法计算 object ${objectId} 的包围盒`);
+    }
+
+    const currentTransform = getTransform12OrIdentity(
+      buildItem.getAttribute("transform"),
+      `build/item objectid=${objectId}`,
+    );
+    const transformedBBox = toPublicBoundingBox(transformBoundingBox(objectBBox, currentTransform));
+    const deltaX = printableAreaCenter.x - transformedBBox.center.x;
+    const deltaY = printableAreaCenter.y - transformedBBox.center.y;
+    const nextTransform = [...currentTransform];
+    nextTransform[9] += deltaX;
+    nextTransform[10] += deltaY;
+    if (!(options.preserveZTranslation ?? true)) {
+      nextTransform[11] = 0;
+    }
+    buildItem.setAttribute("transform", formatTransform12(nextTransform));
+
+    return this;
   }
 
   /**
@@ -468,7 +598,6 @@ export class ThreeMfDocument {
       objectEl.appendChild(rangeEl);
     }
 
-    // 直接回写到 zip，避免你去改现有 flushXmlBackToZip 的签名/字段
     this.zip.file(LAYER_CONFIG_RANGES_PATH, serializeXml(layerDoc));
 
     return this;
@@ -824,6 +953,18 @@ export class ThreeMfDocument {
       async (ctx) => {
         await ctx.addHeightRangeModifier(options);
       },
+
+    centerSingleBuildItemOnPrintableArea:
+      (options: CenterSingleBuildItemOnPrintableAreaOptions = {}): ThreeMfProcessor =>
+      async (ctx) => {
+        ctx.centerSingleBuildItemOnPrintableArea(options);
+      },
+
+    setProjectSettings:
+      (patch: ProjectSettingsPatch): ThreeMfProcessor =>
+      async (ctx) => {
+        ctx.setProjectSettings(patch);
+      },
   };
 
   private scaleTransformAttribute(element: Element, xFactor: number, yFactor: number, zFactor: number) {
@@ -870,6 +1011,12 @@ export class ThreeMfDocument {
     if (this.modelSettingsDoc) {
       this.zip.file(MODEL_SETTINGS_CONFIG_PATH, serializeXml(this.modelSettingsDoc));
     }
+    if (this.projectSettingsConfig) {
+      this.zip.file(
+        PROJECT_SETTINGS_CONFIG_PATH,
+        `${JSON.stringify(this.projectSettingsConfig, null, 4)}\n`,
+      );
+    }
   }
 }
 
@@ -913,4 +1060,88 @@ export async function getCompositeChildrenUnionBoundingBoxFrom3mf(
 ): Promise<ThreeMfBoundingBox> {
   const doc = await parseThreeMf(input);
   return doc.getCompositeChildrenUnionBoundingBox(options);
+}
+
+function isSupportedProjectSettingKey(value: string): value is SupportedProjectSettingKey {
+  return (SUPPORTED_PROJECT_SETTING_KEYS as readonly string[]).includes(value);
+}
+
+function applyProjectSettingPatch(
+  projectSettingsConfig: Record<string, unknown>,
+  key: SupportedProjectSettingKey,
+  value: string,
+) {
+  switch (key) {
+    case "bottom_surface_pattern":
+      projectSettingsConfig.bottom_surface_pattern = value;
+      syncDifferentSettingsToSystem(projectSettingsConfig, key, value !== PROJECT_SETTING_DEFAULT_VALUE_BY_KEY[key]);
+      return;
+    default: {
+      const unreachable: never = key;
+      throw new Error(`未处理的 3MF 切片参数: ${unreachable}`);
+    }
+  }
+}
+
+function syncDifferentSettingsToSystem(
+  projectSettingsConfig: Record<string, unknown>,
+  key: SupportedProjectSettingKey,
+  isDifferentFromSystem: boolean,
+) {
+  const current = projectSettingsConfig.different_settings_to_system;
+  const normalized = Array.isArray(current)
+    ? current.map((item) => (typeof item === "string" ? item : ""))
+    : [""];
+
+  while (normalized.length < 1) {
+    normalized.push("");
+  }
+
+  const firstEntryItems = normalized[0]
+    .split(";")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const itemSet = new Set(firstEntryItems);
+
+  if (isDifferentFromSystem) {
+    itemSet.add(key);
+  } else {
+    itemSet.delete(key);
+  }
+
+  normalized[0] = Array.from(itemSet).join(";");
+  projectSettingsConfig.different_settings_to_system = normalized;
+}
+
+function getPrintableAreaCenter(projectSettingsConfig: Record<string, unknown>) {
+  const printableArea = projectSettingsConfig.printable_area;
+  if (!Array.isArray(printableArea) || printableArea.length === 0) {
+    throw new Error("project_settings.config 缺少 printable_area");
+  }
+
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+
+  for (const rawPoint of printableArea) {
+    if (typeof rawPoint !== "string") continue;
+    const [rawX, rawY] = rawPoint.split("x");
+    const x = Number(rawX);
+    const y = Number(rawY);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+
+  if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+    throw new Error("project_settings.config 中的 printable_area 非法");
+  }
+
+  return {
+    x: (minX + maxX) * 0.5,
+    y: (minY + maxY) * 0.5,
+  };
 }
