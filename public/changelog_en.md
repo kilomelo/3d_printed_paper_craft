@@ -1,3 +1,10 @@
+## v1.2.1.0 | 2026-04-03
+- Added: A reorder operation for unfolded groups, allowing face connections to be adjusted directly in the 2D view.
+- Added: 3MF export for unfolded groups.
+- Added: One-click export for all unfolded groups.
+- Improved: The print layer height setting now uses fixed presets.
+- Fixed: Abnormal polyline rendering in the unfolded group preview.
+
 ## v1.2.0.0 | 2026-03-29
 - Added: Texture import, generation, preview, and a texture editing mode.
 - Added: A multi-color tool with support for Lumina-Layers.

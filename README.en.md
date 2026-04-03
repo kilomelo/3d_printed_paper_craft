@@ -6,7 +6,7 @@ Convert low-poly 3D models into **papercraft-style structural models that can be
 
 - Live site: https://3dppc.kilomelo.com
 - Demo video (YouTube): https://www.youtube.com/watch?v=kpObT-4yojI
-- Current version: `v1.2.0.0`
+- Current version: `v1.2.1.0`
 
 ---
 
