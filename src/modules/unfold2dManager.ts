@@ -274,7 +274,7 @@ export function createUnfold2dManager(
     intersected?: boolean;
   };
 
-  const buildSnappedTris = (groupId: number, force: boolean = false): SnappedTri[] => {
+  const buildSnappedTris = (groupId: number, force: boolean = false, suppressLog: boolean = false): SnappedTri[] => {
     if (cachedSnapped?.groupId === groupId && cachedSnapped && !force) {
       return cachedSnapped.tris;
     }
@@ -364,7 +364,7 @@ export function createUnfold2dManager(
     });
     if (!tris.length) return [];
     groupIntersected.set(groupId, hasIntersect);
-    if (hasIntersect) {
+    if (hasIntersect && !suppressLog) {
       log(t("log.group.selfIntersectTri"), "error");
     }
     cachedSnapped = { groupId, tris };
@@ -1534,8 +1534,8 @@ export function createUnfold2dManager(
     getGroupPolygonsData,
     getEdges2D: () => groupEdgesCache,
     getLastBounds,
-    hasGroupIntersection: (groupId: number) => {
-      buildSnappedTris(groupId);
+    hasGroupIntersection: (groupId: number, options?: { suppressLog?: boolean }) => {
+      buildSnappedTris(groupId, false, options?.suppressLog ?? false);
       return groupIntersected.get(groupId) ?? false;
     },
     updateMeshMaterial,

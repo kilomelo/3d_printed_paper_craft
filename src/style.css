@@ -932,6 +932,44 @@ textarea {
   gap: 12px;
 }
 
+.export-mode-section {
+  gap: 0;
+}
+
+.export-mode-toggle {
+  display: flex;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.02));
+}
+
+.export-mode-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, opacity 0.18s ease;
+}
+
+.export-mode-btn.is-active {
+  background: rgba(22, 178, 255, 0.2);
+  color: #fff7ed;
+}
+
+.export-mode-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .export-meta-section {
   padding: 14px 16px;
   border: 1px solid var(--border);

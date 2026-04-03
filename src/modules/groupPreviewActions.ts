@@ -172,14 +172,16 @@ export type ExportOptions = {
   exportStl: boolean;
   exportStep: boolean;
   exportPng: boolean;
+  exportAllGroups: boolean;
 };
 
 // 导出回调函数类型
-export type ExportCallback = (options: ExportOptions) => void;
+export type ExportCallback = (options: ExportOptions) => void | Promise<void>;
 
 // 创建导出回调函数
 export function createExportCallback(opts: {
   getPreviewGroupId: () => number;
+  getExportableGroupIds: () => number[];
   getPreviewGroupName: (groupId: number) => string | undefined;
   getProjectName: () => string;
   getCurrentHistoryUid: () => number;
@@ -190,6 +192,7 @@ export function createExportCallback(opts: {
   onPreviewMeshCacheMutated?: () => void;
   getTexture: () => THREE.Texture | null;
   getGroupFaceUVs: (groupId: number) => GroupTextureOptions["faceUVs"];
+  setBatchExportBusy?: (busy: boolean) => void;
   log: (msg: string | number, tone?: "info" | "success" | "error" | "progress") => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }): ExportCallback {
@@ -239,8 +242,7 @@ export function createExportCallback(opts: {
     opts.log(opts.t("log.export.stl.success", { fileName: `${projectName}-${groupName}.stl` }), "success");
   }
 
-  return async (options: ExportOptions) => {
-    const targetGroupId = opts.getPreviewGroupId();
+  async function exportGroupById(targetGroupId: number, options: ExportOptions) {
     if (opts.hasGroupIntersection(targetGroupId)) {
       opts.log(opts.t("log.export.selfIntersect"), "error");
       return;
@@ -302,20 +304,47 @@ export function createExportCallback(opts: {
 
     // 导出 PNG
     if (options.exportPng) {
-      const projectName = opts.getProjectName() || "未命名工程";
-      const texture = opts.getTexture();
-      const faceUVs = opts.getGroupFaceUVs(targetGroupId);
-      const groupAngle = opts.getGroupPlaceAngle(targetGroupId);
+      try {
+        const projectName = opts.getProjectName() || "未命名工程";
+        const texture = opts.getTexture();
+        const faceUVs = opts.getGroupFaceUVs(targetGroupId);
+        const groupAngle = opts.getGroupPlaceAngle(targetGroupId);
 
-      // 调用 textureManager 的生成函数
-      const pngBlob = await generateGroupTexture({
-        polygons: polygonsWithAngles,
-        faceUVs,
-        texture,
-        groupAngle,
-      });
-      downloadBlob(pngBlob, `${projectName}-${groupName}.png`);
-      opts.log(opts.t("log.export.png.success", { fileName: `${projectName}-${groupName}.png` }), "success");
+        const pngBlob = await generateGroupTexture({
+          polygons: polygonsWithAngles,
+          faceUVs,
+          texture,
+          groupAngle,
+        });
+        downloadBlob(pngBlob, `${projectName}-${groupName}.png`);
+        opts.log(opts.t("log.export.png.success", { fileName: `${projectName}-${groupName}.png` }), "success");
+      } catch (error) {
+        console.error("[GroupPreviewActions] Failed to export PNG", error);
+        opts.log(opts.t("log.export.png.fail"), "error");
+      }
     }
+  }
+
+  return async (options: ExportOptions) => {
+    if (options.exportAllGroups) {
+      const targetGroupIds = opts.getExportableGroupIds();
+      if (!targetGroupIds.length) {
+        opts.log(opts.t("log.export.noValidGroups"), "error");
+        return;
+      }
+
+      opts.setBatchExportBusy?.(true);
+      try {
+        for (let index = 0; index < targetGroupIds.length; index++) {
+          await exportGroupById(targetGroupIds[index], options);
+          opts.log(opts.t("log.export.batch.progress", { current: index + 1, total: targetGroupIds.length }), "info");
+        }
+      } finally {
+        opts.setBatchExportBusy?.(false);
+      }
+      return;
+    }
+
+    await exportGroupById(opts.getPreviewGroupId(), options);
   };
 }

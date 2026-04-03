@@ -319,18 +319,28 @@ export const renderExportDialog = () => `
   <div id="export-overlay" class="settings-overlay hidden">
     <div class="settings-modal export-modal">
       <div class="settings-header">
-        <div class="settings-title" data-i18n="export.title">导出展开组</div>
+        <div id="export-title" class="settings-title" data-i18n="export.title">导出展开组</div>
       </div>
       <div class="settings-body export-body">
         <div class="export-content">
+          <div class="export-section export-mode-section">
+            <div class="export-mode-toggle" role="tablist" aria-label="Export mode">
+              <button id="export-current-mode-btn" type="button" class="export-mode-btn is-active" data-i18n="export.title.current">导出当前展开组</button>
+              <button id="export-all-mode-btn" type="button" class="export-mode-btn" data-i18n="export.title.all">导出所有展开组</button>
+            </div>
+          </div>
           <div class="export-section export-meta-section">
-            <div class="export-row export-meta-row">
+            <div id="export-group-name-row" class="export-row export-meta-row">
               <span class="export-row-title" data-i18n="export.groupName">展开组名称</span>
               <span id="export-group-name" class="export-row-info export-truncate"></span>
             </div>
-            <div class="export-row export-meta-row">
+            <div id="export-face-count-row" class="export-row export-meta-row">
               <span class="export-row-title" data-i18n="export.faceCount">展开组面数</span>
               <span id="export-face-count" class="export-row-info export-row-info-strong"></span>
+            </div>
+            <div id="export-valid-group-count-row" class="export-row export-meta-row hidden">
+              <span class="export-row-title" data-i18n="export.validGroupCount">有效展开组个数</span>
+              <span id="export-valid-group-count" class="export-row-info export-row-info-strong"></span>
             </div>
           </div>
 
@@ -342,7 +352,7 @@ export const renderExportDialog = () => `
                 <span class="export-option-label" data-i18n="export.exportStl">导出 STL</span>
               </label>
               <div class="export-row export-file-row">
-                <span class="export-row-title" data-i18n="export.stlFileName">STL 文件名</span>
+                <span id="export-stl-file-title" class="export-row-title" data-i18n="export.stlFileName">STL 文件名</span>
                 <span id="export-stl-filename" class="export-row-info export-truncate"></span>
               </div>
             </div>
@@ -354,7 +364,7 @@ export const renderExportDialog = () => `
                 <span class="export-option-label" data-i18n="export.exportStep">导出 STEP</span>
               </label>
               <div class="export-row export-file-row">
-                <span class="export-row-title" data-i18n="export.stepFileName">STEP 文件名</span>
+                <span id="export-step-file-title" class="export-row-title" data-i18n="export.stepFileName">STEP 文件名</span>
                 <span id="export-step-filename" class="export-row-info export-truncate"></span>
               </div>
             </div>
@@ -366,7 +376,7 @@ export const renderExportDialog = () => `
                 <span class="export-option-label" data-i18n="export.exportPng">导出 PNG</span>
               </label>
               <div class="export-row export-file-row">
-                <span class="export-row-title" data-i18n="export.pngFileName">PNG 文件名</span>
+                <span id="export-png-file-title" class="export-row-title" data-i18n="export.pngFileName">PNG 文件名</span>
                 <span id="export-png-filename" class="export-row-info export-truncate"></span>
               </div>
             </div>

@@ -105,6 +105,7 @@ let langToggleBtn: HTMLButtonElement | null = null;
 let langToggleGlobalBtn: HTMLButtonElement | null = null;
 let refreshToggleTextLabels: (() => void) | null = null;
 let workerBusy = false;
+let batchExportBusy = false;
 let viewerModeControl: ReturnType<typeof createSegmentedControl> | null = null;
 
 const ENABLE_GIF_RECORDER_TOOL = new URLSearchParams(window.location.search).get("gifTool") === "1";
@@ -491,8 +492,10 @@ const getWorkspaceStateDisplayName = (state: WorkspaceState): string => {
   return t("workspace.mode.normal");
 };
 
+const isAppBusy = () => workerBusy || batchExportBusy;
+
 const isViewerModeControlDisabled = (state: WorkspaceState): boolean => {
-  return workerBusy || state === "previewGroupModel" || state === "loading";
+  return isAppBusy() || state === "previewGroupModel" || state === "loading";
 };
 
 viewerModeControl = createSegmentedControl({
@@ -615,6 +618,7 @@ if (!exportRefs) {
 // 创建导出回调函数
 const exportCallback = createExportCallback({
   getPreviewGroupId: () => groupController.getPreviewGroupId(),
+  getExportableGroupIds,
   getPreviewGroupName: (groupId) => groupController.getGroupName(groupId),
   getProjectName: () => getCurrentProject().name || "未命名工程",
   getCurrentHistoryUid: () => historyManager.getCurrentSnapshotUid() ?? -1,
@@ -632,12 +636,13 @@ const exportCallback = createExportCallback({
       uv: item.uv ? item.uv.map((xy) => new Vector2(xy.x, xy.y)) : null,
     }));
   },
+  setBatchExportBusy,
   log,
   t,
 });
 
 // 创建导出对话框 UI
-const exportUI = createExportUI(exportRefs, { onExport: exportCallback as (options: import("./modules/exportUI").ExportOptions) => void });
+const exportUI = createExportUI(exportRefs, { onExport: exportCallback, t });
 
 // 创建叠色打印工具 UI
 const luminaLayersRefs = getLuminaLayersRefs();
@@ -1480,15 +1485,26 @@ if (viewer && groupPreview) {
 }
 onWorkerBusyChange((busy) => {
   workerBusy = busy;
+  refreshBusyUi();
+});
+
+function refreshBusyUi() {
+  const busy = isAppBusy();
   appEventBus.emit("workerBusyChange", busy);
   if (menuBlocker) {
     menuBlocker.classList.toggle("active", busy);
   }
-  viewerModeControl.setDisabled(isViewerModeControlDisabled(getWorkspaceState()));
+  viewerModeControl?.setDisabled(isViewerModeControlDisabled(getWorkspaceState()));
   if (busy && getWorkspaceState() !== "normal") {
     changeWorkspaceState("normal");
   }
-});
+}
+
+function setBatchExportBusy(busy: boolean) {
+  if (batchExportBusy === busy) return;
+  batchExportBusy = busy;
+  refreshBusyUi();
+}
 
 groupAddBtn.addEventListener("click", () => {
   groupController.addGroup();
@@ -1568,27 +1584,63 @@ function getCurrentGroupExportDialogState() {
   if (faceCount <= 0) {
     return { allowed: false as const, reason: "no_faces" as const, groupId, faceCount };
   }
-  if (unfold2d.hasGroupIntersection(groupId)) {
+  if (unfold2d.hasGroupIntersection(groupId, { suppressLog: true })) {
     return { allowed: false as const, reason: "self_intersection" as const, groupId, faceCount };
   }
   return {
     allowed: true as const,
     groupId,
     faceCount,
-    groupName: groupController.getGroupName(groupId) || `展开组 ${groupId}`,
+    groupName: getGroupDisplayName(groupId),
     projectName: getCurrentProject().name || "未命名工程",
   };
 }
 
+function getGroupDisplayName(groupId: number) {
+  const index = groupController.getGroupIds().indexOf(groupId);
+  return groupController.getGroupName(groupId) || `展开组 ${index >= 0 ? index + 1 : groupId}`;
+}
+
+function isGroupExportable(groupId: number) {
+  const faces = groupController.getGroupFaces(groupId);
+  const faceCount = faces ? faces.size : 0;
+  if (faceCount <= 0) return false;
+  return !unfold2d.hasGroupIntersection(groupId, { suppressLog: true });
+}
+
+function getExportableGroupIds() {
+  return groupController.getGroupIds().filter((groupId) => isGroupExportable(groupId));
+}
+
+function hasAnyExportableGroup() {
+  return groupController.getGroupIds().some((groupId) => isGroupExportable(groupId));
+}
+
+function buildExportOpenPayload() {
+  const currentState = getCurrentGroupExportDialogState();
+  const validGroupIds = getExportableGroupIds();
+  const previewGroupId = groupController.getPreviewGroupId();
+  return {
+    groupName: previewGroupId === undefined ? "" : getGroupDisplayName(previewGroupId),
+    faceCount: currentState.allowed ? currentState.faceCount : "faceCount" in currentState ? currentState.faceCount : 0,
+    projectName: getCurrentProject().name || "未命名工程",
+    validGroupCount: validGroupIds.length,
+    currentGroupValid: currentState.allowed,
+    forceExportAll: !currentState.allowed && validGroupIds.length > 0,
+  };
+}
+
 function refreshExportDialogTriggerState() {
-  const state = getCurrentGroupExportDialogState();
-  const disabled = !state.allowed;
-  exportGroupStlBtn?.classList.toggle("is-disabled", disabled);
-  luminaLayersBtn?.classList.toggle("is-disabled", disabled);
-  previewGroupModelBtn?.classList.toggle("is-disabled", disabled);
-  exportGroupStlBtn?.setAttribute("aria-disabled", disabled ? "true" : "false");
-  luminaLayersBtn?.setAttribute("aria-disabled", disabled ? "true" : "false");
-  previewGroupModelBtn?.setAttribute("aria-disabled", disabled ? "true" : "false");
+  const currentState = getCurrentGroupExportDialogState();
+  const hasValidGroups = hasAnyExportableGroup();
+  const exportDisabled = !hasValidGroups;
+  const currentGroupDisabled = !currentState.allowed;
+  exportGroupStlBtn?.classList.toggle("is-disabled", exportDisabled);
+  luminaLayersBtn?.classList.toggle("is-disabled", currentGroupDisabled);
+  previewGroupModelBtn?.classList.toggle("is-disabled", currentGroupDisabled);
+  exportGroupStlBtn?.setAttribute("aria-disabled", exportDisabled ? "true" : "false");
+  luminaLayersBtn?.setAttribute("aria-disabled", currentGroupDisabled ? "true" : "false");
+  previewGroupModelBtn?.setAttribute("aria-disabled", currentGroupDisabled ? "true" : "false");
 }
 
 function validateCurrentGroupForExportDialogs() {
@@ -1606,9 +1658,12 @@ function validateCurrentGroupForExportDialogs() {
 
 // 导出 STL 按钮点击事件：打开导出对话框
 exportGroupStlBtn?.addEventListener("click", () => {
-  const groupInfo = validateCurrentGroupForExportDialogs();
-  if (!groupInfo) return;
-  exportUI.open(groupInfo.groupName, groupInfo.faceCount, groupInfo.projectName);
+  const payload = buildExportOpenPayload();
+  if (payload.validGroupCount <= 0) {
+    showTransientPopup(t("log.export.noValidGroups"));
+    return;
+  }
+  exportUI.open(payload);
 });
 
 exportTabClipBtn?.addEventListener("click", async () => {
