@@ -662,7 +662,7 @@ export function meshDataFromBufferGeometry(geometry: BufferGeometry, name?: stri
 export function createObjectElementFromMesh(
   doc: XMLDocument,
   objectId: number,
-  mesh: { positions: Float32Array; indices: Uint32Array },
+  mesh: ThreeMfMeshData,
   childName: string,
 ): Element {
   const normalizedMesh = normalizeMeshData(mesh);

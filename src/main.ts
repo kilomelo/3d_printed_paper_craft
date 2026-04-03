@@ -1620,9 +1620,14 @@ function buildExportOpenPayload() {
   const currentState = getCurrentGroupExportDialogState();
   const validGroupIds = getExportableGroupIds();
   const previewGroupId = groupController.getPreviewGroupId();
+  const faceCount = currentState.allowed
+    ? currentState.faceCount
+    : currentState.reason === "no_group"
+      ? 0
+      : currentState.faceCount;
   return {
     groupName: previewGroupId === undefined ? "" : getGroupDisplayName(previewGroupId),
-    faceCount: currentState.allowed ? currentState.faceCount : "faceCount" in currentState ? currentState.faceCount : 0,
+    faceCount,
     projectName: getCurrentProject().name || "未命名工程",
     validGroupCount: validGroupIds.length,
     currentGroupValid: currentState.allowed,
