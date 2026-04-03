@@ -1250,13 +1250,54 @@ const renderer2d = createRenderer2D(() => {
   () => { return groupController.getGroupPlaceAngle(groupController.getPreviewGroupId()) ?? 0; },
   groupController.updateCurrentGroupPlaceAngle,
   (groupId, parentFaceId, movedFaceId) => {
-    console.log("[ReorderTrace][Main] renderer2d->groupController.reorderFaces", {
-      groupId,
-      parentFaceId,
-      movedFaceId,
-    });
+    const getFaceViewSnapshot = (faceId: number) => {
+      const tri = unfold2d.getFaceSceneTriangle(groupId, faceId);
+      if (!tri) return null;
+      const center = tri[0].clone().add(tri[1]).add(tri[2]).multiplyScalar(1 / 3);
+      const projectedCenter = center.clone().project(renderer2d.camera);
+      return {
+        ndcX: projectedCenter.x,
+        ndcY: projectedCenter.y,
+        zoom: renderer2d.camera.zoom,
+        centerWorld: [center.x, center.y, center.z] as [number, number, number],
+      };
+    };
+    const restoreFaceViewSnapshot = (faceId: number, snapshot: ReturnType<typeof getFaceViewSnapshot>) => {
+      if (!snapshot) return false;
+      const tri = unfold2d.getFaceSceneTriangle(groupId, faceId);
+      if (!tri) return false;
+      const center = tri[0].clone().add(tri[1]).add(tri[2]).multiplyScalar(1 / 3);
+      renderer2d.camera.zoom = snapshot.zoom;
+      renderer2d.camera.updateProjectionMatrix();
+      const halfSpanX = ((renderer2d.camera.right - renderer2d.camera.left) * 0.5) / renderer2d.camera.zoom;
+      const halfSpanY = ((renderer2d.camera.top - renderer2d.camera.bottom) * 0.5) / renderer2d.camera.zoom;
+      renderer2d.camera.position.x = center.x - snapshot.ndcX * halfSpanX;
+      renderer2d.camera.position.y = center.y - snapshot.ndcY * halfSpanY;
+      renderer2d.camera.updateProjectionMatrix();
+      return true;
+    };
+    const normalizeAngleRad = (angle: number) => {
+      let normalized = angle;
+      while (normalized <= -Math.PI) normalized += Math.PI * 2;
+      while (normalized > Math.PI) normalized -= Math.PI * 2;
+      return normalized;
+    };
+    const targetFaceAngleBefore = unfold2d.getFaceSceneAngle(groupId, parentFaceId);
+    const targetFaceViewBefore = getFaceViewSnapshot(parentFaceId);
     const ok = groupController.reorderFaces(parentFaceId, movedFaceId, groupId);
-    console.log("[ReorderTrace][Main] groupController.reorderFaces return", { ok });
+    if (ok && targetFaceAngleBefore !== null) {
+      const targetFaceAngleAfter = unfold2d.getFaceSceneAngle(groupId, parentFaceId);
+      const currentGroupPlaceAngle = groupController.getGroupPlaceAngle(groupId) ?? 0;
+      if (targetFaceAngleAfter !== null) {
+        const compensateDelta = normalizeAngleRad(targetFaceAngleBefore - targetFaceAngleAfter);
+        if (Math.abs(compensateDelta) > 1e-6) {
+          groupController.setGroupPlaceAngle(groupId, currentGroupPlaceAngle + compensateDelta);
+        }
+      }
+    }
+    if (ok && targetFaceViewBefore) {
+      restoreFaceViewSnapshot(parentFaceId, targetFaceViewBefore);
+    }
     return ok;
   },
 );
@@ -1393,7 +1434,6 @@ appEventBus.on("groupFaceRemoved", ({ groupId }) => {
   refreshExportDialogTriggerState();
 });
 appEventBus.on("groupTreeReordered", ({ groupId }) => {
-  console.log("[ReorderTrace][Main] on groupTreeReordered", { groupId });
   groupUI.render(buildGroupUIState());
   setFileSaved(false);
   refreshExportDialogTriggerState();

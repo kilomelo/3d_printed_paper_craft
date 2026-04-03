@@ -139,31 +139,16 @@ export function createGroupController(
   }
 
   function reorderFaces(parentFaceId: number, movedFaceId: number, groupId: number | null): boolean {
-    console.log("[ReorderTrace][GroupController] reorderFaces.enter", {
-      groupId,
-      parentFaceId,
-      movedFaceId,
-    });
     if (groupId === null) {
-      console.warn("[ReorderTrace][GroupController] reorderFaces.abort.group-null");
       return false;
     }
     const result = reorderGroupTreeData(groupId, parentFaceId, movedFaceId, getFaceAdjacency());
     if (!result.ok) {
-      console.warn("[ReorderTrace][GroupController] reorderFaces.abort.reorderGroupTree-failed", {
-        reason: result.reason,
-      });
       return false;
     }
 
     const groupName = getGroupNameData(groupId) ?? `展开组 ${getGroupIdsData().indexOf(groupId) + 1}`;
     log(t("log.group.reordered", { group: groupName }), "success");
-    console.log("[ReorderTrace][GroupController] reorderFaces.success", {
-      groupId,
-      movedFaceId: result.movedFaceId,
-      previousParentFaceId: result.previousParentFaceId,
-      nextParentFaceId: result.nextParentFaceId,
-    });
     appEventBus.emit("groupTreeReordered", {
       groupId,
       groupName,

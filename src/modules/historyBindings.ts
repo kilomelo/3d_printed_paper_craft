@@ -3,7 +3,6 @@ import { appEventBus } from "./eventBus";
 import { historyManager } from "./history";
 import { createHistoryPanel, formatHistoryAction } from "./historyPanel";
 import type { ProjectState, Snapshot } from "../types/historyTypes.js";
-import type { MetaAction } from "../types/historyTypes.js";
 import type { createPreviewMeshCacheManager } from "./previewMeshCache";
 import type { EdgeJoinType } from "../types/geometryTypes.js";
 
@@ -110,28 +109,6 @@ export const bindHistorySystem = (opts: BindHistorySystemOptions): HistoryPanelU
       renderHistoryPanel();
     }
     opts.setFileSaved(false);
-  });
-
-  appEventBus.on("groupPlaceAngleRotateDone", ({ deltaAngle }) => {
-    historyManager.push(opts.captureProjectState(), {
-      name: "groupRotate",
-      timestamp: Date.now(),
-      payload: {
-        angle: deltaAngle,
-        stack: (actionA: MetaAction, actionB: MetaAction) => {
-          if (!actionA.payload || !actionB.payload) return undefined;
-          if (actionA.payload.groupId !== actionB.payload.groupId) return undefined;
-          const angle = (actionA.payload.angle as number) + (actionB.payload.angle as number);
-          return {
-            name: actionB.name,
-            timestamp: actionB.timestamp,
-            payload: { groupId: actionB.payload.groupId, angle, stack: actionA.payload.stack },
-          };
-        },
-        groupId: opts.getPreviewGroupId(),
-      },
-    });
-    renderHistoryPanel();
   });
 
   appEventBus.on("settingsChanged", (changedItems) => {

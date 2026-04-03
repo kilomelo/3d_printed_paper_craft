@@ -1,7 +1,10 @@
 // 展开组 2D 管理器：监听面增删事件，按需查询角度索引并维护组内面/边的缓存，后续可用于 2D 重建。
 import {
   BufferGeometry,
+  CanvasTexture,
   Mesh,
+  Sprite,
+  SpriteMaterial,
   Vector3,
   Vector2,
   Color,
@@ -57,6 +60,10 @@ type TransformStore = Map<number, TransformTree>;
 
 export type EdgeCache = { origPos: [Vector3, Vector3]; unfoldedPos: [Vector3, Vector3]; faceId: number };
 
+// 使用范例：
+// http://localhost:5173/?faceLabelTool=1
+const ENABLE_2D_FACE_LABEL_TOOL = new URLSearchParams(window.location.search).get("faceLabelTool") === "1";
+
 export function createUnfold2dManager(
   angleIndex: AngleIndex,
   renderer2d: Renderer2DContext,
@@ -78,6 +85,12 @@ export function createUnfold2dManager(
   getTexture: () => THREE.Texture | null,
   log: (message: string | number, tone?: import("./log").LogTone) => void,
 ) {
+  const normalizeAngleRad = (angle: number) => {
+    let normalized = angle;
+    while (normalized <= -Math.PI) normalized += Math.PI * 2;
+    while (normalized > Math.PI) normalized -= Math.PI * 2;
+    return normalized;
+  };
   const transformStore: TransformStore = new Map();
   const transformCache: Map<string, Matrix4> = new Map();
   let cachedSnapped: { groupId: number; tris: SnappedTri[] } | null = null;
@@ -107,6 +120,38 @@ export function createUnfold2dManager(
     renderer2d.root.updateMatrixWorld(true);
     groupEdgesCache.clear();
     groupIntersected.clear();
+  };
+
+  const createFaceDebugLabel = (text: string, center: Vector3, height: number) => {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d")!;
+    ctx.font = "bold 48px sans-serif";
+    const metrics = ctx.measureText(text);
+    const textWidth = Math.ceil(metrics.width);
+    const paddingX = 24;
+    const paddingY = 20;
+    canvas.width = Math.max(128, textWidth + paddingX * 2);
+    canvas.height = 96 + paddingY * 2;
+    const drawCtx = canvas.getContext("2d")!;
+    drawCtx.clearRect(0, 0, canvas.width, canvas.height);
+    drawCtx.font = "bold 48px sans-serif";
+    drawCtx.fillStyle = "#000000";
+    drawCtx.textAlign = "center";
+    drawCtx.textBaseline = "middle";
+    drawCtx.fillText(text, canvas.width / 2, canvas.height / 2);
+    const texture = new CanvasTexture(canvas);
+    const material = new SpriteMaterial({
+      map: texture,
+      depthTest: false,
+      depthWrite: false,
+      transparent: true,
+    });
+    const sprite = new Sprite(material);
+    const aspect = canvas.width / canvas.height || 1;
+    sprite.position.set(center.x, center.y, 6);
+    sprite.scale.set(height * aspect, height, 1);
+    sprite.renderOrder = 2000;
+    return sprite;
   };
 
   const computeFaceNormal = (faceId: number, out: Vector3) => {
@@ -385,6 +430,39 @@ export function createUnfold2dManager(
     return [a2, b2, c2];
   };
 
+  const getFaceSceneAngle = (groupId: number, faceId: number): number | null => {
+    const tri = faceTo2D(groupId, faceId);
+    if (!tri) return null;
+    const [a, b, c] = tri;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    if (dx * dx + dy * dy < 1e-12) return null;
+    // 使用面自身固定顶点顺序的 a->b 方向作为朝向基准，
+    // 避免“最长边”在重建前后切换，导致补偿角度出现接近 180° 的跳变。
+    const localAngle = Math.atan2(dy, dx);
+    const groupAngle = getGroupPlaceAngle(groupId) ?? 0;
+    return normalizeAngleRad(localAngle + groupAngle);
+  };
+
+  const getFaceSceneTriangle = (groupId: number, faceId: number): [Vector3, Vector3, Vector3] | null => {
+    const tri = faceTo2D(groupId, faceId);
+    if (!tri) return null;
+    const groupAngle = getGroupPlaceAngle(groupId) ?? 0;
+    const cos = Math.cos(groupAngle);
+    const sin = Math.sin(groupAngle);
+    const rotatePoint = (point: Vector3) =>
+      new Vector3(
+        point.x * cos - point.y * sin,
+        point.x * sin + point.y * cos,
+        point.z,
+      );
+    return [
+      rotatePoint(tri[0]),
+      rotatePoint(tri[1]),
+      rotatePoint(tri[2]),
+    ];
+  };
+
   const buildRootTransforms = (groupId: number) => {
     const parentMap = getGroupTreeParent(groupId);
     if (!parentMap) return;
@@ -574,6 +652,21 @@ export function createUnfold2dManager(
         renderer2d.root.add(line);
       });
     });
+
+    if (ENABLE_2D_FACE_LABEL_TOOL) {
+      const labelHeight = Math.max(medianEdgeLength * 0.2, 3);
+      const parentMap = getGroupTreeParent(groupId);
+      tris.forEach(({ faceId, tri }) => {
+        const center = tri[0].clone().add(tri[1]).add(tri[2]).multiplyScalar(1 / 3);
+        const parentFaceId = parentMap?.get(faceId) ?? null;
+        const label = createFaceDebugLabel(
+          `${faceId}(${parentFaceId === null ? "root" : parentFaceId})`,
+          center,
+          labelHeight,
+        );
+        renderer2d.root.add(label);
+      });
+    }
 
     renderer2d.root.rotateOnAxis(new Vector3(0, 0, 1), getGroupPlaceAngle(groupId)??0);
     renderer2d.root.updateMatrixWorld(true);
@@ -1228,20 +1321,11 @@ export function createUnfold2dManager(
     rebuildGroup2D(groupId, true);
   });
   appEventBus.on("groupTreeReordered", ({ groupId }) => {
-    console.log("[ReorderTrace][Unfold2D] on groupTreeReordered", {
-      groupId,
-      currentPreviewGroupId: getPreviewGroupId(),
-    });
     cachedSnapped = null;
     const current = getPreviewGroupId();
     if (groupId !== current) {
-      console.log("[ReorderTrace][Unfold2D] skip rebuildGroup2D because group is not current preview", {
-        groupId,
-        currentPreviewGroupId: current,
-      });
       return;
     }
-    console.log("[ReorderTrace][Unfold2D] rebuildGroup2D by groupTreeReordered", { groupId });
     rebuildGroup2D(groupId, true);
   });
   type XY = { x: number; y: number };
@@ -1462,6 +1546,8 @@ export function createUnfold2dManager(
       }
     },
     getGroupFaceUVs,
+    getFaceSceneAngle,
+    getFaceSceneTriangle,
   };
 }
 

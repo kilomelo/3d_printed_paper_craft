@@ -572,79 +572,6 @@ function areFacesAdjacent(a: number, b: number, faceAdjacency: Map<number, Set<n
   return set ? set.has(b) : false;
 }
 
-function formatParentMap(parentMap: Map<number, number | null>): string[] {
-  return Array.from(parentMap.entries())
-    .sort((a, b) => a[0] - b[0])
-    .map(([faceId, parentFaceId]) => `${faceId}<-${parentFaceId === null ? "root" : parentFaceId}`);
-}
-
-function formatTreeAdjacency(treeAdj: Map<number, Set<number>>): string[] {
-  return Array.from(treeAdj.entries())
-    .sort((a, b) => a[0] - b[0])
-    .map(([faceId, neighbors]) => `${faceId}<->[${Array.from(neighbors).sort((a, b) => a - b).join(",")}]`);
-}
-
-function formatTreeStructure(parentMap: Map<number, number | null>, faceOrderHint?: number[]): string {
-  if (parentMap.size === 0) return "(empty)";
-  const rootFaceId = getRootFaceId(parentMap);
-  if (rootFaceId === null) return "(invalid:no-root)";
-
-  const orderIndex = new Map<number, number>();
-  faceOrderHint?.forEach((faceId, index) => orderIndex.set(faceId, index));
-
-  const childrenByParent = new Map<number | null, number[]>();
-  parentMap.forEach((parentFaceId, faceId) => {
-    const key = parentFaceId;
-    if (!childrenByParent.has(key)) childrenByParent.set(key, []);
-    childrenByParent.get(key)!.push(faceId);
-  });
-  childrenByParent.forEach((childFaceIds) => {
-    childFaceIds.sort((a, b) => {
-      const orderA = orderIndex.get(a);
-      const orderB = orderIndex.get(b);
-      if (orderA !== undefined && orderB !== undefined && orderA !== orderB) return orderA - orderB;
-      if (orderA !== undefined) return -1;
-      if (orderB !== undefined) return 1;
-      return a - b;
-    });
-  });
-
-  const visited = new Set<number>();
-  const render = (faceId: number): string => {
-    if (visited.has(faceId)) return `${faceId}(cycle)`;
-    visited.add(faceId);
-    const children = childrenByParent.get(faceId) ?? [];
-    if (children.length === 0) return `${faceId}`;
-    return `${faceId}[${children.map((childFaceId) => render(childFaceId)).join(",")}]`;
-  };
-
-  const rendered = render(rootFaceId);
-  if (visited.size !== parentMap.size) {
-    const detached = Array.from(parentMap.keys())
-      .filter((faceId) => !visited.has(faceId))
-      .sort((a, b) => a - b);
-    if (detached.length > 0) {
-      return `${rendered}|detached=[${detached.join(",")}]`;
-    }
-  }
-  return rendered;
-}
-
-function formatReorderTraceLine(label: string, data: Record<string, unknown>): string {
-  const serialized = Object.entries(data)
-    .map(([key, value]) => {
-      if (Array.isArray(value)) {
-        return `${key}=${JSON.stringify(value)}`;
-      }
-      if (value && typeof value === "object") {
-        return `${key}=${JSON.stringify(value)}`;
-      }
-      return `${key}=${String(value)}`;
-    })
-    .join(" | ");
-  return `[ReorderTrace][Groups] ${label} | ${serialized}`;
-}
-
 export type ReorderGroupTreeResult =
   | {
       ok: true;
@@ -785,70 +712,39 @@ export function reorderGroupTree(
   movedFaceId: number,
   faceAdjacency: Map<number, Set<number>>,
 ): ReorderGroupTreeResult {
-  console.log("[ReorderTrace][Groups] reorderGroupTree.enter", {
-    groupId,
-    nextParentFaceId,
-    movedFaceId,
-  });
   const g = findGroup(groupId);
   if (!g) {
-    console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.group-not-found");
     return { ok: false, reason: "group-not-found" };
   }
   if (!g.treeParent.has(nextParentFaceId) || !g.treeParent.has(movedFaceId)) {
-    console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.face-not-in-group", {
-      faceIds: Array.from(g.treeParent.keys()),
-    });
     return { ok: false, reason: "face-not-in-group" };
   }
   if (nextParentFaceId === movedFaceId) {
-    console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.same-face");
     return { ok: false, reason: "same-face" };
   }
   if (!areFacesAdjacent(nextParentFaceId, movedFaceId, faceAdjacency)) {
-    console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.faces-not-adjacent");
     return { ok: false, reason: "faces-not-adjacent" };
   }
   const previousParentFaceId = g.treeParent.get(movedFaceId);
   if (previousParentFaceId === undefined) {
-    console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.previous-parent-undefined");
     return { ok: false, reason: "invalid-parent-map" };
   }
   if (previousParentFaceId === nextParentFaceId) {
-    console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.already-parent", {
-      movedFaceId,
-      nextParentFaceId,
-    });
     return { ok: false, reason: "already-parent" };
   }
 
   const currentTreeAdj = buildTreeAdjacency(g.treeParent);
   if (!currentTreeAdj) {
-    console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.build-tree-adj");
     return { ok: false, reason: "invalid-parent-map" };
   }
-  console.log(
-    formatReorderTraceLine("reorderGroupTree.current-state", {
-      groupId,
-      faces: [...g.faces],
-      parentMap: formatParentMap(g.treeParent),
-      treeAdj: formatTreeAdjacency(currentTreeAdj),
-      tree: formatTreeStructure(g.treeParent, g.faces),
-    }),
-  );
   const currentRootFaceId = getRootFaceId(g.treeParent);
   const treePath = findPathInTree(movedFaceId, nextParentFaceId, currentTreeAdj);
   if (!treePath || treePath.length < 2) {
-    console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.path-not-found", {
-      movedFaceId,
-      nextParentFaceId,
-    });
     return { ok: false, reason: "invalid-parent-map" };
   }
   const nextTreeAdj = cloneTreeAdjacency(currentTreeAdj);
   const nextParentIsDescendantOfMoved = isAncestorFace(movedFaceId, nextParentFaceId, g.treeParent);
   if (nextParentIsDescendantOfMoved === null) {
-    console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.ancestor-check");
     return { ok: false, reason: "invalid-parent-map" };
   }
 
@@ -859,6 +755,7 @@ export function reorderGroupTree(
   let selectedKFaceId: number | null = null;
 
   if (nextParentIsDescendantOfMoved) {
+    /*
     const movedSubtreeFaceIds = collectSubtreeFaceIds(movedFaceId, g.treeParent);
     const groupFaceIds = new Set<number>(g.treeParent.keys());
     const candidateWFaces = [...treePath].reverse().slice(0, -1);
@@ -880,11 +777,6 @@ export function reorderGroupTree(
     if (selectedWFaceId !== null && selectedKFaceId !== null) {
       if (previousParentFaceId !== null) {
         if (!removeUndirectedEdge(nextTreeAdj, movedFaceId, previousParentFaceId)) {
-          console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.remove-moved-from-parent", {
-            movedFaceId,
-            previousParentFaceId,
-            treePath,
-          });
           return { ok: false, reason: "invalid-parent-map" };
         }
         detachedEdges.push(`${movedFaceId}-${previousParentFaceId}`);
@@ -892,150 +784,64 @@ export function reorderGroupTree(
 
       const previousParentOfW = g.treeParent.get(selectedWFaceId);
       if (previousParentOfW === undefined || previousParentOfW === null) {
-        console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.selected-w-parent", {
-          selectedWFaceId,
-          treePath,
-        });
         return { ok: false, reason: "invalid-parent-map" };
       }
       if (!removeUndirectedEdge(nextTreeAdj, selectedWFaceId, previousParentOfW)) {
-        console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.remove-w-branch", {
-          selectedWFaceId,
-          previousParentOfW,
-          treePath,
-        });
         return { ok: false, reason: "invalid-parent-map" };
       }
       detachedEdges.push(`${selectedWFaceId}-${previousParentOfW}`);
 
       if (!addUndirectedEdge(nextTreeAdj, selectedWFaceId, selectedKFaceId)) {
-        console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.attach-w-to-k", {
-          selectedWFaceId,
-          selectedKFaceId,
-          treePath,
-        });
         return { ok: false, reason: "invalid-parent-map" };
       }
       attachedEdges.push(`${selectedWFaceId}-${selectedKFaceId}`);
 
       if (!addUndirectedEdge(nextTreeAdj, movedFaceId, nextParentFaceId)) {
-        console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.attach-moved-to-descendant", {
-          movedFaceId,
-          nextParentFaceId,
-          treePath,
-        });
         return { ok: false, reason: "invalid-parent-map" };
       }
       attachedEdges.push(`${movedFaceId}-${nextParentFaceId}`);
       nextRootFaceId = currentRootFaceId;
     } else {
+    */
       const childOnPathFaceId = treePath[1];
-      if (!childOnPathFaceId) {
-        console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.child-on-path-missing", {
-          movedFaceId,
-          nextParentFaceId,
-          treePath,
-        });
+      if (childOnPathFaceId === undefined || childOnPathFaceId === null) {
         return { ok: false, reason: "invalid-parent-map" };
       }
       if (!removeUndirectedEdge(nextTreeAdj, movedFaceId, childOnPathFaceId)) {
-        console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.remove-m-branch", {
-          movedFaceId,
-          childOnPathFaceId,
-          treePath,
-        });
         return { ok: false, reason: "invalid-parent-map" };
       }
       detachedEdges.push(`${movedFaceId}-${childOnPathFaceId}`);
 
       if (!addUndirectedEdge(nextTreeAdj, movedFaceId, nextParentFaceId)) {
-        console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.attach-moved-to-descendant-fallback", {
-          movedFaceId,
-          nextParentFaceId,
-          treePath,
-        });
         return { ok: false, reason: "invalid-parent-map" };
       }
       attachedEdges.push(`${movedFaceId}-${nextParentFaceId}`);
       nextRootFaceId = childOnPathFaceId;
+    /*
     }
+    */
   } else {
     if (previousParentFaceId === null) {
-      console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.already-parent-child", {
-        movedFaceId,
-        nextParentFaceId,
-        treePath,
-        reason: "root-cannot-be-reparented-to-its-own-ancestor-side",
-      });
       return { ok: false, reason: "already-parent-child" };
     }
     if (!removeUndirectedEdge(nextTreeAdj, movedFaceId, previousParentFaceId)) {
-      console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.remove-moved-edge", {
-        movedFaceId,
-        previousParentFaceId,
-        treePath,
-      });
       return { ok: false, reason: "invalid-parent-map" };
     }
     detachedEdges.push(`${movedFaceId}-${previousParentFaceId}`);
     if (!addUndirectedEdge(nextTreeAdj, movedFaceId, nextParentFaceId)) {
-      console.warn("[ReorderTrace][Groups] reorderGroupTree.fail.invalid-parent-map.add-new-edge", {
-        movedFaceId,
-        nextParentFaceId,
-        treePath,
-      });
       return { ok: false, reason: "invalid-parent-map" };
     }
     attachedEdges.push(`${movedFaceId}-${nextParentFaceId}`);
   }
 
-  console.log(
-    formatReorderTraceLine("reorderGroupTree.next-tree-adj", {
-      movedFaceId,
-      nextParentFaceId,
-      detachedEdges,
-      attachedEdges,
-      nextRootFaceId,
-      selectedWFaceId,
-      selectedKFaceId,
-      treeAdj: formatTreeAdjacency(nextTreeAdj),
-    }),
-  );
   const nextParentMap = orientTreeFromRoot(nextRootFaceId ?? nextParentFaceId, nextTreeAdj);
   if (!nextParentMap || nextParentMap.get(movedFaceId) !== nextParentFaceId) {
-    console.error(
-      formatReorderTraceLine("reorderGroupTree.fail.tree-rebuild-failed", {
-        groupId,
-        movedFaceId,
-        nextParentFaceId,
-        currentRootFaceId,
-        nextRootFaceId,
-        treePath,
-        detachedEdges,
-        attachedEdges,
-        selectedWFaceId,
-        selectedKFaceId,
-        nextTreeAdj: formatTreeAdjacency(nextTreeAdj),
-        nextParentMap: nextParentMap ? formatParentMap(nextParentMap) : null,
-      }),
-    );
     return { ok: false, reason: "tree-rebuild-failed" };
   }
 
   const previousFaces = [...g.faces];
   g.treeParent = nextParentMap;
   syncGroupFacesCache(g, previousFaces);
-  console.log(
-    formatReorderTraceLine("reorderGroupTree.success", {
-      nextRootFaceId,
-      movedFaceId,
-      previousParentFaceId,
-      nextParentFaceId,
-      facesCache: g.faces,
-      committedParentMap: formatParentMap(g.treeParent),
-      tree: formatTreeStructure(g.treeParent, g.faces),
-    }),
-  );
   return {
     ok: true,
     movedFaceId,

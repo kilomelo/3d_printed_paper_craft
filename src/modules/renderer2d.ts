@@ -1,12 +1,12 @@
 // 2D 展开预览渲染器：在右侧区域创建正交相机的 Three.js 场景，用于后续绘制展开组三角面与交互。
-import { Group, OrthographicCamera, Scene, WebGLRenderer, Vector3, Vector2 } from "three";
+import { CanvasTexture, Group, OrthographicCamera, Scene, Sprite, SpriteMaterial, WebGLRenderer, Vector3, Vector2 } from "three";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { BBoxRuler, createScene2D } from "./scene";
 import { appEventBus } from "./eventBus";
 import { getWorkspaceState } from "@/types/workspaceState";
 import { isSafari } from "./utils";
-import { distancePointToSegment2, pointInSegmentRectangle2, rotate2, radToDeg } from "./mathUtils";
+import { distancePointToSegment2, pointInSegmentRectangle2, rotate2 } from "./mathUtils";
 import type { EdgeCache } from "./unfold2dManager";
 import { createHoverLineMaterial, createSeamConnectLineMaterial } from "./materials";
 import type { Vec2 } from "@/types/geometryTypes";
@@ -58,33 +58,46 @@ export function createRenderer2D(
   let leftPointerActive = false;
   let leftRotateTriggeredDuringPointerCycle = false;
   let pendingReorderEdge: { groupId: number; edgeId: number; clickedFaceId: number } | null = null;
-  const reorderTrace = (stage: string, payload?: unknown) => {
-    if (payload === undefined) {
-      console.log(`[ReorderTrace][2D] ${stage}`);
-      return;
-    }
-    console.log(`[ReorderTrace][2D] ${stage}`, payload);
-  };
-  const reorderWarn = (stage: string, payload?: unknown) => {
-    if (payload === undefined) {
-      console.warn(`[ReorderTrace][2D] ${stage}`);
-      return;
-    }
-    console.warn(`[ReorderTrace][2D] ${stage}`, payload);
-  };
   let hoverFaceLines: [LineSegments2, LineSegments2, LineSegments2] | null = null;
   let seamConnectLines: [LineSegments2, LineSegments2, LineSegments2] | null = null;
+  let seamConnectArrows: [Sprite, Sprite, Sprite] | null = null;
   let edgeQueryProviders: EdgeQueryProviders | null = null;
+
+  const createReorderArrowSprite = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d")!;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = "bold 88px sans-serif";
+    ctx.fillStyle = "#ff9f1a";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("⇧", canvas.width / 2, canvas.height / 2);
+    const texture = new CanvasTexture(canvas);
+    const material = new SpriteMaterial({
+      map: texture,
+      depthTest: false,
+      depthWrite: false,
+      transparent: true,
+    });
+    const sprite = new Sprite(material);
+    sprite.renderOrder = 1000;
+    sprite.visible = false;
+    scene.add(sprite);
+    return sprite;
+  };
 
   const cancelHoverLineState = () => {
     if (hoverLine) hoverLine.visible = false;
     appEventBus.emit("edgeHover2DClear", undefined);
     lastHitEdge = null;
-    showSeamConnectionLine([], 0);
+    showSeamConnectionLine([], 0, null);
   }
 
-  const showSeamConnectionLine = (rec: EdgeCache[], lineIdx: number) => {
+  const showSeamConnectionLine = (rec: EdgeCache[], lineIdx: number, activeFaceId: number | null) => {
     seamConnectLines![lineIdx].visible = false;
+    if (seamConnectArrows) seamConnectArrows[lineIdx].visible = false;
     if (!rec || rec.length !== 2) return;
     const midPointA = [(rec[0].unfoldedPos[0].x + rec[0].unfoldedPos[1].x) / 2, (rec[0].unfoldedPos[0].y + rec[0].unfoldedPos[1].y) / 2];
     const midPointB = [(rec[1].unfoldedPos[0].x + rec[1].unfoldedPos[1].x) / 2, (rec[1].unfoldedPos[0].y + rec[1].unfoldedPos[1].y) / 2];
@@ -104,6 +117,27 @@ export function createRenderer2D(
     const connGeom = connectionLine.geometry as LineSegmentsGeometry;
     connGeom.setPositions(new Float32Array([rotatedA[0], rotatedA[1], 2, rotatedB[0], rotatedB[1], 2]));
     connectionLine.computeLineDistances();
+
+    if (getWorkspaceState() !== "editingGroup" || activeFaceId === null || !seamConnectArrows) return;
+    const faceIds = [rec[0].faceId, rec[1].faceId];
+    const activeFaceIdx = faceIds.indexOf(activeFaceId);
+    if (activeFaceIdx < 0) return;
+    const movedFaceIdx = activeFaceIdx === 0 ? 1 : 0;
+    const arrowFrom = movedFaceIdx === 0 ? rotatedA : rotatedB;
+    const arrowTo = movedFaceIdx === 0 ? rotatedB : rotatedA;
+    const arrowDirX = arrowTo[0] - arrowFrom[0];
+    const arrowDirY = arrowTo[1] - arrowFrom[1];
+    const arrowDirLen = Math.hypot(arrowDirX, arrowDirY);
+    if (arrowDirLen < 1e-5) return;
+    const arrow = seamConnectArrows[lineIdx];
+    const tex = (arrow.material as SpriteMaterial).map as CanvasTexture;
+    const texImage = tex.image as HTMLCanvasElement;
+    const aspect = texImage.width / texImage.height || 1;
+    const arrowHeight = Math.min(lenA, lenB) * 0.35;
+    arrow.visible = true;
+    arrow.position.set(arrowFrom[0], arrowFrom[1], 3);
+    arrow.scale.set(arrowHeight * aspect, arrowHeight, 1);
+    arrow.material.rotation = Math.atan2(arrowDirY, arrowDirX) - Math.PI / 2;
   };
 
   const resizeRenderer2D = () => {
@@ -174,49 +208,27 @@ export function createRenderer2D(
   };
 
   const tryReorderPendingEdge = () => {
-    reorderTrace("tryReorderPendingEdge.enter", {
-      pendingReorderEdge,
-      hasEdgeQueryProviders: !!edgeQueryProviders,
-      hasOnReorderFaces: !!onReorderFaces,
-    });
     if (!pendingReorderEdge || !edgeQueryProviders || !onReorderFaces) {
-      reorderWarn("tryReorderPendingEdge.abort.missing-deps");
       return false;
     }
     const rec = edgeQueryProviders.getEdges().get(pendingReorderEdge.groupId)?.edges.get(pendingReorderEdge.edgeId);
     if (!rec || rec.length !== 2) {
-      reorderWarn("tryReorderPendingEdge.abort.invalid-edge-cache", {
-        recLength: rec?.length ?? 0,
-      });
       return false;
     }
     const faceIds = Array.from(new Set(rec.map((item) => item.faceId)));
     if (faceIds.length !== 2) {
-      reorderWarn("tryReorderPendingEdge.abort.invalid-face-pair", { faceIds });
       return false;
     }
     if (!faceIds.includes(pendingReorderEdge.clickedFaceId)) {
-      reorderWarn("tryReorderPendingEdge.abort.clicked-face-not-on-edge", {
-        clickedFaceId: pendingReorderEdge.clickedFaceId,
-        faceIds,
-      });
       return false;
     }
     const parentFaceId = pendingReorderEdge.clickedFaceId;
     const movedFaceId = faceIds[0] === parentFaceId ? faceIds[1] : faceIds[0];
-    reorderTrace("tryReorderPendingEdge.invoke-onReorderFaces", {
-      groupId: pendingReorderEdge.groupId,
-      parentFaceId,
-      movedFaceId,
-    });
     const ok = onReorderFaces(pendingReorderEdge.groupId, parentFaceId, movedFaceId);
-    reorderTrace("tryReorderPendingEdge.onReorderFaces-return", { ok });
     if (!ok) {
-      reorderWarn("tryReorderPendingEdge.abort.onReorderFaces-false");
       return false;
     }
     appEventBus.emit("userOperation", { side: "right", op: "group-reorder", highlightDuration: 500 });
-    reorderTrace("tryReorderPendingEdge.success");
     return true;
   };
 
@@ -237,11 +249,6 @@ export function createRenderer2D(
     leftDownPos.x = event.clientX;
     leftDownPos.y = event.clientY;
     pendingReorderEdge = null;
-    reorderTrace("pointerdown.left.editingGroup", {
-      clientX: event.clientX,
-      clientY: event.clientY,
-      lastHitEdge,
-    });
 
     if (edgeQueryProviders && lastHitEdge && lastHitEdge.groupId === edgeQueryProviders.getPreviewGroupId()) {
       const rec = edgeQueryProviders.getEdges().get(lastHitEdge.groupId)?.edges.get(lastHitEdge.edgeId);
@@ -251,21 +258,10 @@ export function createRenderer2D(
           edgeId: lastHitEdge.edgeId,
           clickedFaceId: lastHitEdge.cache.faceId,
         };
-        reorderTrace("pointerdown.left.arm-reorder-edge", pendingReorderEdge);
         return;
       }
-      reorderWarn("pointerdown.left.not-arm-reorder.invalid-rec", {
-        recLength: rec?.length ?? 0,
-      });
-    } else {
-      reorderWarn("pointerdown.left.not-arm-reorder.no-qualified-hit-edge", {
-        hasEdgeQueryProviders: !!edgeQueryProviders,
-        lastHitEdge,
-        previewGroupId: edgeQueryProviders?.getPreviewGroupId(),
-      });
     }
     leftRotateTriggeredDuringPointerCycle = true;
-    reorderTrace("pointerdown.left.fallback-rotate");
     startRotate();
   };
   let lastHitEdge: { groupId: number; edgeId: number; cache: EdgeCache } | null = null;
@@ -282,7 +278,6 @@ export function createRenderer2D(
       if (dx * dx + dy * dy > 9) {
         pendingReorderEdge = null;
         leftRotateTriggeredDuringPointerCycle = true;
-        reorderTrace("pointermove.cancel-reorder-and-start-rotate", { dx, dy });
         startRotate();
       }
     }
@@ -383,7 +378,7 @@ export function createRenderer2D(
       });
 
       const rec = edgeData.get(hitEdge.groupId)?.edges.get(hitEdge.edgeId);
-      if (rec) showSeamConnectionLine(rec, 0);
+      if (rec) showSeamConnectionLine(rec, 0, hitEdge.cache.faceId);
     } else if (lastHitEdge) {
       cancelHoverLineState();
     }
@@ -401,9 +396,6 @@ export function createRenderer2D(
   const stopRotate = () => {
     if (!isRotating) return;
     isRotating = false;
-    if (rotateAngleDeltaTotal > 1e-5 || rotateAngleDeltaTotal < -1e-5) {
-      appEventBus.emit("groupPlaceAngleRotateDone", { deltaAngle: radToDeg(rotateAngleDeltaTotal) });
-    }
     rotateAngleDeltaTotal = 0;
     if (document.pointerLockElement === renderer.domElement) {
       document.exitPointerLock();
@@ -415,12 +407,6 @@ export function createRenderer2D(
     if (event.button === 2) {
       stopPan();
     } else if (event.button === 0) {
-      reorderTrace("pointerup.left", {
-        leftPointerActive,
-        pendingReorderEdge,
-        leftRotateTriggeredDuringPointerCycle,
-        workspaceState: getWorkspaceState(),
-      });
       if (
         leftPointerActive &&
         pendingReorderEdge !== null &&
@@ -428,9 +414,9 @@ export function createRenderer2D(
         getWorkspaceState() === "editingGroup"
       ) {
         const reordered = tryReorderPendingEdge();
-        reorderTrace("pointerup.left.tryReorderPendingEdge.return", { reordered });
-      } else {
-        reorderWarn("pointerup.left.skip-reorder-conditions-not-met");
+        if (reordered) {
+          cancelHoverLineState();
+        }
       }
       stopRotate();
       leftPointerActive = false;
@@ -455,6 +441,7 @@ export function createRenderer2D(
     hoverFaceLines.forEach((l) => (l.visible = false));
     if (!seamConnectLines) return;
     seamConnectLines.forEach((l) => (l.visible = false));
+    seamConnectArrows?.forEach((arrow) => (arrow.visible = false));
     if (faceId === null) {
       return;
     }
@@ -477,28 +464,36 @@ export function createRenderer2D(
       geom.setPositions(new Float32Array([p1Rotated[0], p1Rotated[1], 1, p2Rotated[0], p2Rotated[1], 1]));
       // 如果有两个2d边对应一条3d边，则绘制拼接关系线
       if (rec.length === 2) {
-        showSeamConnectionLine(rec, idx);
+        showSeamConnectionLine(rec, idx, faceId);
       }
     });
   };
-  appEventBus.on("faceHover3D", onHoverFace);
+  let currentFaceHoverFrom3D: number | null = null;
+  appEventBus.on("faceHover3D", (faceId) => {
+    currentFaceHoverFrom3D = faceId;
+    onHoverFace(faceId);
+  });
   appEventBus.on("faceHover3DClear", () => {
+    currentFaceHoverFrom3D = null;
     hoverFaceLines?.forEach((l) => (l.visible = false));
     seamConnectLines?.forEach((l) => (l.visible = false));
+    seamConnectArrows?.forEach((arrow) => (arrow.visible = false));
   });
   let updateHoverFaceByFaceIdNextFrame: number | null = null;
   appEventBus.on("groupFaceAdded", ({ groupId, faceId }) => {
-    updateHoverFaceByFaceIdNextFrame = faceId;
+    updateHoverFaceByFaceIdNextFrame = currentFaceHoverFrom3D;
   });
   appEventBus.on("groupFaceRemoved", ({ groupId, faceId }) => {
-    updateHoverFaceByFaceIdNextFrame = faceId;
+    updateHoverFaceByFaceIdNextFrame = currentFaceHoverFrom3D;
   });
   appEventBus.on("groupTreeReordered", ({ movedFaceId }) => {
-    updateHoverFaceByFaceIdNextFrame = movedFaceId;
+    updateHoverFaceByFaceIdNextFrame = currentFaceHoverFrom3D;
   });
   appEventBus.on("clearAppStates", () => {
+    currentFaceHoverFrom3D = null;
     hoverFaceLines?.forEach((l) => (l.visible = false));
     seamConnectLines?.forEach((l) => (l.visible = false));
+    seamConnectArrows?.forEach((arrow) => (arrow.visible = false));
     if (hoverLine) hoverLine.visible = false;
     lastHitEdge = null;
     leftPointerActive = false;
@@ -542,6 +537,15 @@ export function createRenderer2D(
       });
     }
     seamConnectLines = null;
+    if (seamConnectArrows) {
+      seamConnectArrows.forEach((arrow) => {
+        arrow.removeFromParent();
+        const material = arrow.material as SpriteMaterial;
+        (material.map as CanvasTexture)?.dispose();
+        material.dispose();
+      });
+    }
+    seamConnectArrows = null;
     renderer.dispose();
     renderer.domElement.remove();
     isRotating = false;
@@ -580,6 +584,15 @@ export function createRenderer2D(
       });
       seamConnectLines = null;
     }
+    if (seamConnectArrows) {
+      seamConnectArrows.forEach((arrow) => {
+        arrow.removeFromParent();
+        const material = arrow.material as SpriteMaterial;
+        (material.map as CanvasTexture)?.dispose();
+        material.dispose();
+      });
+      seamConnectArrows = null;
+    }
     const { width: viewportWidth, height: viewportHeight } = getViewport();
     const lineWidth = viewportWidth || 1;
     const lineHeight = viewportHeight || 1;
@@ -594,6 +607,7 @@ export function createRenderer2D(
       return line;
     };
     seamConnectLines = [makeLine(), makeLine(), makeLine()];
+    seamConnectArrows = [createReorderArrowSprite(), createReorderArrowSprite(), createReorderArrowSprite()];
   };
   initSeamConnectLines();
 
