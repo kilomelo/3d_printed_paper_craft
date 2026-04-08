@@ -762,19 +762,24 @@ appEventBus.on("settingsChanged", (changedItems) => {
     }
   }
 
-  const textureSettingsChanged = changedItems.includes("textureColorSpace") || changedItems.includes("textureFlipY");
+  const textureSettingsChanged =
+    changedItems.includes("textureColorSpace") ||
+    changedItems.includes("textureSamplingMode") ||
+    changedItems.includes("textureFlipY");
+  const generatedTexturePixelSettingsChanged =
+    changedItems.includes("textureColorSpace") || changedItems.includes("textureFlipY");
   if (changedItems.includes("generatedTextureResolution")) {
     void (async () => {
       const regenerated = await regenerateGeneratedTextureForResolutionSetting();
       if (!regenerated && textureSettingsChanged) {
-        await reapplyTextureForTextureSettings();
+        await reapplyTextureForTextureSettings(generatedTexturePixelSettingsChanged);
       }
     })();
     return;
   }
 
   if (textureSettingsChanged) {
-    void reapplyTextureForTextureSettings();
+    void reapplyTextureForTextureSettings(generatedTexturePixelSettingsChanged);
   }
 });
 
@@ -886,7 +891,7 @@ const regenerateGeneratedTextureForResolutionSetting = async () => {
   return true;
 };
 
-const reapplyTextureForTextureSettings = async () => {
+const reapplyTextureForTextureSettings = async (regenerateGeneratedTextures: boolean) => {
   const textures = getAllTextures();
   if (textures.length === 0) return;
 
@@ -895,12 +900,15 @@ const reapplyTextureForTextureSettings = async () => {
   let primaryTexture: import("./modules/textureManager").TextureData | null = null;
 
   for (const texture of textures) {
-    if (isGeneratedTexture(texture)) {
+    if (isGeneratedTexture(texture) && regenerateGeneratedTextures) {
       const metadata = normalizeTextureMetadata(texture);
       const regeneratedTexture = await generateUVTexture(
         metadata.generatedMode === "uvLayout" ? geometry : undefined,
       );
       replaceTexture(texture.id, { ...regeneratedTexture, name: texture.name }, false);
+      updateTextureSettings(texture.id, {
+        samplingMode: settings.textureSamplingMode,
+      });
       const updatedTexture = getTextureById(texture.id) ?? null;
       if (!primaryTexture) primaryTexture = updatedTexture;
       continue;
@@ -908,6 +916,7 @@ const reapplyTextureForTextureSettings = async () => {
 
     updateTextureSettings(texture.id, {
       colorSpace: settings.textureColorSpace,
+      samplingMode: settings.textureSamplingMode,
       flipY: settings.textureFlipY,
     });
     const updatedTexture = getTextureById(texture.id) ?? null;

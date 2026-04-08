@@ -29,6 +29,7 @@ const SETTINGS_NOT_AFFECTING_PREVIEW_CACHE = new Set<string>([
   // 贴图设置（仅影响贴图读写/显示，不影响展开组预览 mesh 几何）
   "includeTextureInProject",
   "textureColorSpace",
+  "textureSamplingMode",
   "textureFlipY",
   "generatedTextureResolution",
   // 叠色设置（仅用于叠色建模链路，不影响常规展开组预览 mesh）

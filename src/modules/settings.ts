@@ -7,6 +7,7 @@ export type Settings = {
   luminaLayersTotalHeight: number;
   includeTextureInProject: "include" | "exclude";
   textureColorSpace: "srgb" | "linear";
+  textureSamplingMode: "smooth" | "pixelStable" | "pixelCrisp";
   textureFlipY: boolean;
   generatedTextureResolution: 1024 | 2048 | 4096;
   connectionLayers: number;
@@ -32,6 +33,7 @@ export const SETTINGS_LIMITS = {
   luminaLayersTotalHeight: { min: 0.4, max: 0.6 },
   includeTextureInProject: { allowed: ["include", "exclude"] as const },
   textureColorSpace: { allowed: ["srgb", "linear"] as const },
+  textureSamplingMode: { allowed: ["smooth", "pixelStable", "pixelCrisp"] as const },
   generatedTextureResolution: { allowed: [1024, 2048, 4096] as const },
   connectionLayers: { min: 1, max: 4 },
   bodyLayers: { min: 1, max: 8 },
@@ -56,6 +58,7 @@ const defaultSettings: Settings = {
   luminaLayersTotalHeight: 0.4,
   includeTextureInProject: "include",
   textureColorSpace: "srgb",
+  textureSamplingMode: "smooth",
   textureFlipY: true,
   generatedTextureResolution: 2048,
   connectionLayers: 1,
@@ -112,6 +115,11 @@ export function setIncludeTextureInProject(val: Settings["includeTextureInProjec
 export function setTextureColorSpace(val: Settings["textureColorSpace"]) {
   if (!SETTINGS_LIMITS.textureColorSpace.allowed.includes(val)) return;
   current = { ...current, textureColorSpace: val };
+}
+
+export function setTextureSamplingMode(val: Settings["textureSamplingMode"]) {
+  if (!SETTINGS_LIMITS.textureSamplingMode.allowed.includes(val)) return;
+  current = { ...current, textureSamplingMode: val };
 }
 
 export function setTextureFlipY(val: boolean) {
@@ -288,6 +296,12 @@ const sanitizeImportedSettings = (imported: Partial<Record<keyof Settings, unkno
     const textureColorSpace = imported.textureColorSpace as Settings["textureColorSpace"];
     if (SETTINGS_LIMITS.textureColorSpace.allowed.includes(textureColorSpace)) {
       next.textureColorSpace = textureColorSpace;
+    }
+  }
+  if (typeof imported.textureSamplingMode === "string") {
+    const textureSamplingMode = imported.textureSamplingMode as Settings["textureSamplingMode"];
+    if (SETTINGS_LIMITS.textureSamplingMode.allowed.includes(textureSamplingMode)) {
+      next.textureSamplingMode = textureSamplingMode;
     }
   }
   const hollowStyle = readBoolean(imported.hollowStyle);

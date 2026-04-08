@@ -244,6 +244,20 @@ export const renderSettingsOverlay = () => `
             </div>
             <div class="setting-row">
               <div class="setting-label-row">
+                <span class="setting-label" data-i18n="settings.textureSamplingMode.label">采样模式</span>
+                <span class="setting-desc" data-i18n="settings.textureSamplingMode.desc">平滑适合普通贴图，像素稳定/像素锐利适合像素风贴图</span>
+              </div>
+              <div class="setting-field">
+                <div class="settings-toggle-group">
+                  <button id="setting-texture-sampling-mode-smooth" class="btn settings-inline-btn" data-i18n="settings.textureSamplingMode.smooth">平滑</button>
+                  <button id="setting-texture-sampling-mode-pixel-stable" class="btn settings-inline-btn" data-i18n="settings.textureSamplingMode.pixelStable">像素稳定</button>
+                  <button id="setting-texture-sampling-mode-pixel-crisp" class="btn settings-inline-btn" data-i18n="settings.textureSamplingMode.pixelCrisp">像素锐利</button>
+                </div>
+                <button id="setting-texture-sampling-mode-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.generatedTextureResolution.label">生成贴图的分辨率</span>
                 <span class="setting-desc" data-i18n="settings.generatedTextureResolution.desc"></span>
               </div>

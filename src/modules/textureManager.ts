@@ -11,6 +11,7 @@ export type TextureFormat = "png" | "jpg" | "jpeg" | "webp";
 
 // 贴图颜色空间
 export type TextureColorSpace = "srgb" | "linear";
+export type TextureSamplingMode = "smooth" | "pixelStable" | "pixelCrisp";
 
 export type TextureSource = "generated" | "imported";
 export type GeneratedTextureMode = "uvLayout" | "fullCanvas";
@@ -29,6 +30,7 @@ export type TextureData = {
   width: number;
   height: number;
   colorSpace: TextureColorSpace;
+  samplingMode: TextureSamplingMode;
   flipY: boolean;
   metadata?: TextureMetadata;
 };
@@ -104,6 +106,7 @@ export async function loadTextureFromFile(file: File): Promise<TextureData> {
     width: bitmap.width,
     height: bitmap.height,
     colorSpace: getSettings().textureColorSpace,
+    samplingMode: getSettings().textureSamplingMode,
     flipY: getSettings().textureFlipY,
     metadata: { source: "imported" },
   };
@@ -147,6 +150,7 @@ export async function loadTextureFromUrl(url: string, name?: string): Promise<Te
     width: bitmap.width,
     height: bitmap.height,
     colorSpace: getSettings().textureColorSpace,
+    samplingMode: getSettings().textureSamplingMode,
     flipY: getSettings().textureFlipY,
     metadata: { source: "imported" },
   };
@@ -213,7 +217,7 @@ export function replaceTexture(id: string, newTexture: TextureData, emitEvent: b
  */
 export function updateTextureSettings(
   id: string,
-  settings: { colorSpace?: TextureColorSpace; flipY?: boolean }
+  settings: { colorSpace?: TextureColorSpace; samplingMode?: TextureSamplingMode; flipY?: boolean }
 ): boolean {
   const texture = projectTextures.get(id);
   if (!texture) {
@@ -222,6 +226,9 @@ export function updateTextureSettings(
 
   if (settings.colorSpace !== undefined) {
     texture.colorSpace = settings.colorSpace;
+  }
+  if (settings.samplingMode !== undefined) {
+    texture.samplingMode = settings.samplingMode;
   }
   if (settings.flipY !== undefined) {
     texture.flipY = settings.flipY;
@@ -256,6 +263,8 @@ export function createThreeTexture(textureData: TextureData): Promise<THREE.Text
       (loadedTexture) => {
         // 在加载完成后设置颜色空间和 flipY
         loadedTexture.colorSpace = textureData.colorSpace === "srgb" ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
+        applyTextureSamplingMode(loadedTexture, textureData.samplingMode);
+        loadedTexture.userData.samplingMode = textureData.samplingMode;
         loadedTexture.flipY = textureData.flipY;
         loadedTexture.needsUpdate = true;
         URL.revokeObjectURL(url);
@@ -294,6 +303,7 @@ export function restoreTexturesFromPPC(textures: TextureData[]): TextureData | n
   textures.forEach((tex) => {
     projectTextures.set(tex.id, {
       ...tex,
+      samplingMode: tex.samplingMode ?? "smooth",
       metadata: normalizeTextureMetadata(tex),
     });
   });
@@ -317,6 +327,29 @@ function srgbToLinearByte(value: number) {
 
 function encodePatternChannel(value: number, colorSpace: TextureColorSpace) {
   return colorSpace === "linear" ? srgbToLinearByte(value) : value;
+}
+
+function applyTextureSamplingMode(texture: THREE.Texture, samplingMode: TextureSamplingMode) {
+  if (samplingMode === "pixelCrisp") {
+    texture.magFilter = THREE.NearestFilter;
+    texture.minFilter = THREE.NearestFilter;
+    texture.generateMipmaps = false;
+    texture.anisotropy = 1;
+    return;
+  }
+
+  if (samplingMode === "pixelStable") {
+    texture.magFilter = THREE.NearestFilter;
+    texture.minFilter = THREE.NearestMipmapNearestFilter;
+    texture.generateMipmaps = true;
+    texture.anisotropy = 1;
+    return;
+  }
+
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true;
+  texture.anisotropy = 1;
 }
 
 function drawBaseUVPattern(
@@ -514,6 +547,7 @@ export async function generateUVTexture(
     width,
     height,
     colorSpace: textureColorSpace,
+    samplingMode: getSettings().textureSamplingMode,
     flipY: textureFlipY,
     metadata: {
       source: "generated",
@@ -571,6 +605,15 @@ export async function generateGroupTexture(options: GroupTextureOptions): Promis
 
   const textureImage = texture?.image ? (texture.image as CanvasImageSource) : null;
   const textureFlipY = texture?.flipY ?? true;
+  const textureSamplingMode: TextureSamplingMode = (
+    texture?.userData?.samplingMode === "smooth" ||
+    texture?.userData?.samplingMode === "pixelStable" ||
+    texture?.userData?.samplingMode === "pixelCrisp"
+  )
+    ? texture.userData.samplingMode as TextureSamplingMode
+    : texture?.magFilter === THREE.NearestFilter
+      ? (texture.minFilter === THREE.NearestMipmapNearestFilter ? "pixelStable" : "pixelCrisp")
+      : "smooth";
   const defaultUV = [new THREE.Vector2(0, 0), new THREE.Vector2(0.5, 1), new THREE.Vector2(1, 0)];
 
   type XY = { x: number; y: number };
@@ -755,6 +798,13 @@ export async function generateGroupTexture(options: GroupTextureOptions): Promis
       const s2 = uvToImage(uv2);
       const m = computeAffine([s0, s1, s2], [p0, p1, p2]);
       if (m) {
+        // 展开图导出走的是 2D canvas 重采样，不会自动继承 WebGL 纹理过滤参数。
+        // 像素风模式需要关闭浏览器的线性插值，避免 drawImage 把像素边缘抹平。
+        const useSmoothSampling = textureSamplingMode === "smooth";
+        ctx.imageSmoothingEnabled = useSmoothSampling;
+        if ("imageSmoothingQuality" in ctx) {
+          ctx.imageSmoothingQuality = useSmoothSampling ? "high" : "low";
+        }
         ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
         ctx.drawImage(textureImage, 0, 0);
       } else {

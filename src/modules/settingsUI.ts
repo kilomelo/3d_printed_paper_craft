@@ -41,6 +41,10 @@ export type SettingsUIRefs = {
   textureColorSpaceSrgbBtn: HTMLButtonElement;
   textureColorSpaceLinearBtn: HTMLButtonElement;
   textureColorSpaceResetBtn: HTMLButtonElement;
+  textureSamplingModeSmoothBtn: HTMLButtonElement;
+  textureSamplingModePixelStableBtn: HTMLButtonElement;
+  textureSamplingModePixelCrispBtn: HTMLButtonElement;
+  textureSamplingModeResetBtn: HTMLButtonElement;
   textureFlipYTrueBtn: HTMLButtonElement;
   textureFlipYFalseBtn: HTMLButtonElement;
   textureFlipYResetBtn: HTMLButtonElement;
@@ -127,6 +131,10 @@ export function getSettingsUIRefs(): SettingsUIRefs | null {
     textureColorSpaceSrgbBtn: get<HTMLButtonElement>("#setting-texture-color-space-srgb"),
     textureColorSpaceLinearBtn: get<HTMLButtonElement>("#setting-texture-color-space-linear"),
     textureColorSpaceResetBtn: get<HTMLButtonElement>("#setting-texture-color-space-reset"),
+    textureSamplingModeSmoothBtn: get<HTMLButtonElement>("#setting-texture-sampling-mode-smooth"),
+    textureSamplingModePixelStableBtn: get<HTMLButtonElement>("#setting-texture-sampling-mode-pixel-stable"),
+    textureSamplingModePixelCrispBtn: get<HTMLButtonElement>("#setting-texture-sampling-mode-pixel-crisp"),
+    textureSamplingModeResetBtn: get<HTMLButtonElement>("#setting-texture-sampling-mode-reset"),
     textureFlipYTrueBtn: get<HTMLButtonElement>("#setting-texture-flip-y-true"),
     textureFlipYFalseBtn: get<HTMLButtonElement>("#setting-texture-flip-y-false"),
     textureFlipYResetBtn: get<HTMLButtonElement>("#setting-texture-flip-y-reset"),
@@ -232,6 +240,12 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.textureColorSpaceLinearBtn.classList.toggle("active", settingsDraft.textureColorSpace === "linear");
   };
 
+  const updateTextureSamplingModeButtons = () => {
+    refs.textureSamplingModeSmoothBtn.classList.toggle("active", settingsDraft.textureSamplingMode === "smooth");
+    refs.textureSamplingModePixelStableBtn.classList.toggle("active", settingsDraft.textureSamplingMode === "pixelStable");
+    refs.textureSamplingModePixelCrispBtn.classList.toggle("active", settingsDraft.textureSamplingMode === "pixelCrisp");
+  };
+
   const updateTextureFlipYButtons = () => {
     refs.textureFlipYTrueBtn.classList.toggle("active", settingsDraft.textureFlipY);
     refs.textureFlipYFalseBtn.classList.toggle("active", !settingsDraft.textureFlipY);
@@ -292,6 +306,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
       settingsDraft.includeTextureInProject !== defaults.includeTextureInProject,
     );
     setRowModified(refs.textureColorSpaceSrgbBtn, settingsDraft.textureColorSpace !== defaults.textureColorSpace);
+    setRowModified(refs.textureSamplingModeSmoothBtn, settingsDraft.textureSamplingMode !== defaults.textureSamplingMode);
     setRowModified(refs.textureFlipYTrueBtn, settingsDraft.textureFlipY !== defaults.textureFlipY);
     setRowModified(
       refs.generatedTextureResolution1024Btn,
@@ -442,6 +457,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateClipGapAdjustButtons();
     updateIncludeTextureInProjectButtons();
     updateTextureColorSpaceButtons();
+    updateTextureSamplingModeButtons();
     updateTextureFlipYButtons();
     updateGeneratedTextureResolutionButtons();
     updateHollowButtons();
@@ -540,6 +556,26 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
   refs.textureColorSpaceResetBtn.addEventListener("click", () => {
     settingsDraft.textureColorSpace = getDefaultSettings().textureColorSpace;
     updateTextureColorSpaceButtons();
+    updateModifiedIndicators();
+  });
+  refs.textureSamplingModeSmoothBtn.addEventListener("click", () => {
+    settingsDraft.textureSamplingMode = "smooth";
+    updateTextureSamplingModeButtons();
+    updateModifiedIndicators();
+  });
+  refs.textureSamplingModePixelStableBtn.addEventListener("click", () => {
+    settingsDraft.textureSamplingMode = "pixelStable";
+    updateTextureSamplingModeButtons();
+    updateModifiedIndicators();
+  });
+  refs.textureSamplingModePixelCrispBtn.addEventListener("click", () => {
+    settingsDraft.textureSamplingMode = "pixelCrisp";
+    updateTextureSamplingModeButtons();
+    updateModifiedIndicators();
+  });
+  refs.textureSamplingModeResetBtn.addEventListener("click", () => {
+    settingsDraft.textureSamplingMode = getDefaultSettings().textureSamplingMode;
+    updateTextureSamplingModeButtons();
     updateModifiedIndicators();
   });
   refs.textureFlipYTrueBtn.addEventListener("click", () => {
@@ -829,6 +865,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateClipGapAdjustButtons();
     updateIncludeTextureInProjectButtons();
     updateTextureColorSpaceButtons();
+    updateTextureSamplingModeButtons();
     updateTextureFlipYButtons();
     updateGeneratedTextureResolutionButtons();
     updateHollowButtons();
@@ -916,6 +953,19 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
         : t("settings.textureColorSpace.linear");
       changes.push(t("log.settings.changed", { label: t("settings.textureColorSpace.label"), value: label }));
     }
+    if (settingsDraft.textureSamplingMode !== settingsSnapshot.textureSamplingMode) {
+      const labels = {
+        smooth: t("settings.textureSamplingMode.smooth"),
+        pixelStable: t("settings.textureSamplingMode.pixelStable"),
+        pixelCrisp: t("settings.textureSamplingMode.pixelCrisp"),
+      } satisfies Record<typeof settingsDraft.textureSamplingMode, string>;
+      changes.push(
+        t("log.settings.changed", {
+          label: t("settings.textureSamplingMode.label"),
+          value: labels[settingsDraft.textureSamplingMode],
+        }),
+      );
+    }
     if (settingsDraft.textureFlipY !== settingsSnapshot.textureFlipY) {
       const label = settingsDraft.textureFlipY
         ? t("settings.textureFlipY.true")
@@ -979,6 +1029,7 @@ export function applySettingsI18n() {
   updateDesc('[data-i18n="settings.clipGapAdjusts.desc"]', "settings.clipGapAdjusts.desc");
   updateDesc('[data-i18n="settings.includeTextureInProject.desc"]', "settings.includeTextureInProject.desc");
   updateDesc('[data-i18n="settings.textureColorSpace.desc"]', "settings.textureColorSpace.desc");
+  updateDesc('[data-i18n="settings.textureSamplingMode.desc"]', "settings.textureSamplingMode.desc");
   updateDesc('[data-i18n="settings.textureFlipY.desc"]', "settings.textureFlipY.desc");
   updateDesc('[data-i18n="settings.generatedTextureResolution.desc"]', "settings.generatedTextureResolution.desc");
   updateDesc('[data-i18n="settings.hollow.desc"]', "settings.hollow.desc");
