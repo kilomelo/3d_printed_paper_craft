@@ -190,6 +190,20 @@ export const renderSettingsOverlay = () => `
             </div>
             <div class="setting-row">
               <div class="setting-label-row">
+                <span class="setting-label" data-i18n="settings.antiSlipClip.label">防脱卡扣</span>
+                <span class="setting-desc" data-i18n="settings.antiSlipClip.desc">是否生成卡扣防脱结构</span>
+              </div>
+              <div class="setting-field">
+                <div class="settings-toggle-group">
+                  <button id="setting-anti-slip-clip-off" class="btn settings-inline-btn" data-i18n="settings.antiSlipClip.off">关</button>
+                  <button id="setting-anti-slip-clip-weak" class="btn settings-inline-btn" data-i18n="settings.antiSlipClip.weak">弱</button>
+                  <button id="setting-anti-slip-clip-strong" class="btn settings-inline-btn" data-i18n="settings.antiSlipClip.strong">强</button>
+                </div>
+                <button id="setting-anti-slip-clip-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.clipGapAdjusts.label">夹子厚度</span>
                 <span class="setting-desc" data-i18n="settings.clipGapAdjusts.desc">夹子模型的配合间隙自动根据舌片厚度反比补偿</span>
               </div>

@@ -32,6 +32,10 @@ export type SettingsUIRefs = {
   tabThicknessResetBtn: HTMLButtonElement;
   tabClipGapInput: HTMLInputElement;
   tabClipGapResetBtn: HTMLButtonElement;
+  antiSlipClipOffBtn: HTMLButtonElement;
+  antiSlipClipWeakBtn: HTMLButtonElement;
+  antiSlipClipStrongBtn: HTMLButtonElement;
+  antiSlipClipResetBtn: HTMLButtonElement;
   clipGapAdjustNormalBtn: HTMLButtonElement;
   clipGapAdjustNarrowBtn: HTMLButtonElement;
   clipGapAdjustResetBtn: HTMLButtonElement;
@@ -122,6 +126,10 @@ export function getSettingsUIRefs(): SettingsUIRefs | null {
     tabThicknessResetBtn: get<HTMLButtonElement>("#setting-tab-thickness-reset"),
     tabClipGapInput: get<HTMLInputElement>("#setting-tab-clip-gap"),
     tabClipGapResetBtn: get<HTMLButtonElement>("#setting-tab-clip-gap-reset"),
+    antiSlipClipOffBtn: get<HTMLButtonElement>("#setting-anti-slip-clip-off"),
+    antiSlipClipWeakBtn: get<HTMLButtonElement>("#setting-anti-slip-clip-weak"),
+    antiSlipClipStrongBtn: get<HTMLButtonElement>("#setting-anti-slip-clip-strong"),
+    antiSlipClipResetBtn: get<HTMLButtonElement>("#setting-anti-slip-clip-reset"),
     clipGapAdjustNormalBtn: get<HTMLButtonElement>("#setting-clip-thickness-normal"),
     clipGapAdjustNarrowBtn: get<HTMLButtonElement>("#setting-clip-thickness-narrow"),
     clipGapAdjustResetBtn: get<HTMLButtonElement>("#setting-clip-thickness-reset"),
@@ -225,6 +233,12 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.clipGapAdjustNarrowBtn.classList.toggle("active", settingsDraft.clipGapAdjust === "on");
   };
 
+  const updateAntiSlipClipButtons = () => {
+    refs.antiSlipClipOffBtn.classList.toggle("active", settingsDraft.antiSlipClip === "off");
+    refs.antiSlipClipWeakBtn.classList.toggle("active", settingsDraft.antiSlipClip === "weak");
+    refs.antiSlipClipStrongBtn.classList.toggle("active", settingsDraft.antiSlipClip === "strong");
+  };
+
   const updateClawRadiusAdaptiveButtons = () => {
     refs.clawRadiusAdaptiveOffBtn.classList.toggle("active", settingsDraft.clawRadiusAdaptive === "off");
     refs.clawRadiusAdaptiveOnBtn.classList.toggle("active", settingsDraft.clawRadiusAdaptive === "on");
@@ -300,6 +314,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     setRowModified(refs.tabWidthInput, settingsDraft.tabWidth !== defaults.tabWidth);
     setRowModified(refs.tabThicknessInput, settingsDraft.tabThickness !== defaults.tabThickness);
     setRowModified(refs.tabClipGapInput, settingsDraft.tabClipGap !== defaults.tabClipGap);
+    setRowModified(refs.antiSlipClipWeakBtn, settingsDraft.antiSlipClip !== defaults.antiSlipClip);
     setRowModified(refs.clipGapAdjustNormalBtn, settingsDraft.clipGapAdjust !== defaults.clipGapAdjust);
     setRowModified(
       refs.includeTextureInProjectIncludeBtn,
@@ -453,6 +468,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.tabWidthInput.value = String(settingsDraft.tabWidth);
     refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
     refs.tabClipGapInput.value = String(settingsDraft.tabClipGap);
+    updateAntiSlipClipButtons();
     refs.wireframeThicknessInput.value = String(settingsDraft.wireframeThickness);
     updateClipGapAdjustButtons();
     updateIncludeTextureInProjectButtons();
@@ -526,6 +542,26 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
   refs.clipGapAdjustResetBtn.addEventListener("click", () => {
     settingsDraft.clipGapAdjust = getDefaultSettings().clipGapAdjust;
     updateClipGapAdjustButtons();
+    updateModifiedIndicators();
+  });
+  refs.antiSlipClipOffBtn.addEventListener("click", () => {
+    settingsDraft.antiSlipClip = "off";
+    updateAntiSlipClipButtons();
+    updateModifiedIndicators();
+  });
+  refs.antiSlipClipWeakBtn.addEventListener("click", () => {
+    settingsDraft.antiSlipClip = "weak";
+    updateAntiSlipClipButtons();
+    updateModifiedIndicators();
+  });
+  refs.antiSlipClipStrongBtn.addEventListener("click", () => {
+    settingsDraft.antiSlipClip = "strong";
+    updateAntiSlipClipButtons();
+    updateModifiedIndicators();
+  });
+  refs.antiSlipClipResetBtn.addEventListener("click", () => {
+    settingsDraft.antiSlipClip = getDefaultSettings().antiSlipClip;
+    updateAntiSlipClipButtons();
     updateModifiedIndicators();
   });
   refs.includeTextureInProjectIncludeBtn.addEventListener("click", () => {
@@ -860,6 +896,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.tabWidthInput.value = String(settingsDraft.tabWidth);
     refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
     refs.tabClipGapInput.value = String(settingsDraft.tabClipGap);
+    updateAntiSlipClipButtons();
     refs.wireframeThicknessInput.value = String(settingsDraft.wireframeThickness);
     updateJoinTypeButtons();
     updateClipGapAdjustButtons();
@@ -936,6 +973,14 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     }
     if (settingsDraft.tabClipGap !== settingsSnapshot.tabClipGap) {
       changes.push(t("log.settings.changed", { label: t("settings.tabClipGap.label"), value: settingsDraft.tabClipGap }));
+    }
+    if (settingsDraft.antiSlipClip !== settingsSnapshot.antiSlipClip) {
+      const labels = {
+        off: t("settings.antiSlipClip.off"),
+        weak: t("settings.antiSlipClip.weak"),
+        strong: t("settings.antiSlipClip.strong"),
+      } satisfies Record<typeof settingsDraft.antiSlipClip, string>;
+      changes.push(t("log.settings.changed", { label: t("settings.antiSlipClip.label"), value: labels[settingsDraft.antiSlipClip] }));
     }
     if (settingsDraft.clipGapAdjust !== settingsSnapshot.clipGapAdjust) {
       const label = settingsDraft.clipGapAdjust === "off" ? t("settings.clipGapAdjusts.off") : t("settings.clipGapAdjusts.on");
@@ -1026,6 +1071,7 @@ export function applySettingsI18n() {
   updateDesc('[data-i18n="settings.tabThickness.desc"]', "settings.tabThickness.desc", { min: limits.tabThickness.min, max: limits.tabThickness.max });
   updateDesc('[data-i18n="settings.minFoldAngleThreshold.desc"]', "settings.minFoldAngleThreshold.desc");
   updateDesc('[data-i18n="settings.tabClipGap.desc"]', "settings.tabClipGap.desc", { min: limits.tabClipGap.min, max: limits.tabClipGap.max });
+  updateDesc('[data-i18n="settings.antiSlipClip.desc"]', "settings.antiSlipClip.desc");
   updateDesc('[data-i18n="settings.clipGapAdjusts.desc"]', "settings.clipGapAdjusts.desc");
   updateDesc('[data-i18n="settings.includeTextureInProject.desc"]', "settings.includeTextureInProject.desc");
   updateDesc('[data-i18n="settings.textureColorSpace.desc"]', "settings.textureColorSpace.desc");

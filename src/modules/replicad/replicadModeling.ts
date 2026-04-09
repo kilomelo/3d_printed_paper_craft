@@ -15,6 +15,7 @@ import {
 import {
   makeVerticalPlaneNormalAB,
   extrudeFromContourPoints,
+  sketchFromContourPoints,
   extrudeCylinderAtPlaneLocalXY,
   translateWorldPointAlongPlaneAxes,
   transformPlaneLocal,
@@ -111,6 +112,7 @@ const buildSolidFromPolygonsWithAngles = async (
       clawFitGap,
       tabWidth,
       tabThickness,
+      antiSlipClip,
       hollowStyle,
       wireframeThickness,
     } = getSettings();
@@ -379,15 +381,25 @@ const buildSolidFromPolygonsWithAngles = async (
               [tabActualWidth - tabChamferSize * Math.tan(Math.PI / 4), tabThickness + tabStartZ + 1e-4],
             ], edgePerpendicularPlane, -1, distAB);
 
+            // 防脱卡扣结构
+            const antiSlipClipDepth = antiSlipClip === "off" ? 0 : (antiSlipClip === "weak" ? 0.1: 0.15);
+            const tabAntiSlipTool = antiSlipClip === "off" ? null : extrudeFromContourPoints([
+              [0, tabThickness + tabStartZ + 1 - antiSlipClipDepth],
+              [0, tabThickness + tabStartZ - antiSlipClipDepth],
+              [tabActualWidth - 0.75 * tabWidth, tabThickness + tabStartZ - antiSlipClipDepth],
+              [tabActualWidth - 0.75 * tabWidth + 1 * Math.tan(Math.PI / 4), tabThickness + tabStartZ + 1 - antiSlipClipDepth],
+            ], edgePerpendicularPlane, -1, distAB);
+
             // 舌片两端也做倒角防止从一个顶点触发的拼接边舌片之间的干涉
             const tabEndChamferSolid = extrudeFromContourPoints([
               [ 0, tabThickness + tabStartZ - tabChamferSize],
               [ 0, tabThickness + tabStartZ + 1e-1],
               [ -tabThickness, tabThickness + tabStartZ + 1e-1],
             ], edgePerpendicularPlane, -tabExtendMargin, distAB + 2 * tabExtendMargin);
-            if (!tabChamferTool || !tabEndChamferSolid) {
+            if (!tabChamferTool || !tabEndChamferSolid || (antiSlipClip !== "off" && !tabAntiSlipTool)) {
               reportReplicadIssue(onLog, REPLICAD_LOG_CODES.tabChamferFail, { edge });
             } else {
+              if (antiSlipClip !== "off" && tabAntiSlipTool) tabSolid = tabSolid.cut(tabAntiSlipTool);
               tabSolid = tabSolid.cut(tabChamferTool).simplify();
               tabSolid = tabSolid.cut(tabEndChamferSolid.clone().rotate(-tabAngleA, [pointA[0], pointA[1], 0], [0,0,1])).simplify();
               tabSolid = tabSolid.cut(tabEndChamferSolid.rotate(tabAngleB, [pointB[0], pointB[1], 0], [0,0,1])).simplify();
@@ -727,10 +739,11 @@ const buildSolidFromPolygonsWithAngles = async (
 
 export const buildTabClip = async () => {
   await ensureReplicadOC();
-  const { tabThickness, tabWidth } = getSettings();
+  const { tabThickness, tabWidth, antiSlipClip } = getSettings();
   const { tabClipKeelThickness, tabClipWingThickness, tabClipWingLength, clipGap } = tabClipGemometry();
   const keelChamferSize = Math.min(tabClipKeelThickness / 2, 0.5);
   const wingChamferSize = Math.max(tabClipWingThickness - 0.5, 1e-2);
+  const antiSlipClipDepth = antiSlipClip === "off" ? 0 : (antiSlipClip === "weak" ? 0.1: 0.15);
   const tabClipSolidKeel = extrudeFromContourPoints([
     [0, 0],
     [tabClipKeelThickness / 2, 0],
@@ -738,14 +751,49 @@ export const buildTabClip = async () => {
     [tabClipKeelThickness / 2 - keelChamferSize, tabWidth],
     [0, tabWidth],
   ], "XZ", 0, -(tabClipWingThickness + tabThickness));
-  const tabClipSolidWing = extrudeFromContourPoints([
+
+  const loftSketch1 = sketchFromContourPoints([
     [0, tabThickness + tabClipWingThickness],
     [tabClipWingLength / 2 - wingChamferSize, tabThickness + tabClipWingThickness],
     [tabClipWingLength / 2, tabThickness + tabClipWingThickness - wingChamferSize],
     [tabClipWingLength / 2, tabThickness + clipGap / 2],
     [tabClipKeelThickness / 2, tabThickness + clipGap],
     [0, tabThickness + clipGap],
-  ], "XY", 0, tabWidth);
+  ], "XY", 0);
+
+  const loftSketch2 = sketchFromContourPoints([
+    [0, tabThickness + tabClipWingThickness],
+    [tabClipWingLength / 2 - wingChamferSize, tabThickness + tabClipWingThickness],
+    [tabClipWingLength / 2, tabThickness + tabClipWingThickness - wingChamferSize],
+    [tabClipWingLength / 2, tabThickness + clipGap / 2],
+    [tabClipKeelThickness / 2, tabThickness + clipGap],
+    [0, tabThickness + clipGap],
+  ], "XY", tabWidth * 0.75 - 0.1);
+
+  const loftSketch3 = sketchFromContourPoints([
+    [0, tabThickness + tabClipWingThickness],
+    [tabClipWingLength / 2 - wingChamferSize, tabThickness + tabClipWingThickness],
+    [tabClipWingLength / 2, tabThickness + tabClipWingThickness - wingChamferSize],
+    [tabClipWingLength / 2, tabThickness + clipGap / 2 - antiSlipClipDepth],
+    [tabClipKeelThickness / 2, tabThickness + clipGap - antiSlipClipDepth],
+    [0, tabThickness + clipGap - antiSlipClipDepth],
+  ], "XY", tabWidth * 0.75);
+
+  const loftSketch4 = sketchFromContourPoints([
+    [0, tabThickness + tabClipWingThickness],
+    [tabClipWingLength / 2 - wingChamferSize, tabThickness + tabClipWingThickness],
+    [tabClipWingLength / 2, tabThickness + tabClipWingThickness - wingChamferSize],
+    [tabClipWingLength / 2, tabThickness + clipGap / 2 - antiSlipClipDepth],
+    [tabClipKeelThickness / 2, tabThickness + clipGap - antiSlipClipDepth],
+    [0, tabThickness + clipGap - antiSlipClipDepth],
+  ], "XY", tabWidth);
+
+  if (!loftSketch1 || !loftSketch2 || !loftSketch3 || !loftSketch4) {
+    throw createReplicadError(REPLICAD_LOG_CODES.tabClipSketchFail, "Failed to build seam-clip sketch");
+  }
+
+  const tabClipSolidWing = loftSketch1?.loftWith([loftSketch2, loftSketch3, loftSketch4]);
+
   const tabClipWingChamferTool = extrudeFromContourPoints([
     [tabThickness + tabClipWingThickness + clipGap + 1e-4, tabWidth + 1e-4],
     [tabThickness + tabClipWingThickness + clipGap + 1e-4, tabWidth - wingChamferSize],

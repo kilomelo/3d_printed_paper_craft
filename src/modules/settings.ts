@@ -22,6 +22,7 @@ export type Settings = {
   tabThickness: number;
   minFoldAngleThreshold: number;
   tabClipGap: number;
+  antiSlipClip: "off" | "weak" | "strong";
   clipGapAdjust: "off" | "on";
   hollowStyle: boolean;
   wireframeThickness: number;
@@ -47,6 +48,7 @@ export const SETTINGS_LIMITS = {
   tabThickness: { min: 0.8, max: 2 },
   minFoldAngleThreshold: { min: 0.1, max: 5 },
   tabClipGap: { min: 0.1, max: 0.3 },
+  antiSlipClip: { allowed: ["off", "weak", "strong"] as const },
   clipGapAdjust: { allowed: ["off", "on"] as const },
   wireframeThickness: { min: 4, max: 10 },
 } as const;
@@ -72,6 +74,7 @@ const defaultSettings: Settings = {
   tabThickness: 1,
   minFoldAngleThreshold: 1,
   tabClipGap: 0.12,
+  antiSlipClip: "weak",
   clipGapAdjust: "off",
   hollowStyle: false,
   wireframeThickness: 5,
@@ -214,6 +217,11 @@ export function setMinFoldAngleThreshold(val: number) {
 export function setTabClipGap(val: number) {
   if (Number.isNaN(val) || val < SETTINGS_LIMITS.tabClipGap.min || val > SETTINGS_LIMITS.tabClipGap.max) return;
   current = { ...current, tabClipGap: val };
+}
+
+export function setAntiSlipClip(val: Settings["antiSlipClip"]) {
+  if (!SETTINGS_LIMITS.antiSlipClip.allowed.includes(val)) return;
+  current = { ...current, antiSlipClip: val };
 }
 
 export function setClipGapAdjust(val: Settings["clipGapAdjust"]) {
@@ -402,6 +410,12 @@ const sanitizeImportedSettings = (imported: Partial<Record<keyof Settings, unkno
   const tabClipGap = readFiniteNumber(imported.tabClipGap);
   if (tabClipGap != null) {
     next.tabClipGap = clamp(tabClipGap, SETTINGS_LIMITS.tabClipGap.min, SETTINGS_LIMITS.tabClipGap.max);
+  }
+  if (typeof imported.antiSlipClip === "string") {
+    const antiSlipClip = imported.antiSlipClip as Settings["antiSlipClip"];
+    if (SETTINGS_LIMITS.antiSlipClip.allowed.includes(antiSlipClip)) {
+      next.antiSlipClip = antiSlipClip;
+    }
   }
   const wireframeThickness = readFiniteNumber(imported.wireframeThickness);
   if (wireframeThickness != null) {
