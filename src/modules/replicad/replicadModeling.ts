@@ -110,6 +110,7 @@ const buildSolidFromPolygonsWithAngles = async (
       clawRadiusAdaptive,
       clawWidth,
       clawFitGap,
+      clawDensity,
       tabWidth,
       tabThickness,
       antiSlipClip,
@@ -504,7 +505,8 @@ const buildSolidFromPolygonsWithAngles = async (
               reportReplicadIssue(onLog, REPLICAD_LOG_CODES.clawFail, { edge, tabLength, actualClawWidth: clawCylinderWidth });
               return false;
             }
-            const clawSetCount = Math.max(1, Math.floor(tabLength / (clawWidth * 3)));
+            const clawDensityFactor = clawDensity === "low" ? 3.8 : clawDensity === "high" ? 2.5 : 3;
+            const clawSetCount = Math.max(1, Math.floor(tabLength / (clawWidth * clawDensityFactor)));
             const distBFoot = Math.hypot(foot[0] - pointB[0], foot[1] - pointB[1]);
             const clawSetSpacing = tabLength / clawSetCount;
             const clawSetOffsets = Array.from({ length: clawSetCount }, (_, idx) => {
@@ -729,7 +731,7 @@ const buildSolidFromPolygonsWithAngles = async (
     if (!isOcctValid(connectionSolid)) {
       reportReplicadIssue(onLog, REPLICAD_LOG_CODES.invalidFinal);
     }
-    console.log('[ReplicadModeling] final solid', connectionSolid);
+    // console.log('[ReplicadModeling] final solid', connectionSolid);
     return { solid: connectionSolid };
   }
   finally {

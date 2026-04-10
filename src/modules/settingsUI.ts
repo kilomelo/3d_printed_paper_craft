@@ -26,6 +26,10 @@ export type SettingsUIRefs = {
   clawWidthResetBtn: HTMLButtonElement;
   clawFitGapInput: HTMLInputElement;
   clawFitGapResetBtn: HTMLButtonElement;
+  clawDensityLowBtn: HTMLButtonElement;
+  clawDensityMediumBtn: HTMLButtonElement;
+  clawDensityHighBtn: HTMLButtonElement;
+  clawDensityResetBtn: HTMLButtonElement;
   tabWidthInput: HTMLInputElement;
   tabWidthResetBtn: HTMLButtonElement;
   tabThicknessInput: HTMLInputElement;
@@ -120,6 +124,10 @@ export function getSettingsUIRefs(): SettingsUIRefs | null {
     clawWidthResetBtn: get<HTMLButtonElement>("#setting-claw-width-reset"),
     clawFitGapInput: get<HTMLInputElement>("#setting-claw-fit-gap"),
     clawFitGapResetBtn: get<HTMLButtonElement>("#setting-claw-fit-gap-reset"),
+    clawDensityLowBtn: get<HTMLButtonElement>("#setting-claw-density-low"),
+    clawDensityMediumBtn: get<HTMLButtonElement>("#setting-claw-density-medium"),
+    clawDensityHighBtn: get<HTMLButtonElement>("#setting-claw-density-high"),
+    clawDensityResetBtn: get<HTMLButtonElement>("#setting-claw-density-reset"),
     tabWidthInput: get<HTMLInputElement>("#setting-tab-width"),
     tabWidthResetBtn: get<HTMLButtonElement>("#setting-tab-width-reset"),
     tabThicknessInput: get<HTMLInputElement>("#setting-tab-thickness"),
@@ -244,6 +252,12 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.clawRadiusAdaptiveOnBtn.classList.toggle("active", settingsDraft.clawRadiusAdaptive === "on");
   };
 
+  const updateClawDensityButtons = () => {
+    refs.clawDensityLowBtn.classList.toggle("active", settingsDraft.clawDensity === "low");
+    refs.clawDensityMediumBtn.classList.toggle("active", settingsDraft.clawDensity === "medium");
+    refs.clawDensityHighBtn.classList.toggle("active", settingsDraft.clawDensity === "high");
+  };
+
   const updateIncludeTextureInProjectButtons = () => {
     refs.includeTextureInProjectIncludeBtn.classList.toggle("active", settingsDraft.includeTextureInProject === "include");
     refs.includeTextureInProjectExcludeBtn.classList.toggle("active", settingsDraft.includeTextureInProject === "exclude");
@@ -303,6 +317,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     setRowModified(refs.clawRadiusAdaptiveOffBtn, settingsDraft.clawRadiusAdaptive !== defaults.clawRadiusAdaptive);
     setRowModified(refs.clawWidthInput, settingsDraft.clawWidth !== defaults.clawWidth);
     setRowModified(refs.clawFitGapInput, settingsDraft.clawFitGap !== defaults.clawFitGap);
+    setRowModified(refs.clawDensityMediumBtn, settingsDraft.clawDensity !== defaults.clawDensity);
     setRowModified(refs.layerHeight008Btn, settingsDraft.layerHeight !== defaults.layerHeight);
     setRowModified(
       refs.luminaLayersTotalHeightInput,
@@ -460,6 +475,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateClawRadiusAdaptiveButtons();
     refs.clawWidthInput.value = String(settingsDraft.clawWidth);
     refs.clawFitGapInput.value = String(settingsDraft.clawFitGap);
+    updateClawDensityButtons();
     refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
     updateLayerHeightButtons();
     refs.luminaLayersTotalHeightInput.value = String(settingsDraft.luminaLayersTotalHeight);
@@ -694,6 +710,26 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateClawRadiusAdaptiveButtons();
     updateModifiedIndicators();
   });
+  refs.clawDensityLowBtn.addEventListener("click", () => {
+    settingsDraft.clawDensity = "low";
+    updateClawDensityButtons();
+    updateModifiedIndicators();
+  });
+  refs.clawDensityMediumBtn.addEventListener("click", () => {
+    settingsDraft.clawDensity = "medium";
+    updateClawDensityButtons();
+    updateModifiedIndicators();
+  });
+  refs.clawDensityHighBtn.addEventListener("click", () => {
+    settingsDraft.clawDensity = "high";
+    updateClawDensityButtons();
+    updateModifiedIndicators();
+  });
+  refs.clawDensityResetBtn.addEventListener("click", () => {
+    settingsDraft.clawDensity = getDefaultSettings().clawDensity;
+    updateClawDensityButtons();
+    updateModifiedIndicators();
+  });
   refs.navBasic.addEventListener("click", () => {
     activateTab("basic");
   });
@@ -889,6 +925,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateClawRadiusAdaptiveButtons();
     refs.clawWidthInput.value = String(settingsDraft.clawWidth);
     refs.clawFitGapInput.value = String(settingsDraft.clawFitGap);
+    updateClawDensityButtons();
     updateLayerHeightButtons();
     refs.luminaLayersTotalHeightInput.value = String(settingsDraft.luminaLayersTotalHeight);
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
@@ -947,6 +984,14 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     }
     if (settingsDraft.clawFitGap !== settingsSnapshot.clawFitGap) {
       changes.push(t("log.settings.changed", { label: t("settings.clawFitGap.label"), value: settingsDraft.clawFitGap }));
+    }
+    if (settingsDraft.clawDensity !== settingsSnapshot.clawDensity) {
+      const labels = {
+        low: t("settings.clawDensity.low"),
+        medium: t("settings.clawDensity.medium"),
+        high: t("settings.clawDensity.high"),
+      } satisfies Record<typeof settingsDraft.clawDensity, string>;
+      changes.push(t("log.settings.changed", { label: t("settings.clawDensity.label"), value: labels[settingsDraft.clawDensity] }));
     }
     if (settingsDraft.tabWidth !== settingsSnapshot.tabWidth) {
       changes.push(t("log.settings.changed", { label: t("settings.tabWidth.label"), value: settingsDraft.tabWidth }));
@@ -1067,6 +1112,7 @@ export function applySettingsI18n() {
   updateDesc('[data-i18n="settings.clawRadiusAdaptive.desc"]', "settings.clawRadiusAdaptive.desc");
   updateDesc('[data-i18n="settings.clawWidth.desc"]', "settings.clawWidth.desc", { min: limits.clawWidth.min, max: limits.clawWidth.max });
   updateDesc('[data-i18n="settings.clawFitGap.desc"]', "settings.clawFitGap.desc", { min: limits.clawFitGap.min, max: limits.clawFitGap.max });
+  updateDesc('[data-i18n="settings.clawDensity.desc"]', "settings.clawDensity.desc");
   updateDesc('[data-i18n="settings.tabWidth.desc"]', "settings.tabWidth.desc", { min: limits.tabWidth.min, max: limits.tabWidth.max });
   updateDesc('[data-i18n="settings.tabThickness.desc"]', "settings.tabThickness.desc", { min: limits.tabThickness.min, max: limits.tabThickness.max });
   updateDesc('[data-i18n="settings.minFoldAngleThreshold.desc"]', "settings.minFoldAngleThreshold.desc");

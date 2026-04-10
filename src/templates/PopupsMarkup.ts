@@ -156,6 +156,20 @@ export const renderSettingsOverlay = () => `
                 <button id="setting-claw-fit-gap-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
+            <div class="setting-row">
+              <div class="setting-label-row">
+                <span class="setting-label" data-i18n="settings.clawDensity.label">抱爪密度</span>
+                <span class="setting-desc" data-i18n="settings.clawDensity.desc">影响拼接边上抱爪的数量</span>
+              </div>
+              <div class="setting-field">
+                <div class="settings-toggle-group">
+                  <button id="setting-claw-density-low" class="btn settings-inline-btn" data-i18n="settings.clawDensity.low">低</button>
+                  <button id="setting-claw-density-medium" class="btn settings-inline-btn" data-i18n="settings.clawDensity.medium">中</button>
+                  <button id="setting-claw-density-high" class="btn settings-inline-btn" data-i18n="settings.clawDensity.high">高</button>
+                </div>
+                <button id="setting-claw-density-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
+              </div>
+            </div>
           </div>
           <div class="settings-panel" id="settings-panel-clip">
             <div class="setting-row">

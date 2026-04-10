@@ -18,6 +18,7 @@ export type Settings = {
   clawRadiusAdaptive: "off" | "on";
   clawWidth: number;
   clawFitGap: number;
+  clawDensity: "low" | "medium" | "high";
   tabWidth: number;
   tabThickness: number;
   minFoldAngleThreshold: number;
@@ -44,6 +45,7 @@ export const SETTINGS_LIMITS = {
   clawRadiusAdaptive: { allowed: ["off", "on"] as const },
   clawWidth: { min: 5, max: 10 },
   clawFitGap: { min: 0.02, max: 0.2 },
+  clawDensity: { allowed: ["low", "medium", "high"] as const },
   tabWidth: { min: 0, max: 20 },
   tabThickness: { min: 0.8, max: 2 },
   minFoldAngleThreshold: { min: 0.1, max: 5 },
@@ -70,6 +72,7 @@ const defaultSettings: Settings = {
   clawRadiusAdaptive: "on",
   clawWidth: 7,
   clawFitGap: 0.05,
+  clawDensity: "medium",
   tabWidth: 4,
   tabThickness: 1,
   minFoldAngleThreshold: 1,
@@ -173,6 +176,11 @@ export function setClawFitGap(val: number) {
     val > SETTINGS_LIMITS.clawFitGap.max
   ) return;
   current = { ...current, clawFitGap: val };
+}
+
+export function setClawDensity(val: Settings["clawDensity"]) {
+  if (!SETTINGS_LIMITS.clawDensity.allowed.includes(val)) return;
+  current = { ...current, clawDensity: val };
 }
 
 export function setConnectionLayers(val: number) {
@@ -286,6 +294,12 @@ const sanitizeImportedSettings = (imported: Partial<Record<keyof Settings, unkno
     const clawRadiusAdaptive = imported.clawRadiusAdaptive as Settings["clawRadiusAdaptive"];
     if (SETTINGS_LIMITS.clawRadiusAdaptive.allowed.includes(clawRadiusAdaptive)) {
       next.clawRadiusAdaptive = clawRadiusAdaptive;
+    }
+  }
+  if (typeof imported.clawDensity === "string") {
+    const clawDensity = imported.clawDensity as Settings["clawDensity"];
+    if (SETTINGS_LIMITS.clawDensity.allowed.includes(clawDensity)) {
+      next.clawDensity = clawDensity;
     }
   }
   if (typeof imported.clipGapAdjust === "string") {
