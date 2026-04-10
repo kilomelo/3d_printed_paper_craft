@@ -308,7 +308,7 @@ app.innerHTML = `
             <div class="overlay-cache-indicator" id="group-preview-cache-indicator" aria-hidden="true">*</div>
             <div class="tab-delete-slot" id="group-delete-slot"></div>
             <div id="group-preview-empty" class="preview-2d-empty hidden" data-i18n="preview.right.placeholder">
-              点击【编辑展开组】按钮进行编辑
+              切换到【展开组编辑】模式进行编辑
             </div>
             <input type="color" id="group-color-input" class="color-input" autocomplete="off" />
           </div>

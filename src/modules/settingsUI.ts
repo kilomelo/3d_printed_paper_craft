@@ -14,27 +14,35 @@ export type SettingsUIRefs = {
   scaleInput: HTMLInputElement;
   scaleResetBtn: HTMLButtonElement;
   minFoldAngleThresholdInput: HTMLInputElement;
+  minFoldAngleThresholdValue: HTMLSpanElement;
   minFoldAngleThresholdResetBtn: HTMLButtonElement;
   clawInterlockingAngleInput: HTMLInputElement;
+  clawInterlockingAngleValue: HTMLSpanElement;
   clawInterlockingAngleResetBtn: HTMLButtonElement;
   clawTargetRadiusInput: HTMLInputElement;
+  clawTargetRadiusValue: HTMLSpanElement;
   clawTargetRadiusResetBtn: HTMLButtonElement;
   clawRadiusAdaptiveOffBtn: HTMLButtonElement;
   clawRadiusAdaptiveOnBtn: HTMLButtonElement;
   clawRadiusAdaptiveResetBtn: HTMLButtonElement;
   clawWidthInput: HTMLInputElement;
+  clawWidthValue: HTMLSpanElement;
   clawWidthResetBtn: HTMLButtonElement;
   clawFitGapInput: HTMLInputElement;
+  clawFitGapValue: HTMLSpanElement;
   clawFitGapResetBtn: HTMLButtonElement;
   clawDensityLowBtn: HTMLButtonElement;
   clawDensityMediumBtn: HTMLButtonElement;
   clawDensityHighBtn: HTMLButtonElement;
   clawDensityResetBtn: HTMLButtonElement;
   tabWidthInput: HTMLInputElement;
+  tabWidthValue: HTMLSpanElement;
   tabWidthResetBtn: HTMLButtonElement;
   tabThicknessInput: HTMLInputElement;
+  tabThicknessValue: HTMLSpanElement;
   tabThicknessResetBtn: HTMLButtonElement;
   tabClipGapInput: HTMLInputElement;
+  tabClipGapValue: HTMLSpanElement;
   tabClipGapResetBtn: HTMLButtonElement;
   antiSlipClipOffBtn: HTMLButtonElement;
   antiSlipClipWeakBtn: HTMLButtonElement;
@@ -64,6 +72,7 @@ export type SettingsUIRefs = {
   hollowOffBtn: HTMLButtonElement;
   hollowResetBtn: HTMLButtonElement;
   wireframeThicknessInput: HTMLInputElement;
+  wireframeThicknessValue: HTMLSpanElement;
   wireframeThicknessResetBtn: HTMLButtonElement;
   wireframeRow: HTMLDivElement;
   layerHeight008Btn: HTMLButtonElement;
@@ -112,27 +121,35 @@ export function getSettingsUIRefs(): SettingsUIRefs | null {
     scaleInput: get<HTMLInputElement>("#setting-scale"),
     scaleResetBtn: get<HTMLButtonElement>("#setting-scale-reset"),
     minFoldAngleThresholdInput: get<HTMLInputElement>("#setting-min-fold-angle-threshold"),
+    minFoldAngleThresholdValue: get<HTMLSpanElement>("#setting-min-fold-angle-threshold-value"),
     minFoldAngleThresholdResetBtn: get<HTMLButtonElement>("#setting-min-fold-angle-threshold-reset"),
     clawInterlockingAngleInput: get<HTMLInputElement>("#setting-claw-interlocking-angle"),
+    clawInterlockingAngleValue: get<HTMLSpanElement>("#setting-claw-interlocking-angle-value"),
     clawInterlockingAngleResetBtn: get<HTMLButtonElement>("#setting-claw-interlocking-angle-reset"),
     clawTargetRadiusInput: get<HTMLInputElement>("#setting-claw-target-radius"),
+    clawTargetRadiusValue: get<HTMLSpanElement>("#setting-claw-target-radius-value"),
     clawTargetRadiusResetBtn: get<HTMLButtonElement>("#setting-claw-target-radius-reset"),
     clawRadiusAdaptiveOffBtn: get<HTMLButtonElement>("#setting-claw-radius-adaptive-off"),
     clawRadiusAdaptiveOnBtn: get<HTMLButtonElement>("#setting-claw-radius-adaptive-on"),
     clawRadiusAdaptiveResetBtn: get<HTMLButtonElement>("#setting-claw-radius-adaptive-reset"),
     clawWidthInput: get<HTMLInputElement>("#setting-claw-width"),
+    clawWidthValue: get<HTMLSpanElement>("#setting-claw-width-value"),
     clawWidthResetBtn: get<HTMLButtonElement>("#setting-claw-width-reset"),
     clawFitGapInput: get<HTMLInputElement>("#setting-claw-fit-gap"),
+    clawFitGapValue: get<HTMLSpanElement>("#setting-claw-fit-gap-value"),
     clawFitGapResetBtn: get<HTMLButtonElement>("#setting-claw-fit-gap-reset"),
     clawDensityLowBtn: get<HTMLButtonElement>("#setting-claw-density-low"),
     clawDensityMediumBtn: get<HTMLButtonElement>("#setting-claw-density-medium"),
     clawDensityHighBtn: get<HTMLButtonElement>("#setting-claw-density-high"),
     clawDensityResetBtn: get<HTMLButtonElement>("#setting-claw-density-reset"),
     tabWidthInput: get<HTMLInputElement>("#setting-tab-width"),
+    tabWidthValue: get<HTMLSpanElement>("#setting-tab-width-value"),
     tabWidthResetBtn: get<HTMLButtonElement>("#setting-tab-width-reset"),
     tabThicknessInput: get<HTMLInputElement>("#setting-tab-thickness"),
+    tabThicknessValue: get<HTMLSpanElement>("#setting-tab-thickness-value"),
     tabThicknessResetBtn: get<HTMLButtonElement>("#setting-tab-thickness-reset"),
     tabClipGapInput: get<HTMLInputElement>("#setting-tab-clip-gap"),
+    tabClipGapValue: get<HTMLSpanElement>("#setting-tab-clip-gap-value"),
     tabClipGapResetBtn: get<HTMLButtonElement>("#setting-tab-clip-gap-reset"),
     antiSlipClipOffBtn: get<HTMLButtonElement>("#setting-anti-slip-clip-off"),
     antiSlipClipWeakBtn: get<HTMLButtonElement>("#setting-anti-slip-clip-weak"),
@@ -162,6 +179,7 @@ export function getSettingsUIRefs(): SettingsUIRefs | null {
     hollowOffBtn: get<HTMLButtonElement>("#setting-hollow-off"),
     hollowResetBtn: get<HTMLButtonElement>("#setting-hollow-reset"),
     wireframeThicknessInput: get<HTMLInputElement>("#setting-wireframe-thickness"),
+    wireframeThicknessValue: get<HTMLSpanElement>("#setting-wireframe-thickness-value"),
     wireframeThicknessResetBtn: get<HTMLButtonElement>("#setting-wireframe-thickness-reset"),
     wireframeRow: get<HTMLDivElement>("#setting-wireframe-row"),
     layerHeight008Btn: get<HTMLButtonElement>("#setting-layer-height-008"),
@@ -217,6 +235,13 @@ export type SettingsUIApi = {
 export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): SettingsUIApi {
   let settingsDraft = getSettings();
   let settingsSnapshot: ReturnType<typeof getSettings> | null = null;
+  const formatSliderValue = (value: number, decimals: number = 1) => {
+    const fixed = value.toFixed(decimals);
+    if (decimals === 0) return fixed;
+    return fixed
+      .replace(/(\.\d*?[1-9])0+$/, "$1")
+      .replace(/\.0+$/, "");
+  };
 
   const isOpen = () => !refs.overlay.classList.contains("hidden");
 
@@ -470,11 +495,16 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateJoinTypeButtons();
     refs.scaleInput.value = String(settingsDraft.scale);
     refs.minFoldAngleThresholdInput.value = String(settingsDraft.minFoldAngleThreshold);
+    refs.minFoldAngleThresholdValue.textContent = formatSliderValue(settingsDraft.minFoldAngleThreshold, 1);
     refs.clawInterlockingAngleInput.value = String(settingsDraft.clawInterlockingAngle);
+    refs.clawInterlockingAngleValue.textContent = formatSliderValue(settingsDraft.clawInterlockingAngle, 1);
     refs.clawTargetRadiusInput.value = String(settingsDraft.clawTargetRadius);
+    refs.clawTargetRadiusValue.textContent = formatSliderValue(settingsDraft.clawTargetRadius, 1);
     updateClawRadiusAdaptiveButtons();
     refs.clawWidthInput.value = String(settingsDraft.clawWidth);
+    refs.clawWidthValue.textContent = formatSliderValue(settingsDraft.clawWidth, 1);
     refs.clawFitGapInput.value = String(settingsDraft.clawFitGap);
+    refs.clawFitGapValue.textContent = formatSliderValue(settingsDraft.clawFitGap, 2);
     updateClawDensityButtons();
     refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
     updateLayerHeightButtons();
@@ -482,10 +512,14 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
     refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
     refs.tabWidthInput.value = String(settingsDraft.tabWidth);
+    refs.tabWidthValue.textContent = formatSliderValue(settingsDraft.tabWidth, 1);
     refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
+    refs.tabThicknessValue.textContent = formatSliderValue(settingsDraft.tabThickness, 1);
     refs.tabClipGapInput.value = String(settingsDraft.tabClipGap);
+    refs.tabClipGapValue.textContent = formatSliderValue(settingsDraft.tabClipGap, 2);
     updateAntiSlipClipButtons();
     refs.wireframeThicknessInput.value = String(settingsDraft.wireframeThickness);
+    refs.wireframeThicknessValue.textContent = formatSliderValue(settingsDraft.wireframeThickness, 1);
     updateClipGapAdjustButtons();
     updateIncludeTextureInProjectButtons();
     updateTextureColorSpaceButtons();
@@ -494,7 +528,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateGeneratedTextureResolutionButtons();
     updateHollowButtons();
     updateWireframeEnabled();
-    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterlockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.clawFitGapInput, refs.luminaLayersTotalHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
+    [refs.scaleInput, refs.luminaLayersTotalHeightInput].forEach((el) =>
       updateInputColor(el, true),
     );
     updateModifiedIndicators();
@@ -792,6 +826,41 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     });
   };
 
+  const bindSliderInput = (
+    input: HTMLInputElement,
+    valueEl: HTMLElement,
+    resetBtn: HTMLButtonElement,
+    getDraft: () => number,
+    setDraft: (v: number) => void,
+    getDefault: () => number,
+    decimals: number = 1,
+  ) => {
+    const renderValue = (value: number) => {
+      valueEl.textContent = formatSliderValue(value, decimals);
+    };
+
+    input.addEventListener("input", (e) => {
+      const value = Number((e.target as HTMLInputElement).value);
+      if (!Number.isFinite(value)) return;
+      setDraft(value);
+      renderValue(value);
+      updateModifiedIndicators();
+    });
+
+    input.addEventListener("change", () => {
+      renderValue(getDraft());
+      updateModifiedIndicators();
+    });
+
+    resetBtn.addEventListener("click", () => {
+      const def = getDefault();
+      setDraft(def);
+      input.value = String(def);
+      renderValue(def);
+      updateModifiedIndicators();
+    });
+  };
+
   bindNumericInput(
     refs.scaleInput,
     refs.scaleResetBtn,
@@ -801,50 +870,50 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     validators.scale,
     () => getDefaultSettings().scale,
   );
-  bindNumericInput(
+  bindSliderInput(
     refs.minFoldAngleThresholdInput,
+    refs.minFoldAngleThresholdValue,
     refs.minFoldAngleThresholdResetBtn,
-    (raw) => parseFloat(raw),
     () => settingsDraft.minFoldAngleThreshold,
     (v) => (settingsDraft.minFoldAngleThreshold = v),
-    validators.minFoldAngleThreshold,
     () => getDefaultSettings().minFoldAngleThreshold,
+    1,
   );
-  bindNumericInput(
+  bindSliderInput(
     refs.clawInterlockingAngleInput,
+    refs.clawInterlockingAngleValue,
     refs.clawInterlockingAngleResetBtn,
-    (raw) => parseFloat(raw),
     () => settingsDraft.clawInterlockingAngle,
     (v) => (settingsDraft.clawInterlockingAngle = v),
-    validators.clawInterlockingAngle,
     () => getDefaultSettings().clawInterlockingAngle,
+    1,
   );
-  bindNumericInput(
+  bindSliderInput(
     refs.clawTargetRadiusInput,
+    refs.clawTargetRadiusValue,
     refs.clawTargetRadiusResetBtn,
-    (raw) => parseFloat(raw),
     () => settingsDraft.clawTargetRadius,
     (v) => (settingsDraft.clawTargetRadius = v),
-    validators.clawTargetRadius,
     () => getDefaultSettings().clawTargetRadius,
+    1,
   );
-  bindNumericInput(
+  bindSliderInput(
     refs.clawWidthInput,
+    refs.clawWidthValue,
     refs.clawWidthResetBtn,
-    (raw) => parseFloat(raw),
     () => settingsDraft.clawWidth,
     (v) => (settingsDraft.clawWidth = v),
-    validators.clawWidth,
     () => getDefaultSettings().clawWidth,
+    1,
   );
-  bindNumericInput(
+  bindSliderInput(
     refs.clawFitGapInput,
+    refs.clawFitGapValue,
     refs.clawFitGapResetBtn,
-    (raw) => parseFloat(raw),
     () => settingsDraft.clawFitGap,
     (v) => (settingsDraft.clawFitGap = v),
-    validators.clawFitGap,
     () => getDefaultSettings().clawFitGap,
+    2,
   );
   bindNumericInput(
     refs.luminaLayersTotalHeightInput,
@@ -855,41 +924,41 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     validators.luminaLayersTotalHeight,
     () => getDefaultSettings().luminaLayersTotalHeight,
   );
-  bindNumericInput(
+  bindSliderInput(
     refs.tabWidthInput,
+    refs.tabWidthValue,
     refs.tabWidthResetBtn,
-    (raw) => parseFloat(raw),
     () => settingsDraft.tabWidth,
     (v) => (settingsDraft.tabWidth = v),
-    validators.tabWidth,
     () => getDefaultSettings().tabWidth,
+    1,
   );
-  bindNumericInput(
+  bindSliderInput(
     refs.tabThicknessInput,
+    refs.tabThicknessValue,
     refs.tabThicknessResetBtn,
-    (raw) => parseFloat(raw),
     () => settingsDraft.tabThickness,
     (v) => (settingsDraft.tabThickness = v),
-    validators.tabThickness,
     () => getDefaultSettings().tabThickness,
+    1,
   );
-  bindNumericInput(
+  bindSliderInput(
     refs.tabClipGapInput,
+    refs.tabClipGapValue,
     refs.tabClipGapResetBtn,
-    (raw) => parseFloat(raw),
     () => settingsDraft.tabClipGap,
     (v) => (settingsDraft.tabClipGap = v),
-    validators.tabClipGap,
     () => getDefaultSettings().tabClipGap,
+    2,
   );
-  bindNumericInput(
+  bindSliderInput(
     refs.wireframeThicknessInput,
+    refs.wireframeThicknessValue,
     refs.wireframeThicknessResetBtn,
-    (raw) => parseFloat(raw),
     () => settingsDraft.wireframeThickness,
     (v) => (settingsDraft.wireframeThickness = v),
-    validators.wireframeThickness,
     () => getDefaultSettings().wireframeThickness,
+    1,
   );
 
   const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
@@ -920,21 +989,30 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     settingsDraft = getSettings();
     refs.scaleInput.value = String(settingsDraft.scale);
     refs.minFoldAngleThresholdInput.value = String(settingsDraft.minFoldAngleThreshold);
+    refs.minFoldAngleThresholdValue.textContent = formatSliderValue(settingsDraft.minFoldAngleThreshold, 1);
     refs.clawInterlockingAngleInput.value = String(settingsDraft.clawInterlockingAngle);
+    refs.clawInterlockingAngleValue.textContent = formatSliderValue(settingsDraft.clawInterlockingAngle, 1);
     refs.clawTargetRadiusInput.value = String(settingsDraft.clawTargetRadius);
+    refs.clawTargetRadiusValue.textContent = formatSliderValue(settingsDraft.clawTargetRadius, 1);
     updateClawRadiusAdaptiveButtons();
     refs.clawWidthInput.value = String(settingsDraft.clawWidth);
+    refs.clawWidthValue.textContent = formatSliderValue(settingsDraft.clawWidth, 1);
     refs.clawFitGapInput.value = String(settingsDraft.clawFitGap);
+    refs.clawFitGapValue.textContent = formatSliderValue(settingsDraft.clawFitGap, 2);
     updateClawDensityButtons();
     updateLayerHeightButtons();
     refs.luminaLayersTotalHeightInput.value = String(settingsDraft.luminaLayersTotalHeight);
     refs.connectionLayersValue.textContent = String(settingsDraft.connectionLayers);
     refs.bodyLayersValue.textContent = String(settingsDraft.bodyLayers);
     refs.tabWidthInput.value = String(settingsDraft.tabWidth);
+    refs.tabWidthValue.textContent = formatSliderValue(settingsDraft.tabWidth, 1);
     refs.tabThicknessInput.value = String(settingsDraft.tabThickness);
+    refs.tabThicknessValue.textContent = formatSliderValue(settingsDraft.tabThickness, 1);
     refs.tabClipGapInput.value = String(settingsDraft.tabClipGap);
+    refs.tabClipGapValue.textContent = formatSliderValue(settingsDraft.tabClipGap, 2);
     updateAntiSlipClipButtons();
     refs.wireframeThicknessInput.value = String(settingsDraft.wireframeThickness);
+    refs.wireframeThicknessValue.textContent = formatSliderValue(settingsDraft.wireframeThickness, 1);
     updateJoinTypeButtons();
     updateClipGapAdjustButtons();
     updateIncludeTextureInProjectButtons();
@@ -943,7 +1021,7 @@ export function createSettingsUI(refs: SettingsUIRefs, deps: SettingsUIDeps): Se
     updateTextureFlipYButtons();
     updateGeneratedTextureResolutionButtons();
     updateHollowButtons();
-    [refs.scaleInput, refs.minFoldAngleThresholdInput, refs.clawInterlockingAngleInput, refs.clawTargetRadiusInput, refs.clawWidthInput, refs.clawFitGapInput, refs.luminaLayersTotalHeightInput, refs.tabWidthInput, refs.tabThicknessInput, refs.tabClipGapInput, refs.wireframeThicknessInput].forEach((el) =>
+    [refs.scaleInput, refs.luminaLayersTotalHeightInput].forEach((el) =>
       updateInputColor(el, true),
     );
     updateModifiedIndicators();
@@ -1107,16 +1185,16 @@ export function applySettingsI18n() {
   updateDesc('[data-i18n="settings.connectionLayers.desc"]', "settings.connectionLayers.desc", { min: limits.connectionLayers.min, max: limits.connectionLayers.max });
   updateDesc('[data-i18n="settings.bodyLayers.desc"]', "settings.bodyLayers.desc", { min: limits.bodyLayers.min, max: limits.bodyLayers.max });
   updateDesc('[data-i18n="settings.joinType.desc"]', "settings.joinType.desc");
-  updateDesc('[data-i18n="settings.clawInterlockingAngle.desc"]', "settings.clawInterlockingAngle.desc", { min: limits.clawInterlockingAngle.min, max: limits.clawInterlockingAngle.max });
-  updateDesc('[data-i18n="settings.clawTargetRadius.desc"]', "settings.clawTargetRadius.desc", { min: limits.clawTargetRadius.min, max: limits.clawTargetRadius.max });
+  updateDesc('[data-i18n="settings.clawInterlockingAngle.desc"]', "settings.clawInterlockingAngle.desc");
+  updateDesc('[data-i18n="settings.clawTargetRadius.desc"]', "settings.clawTargetRadius.desc");
   updateDesc('[data-i18n="settings.clawRadiusAdaptive.desc"]', "settings.clawRadiusAdaptive.desc");
-  updateDesc('[data-i18n="settings.clawWidth.desc"]', "settings.clawWidth.desc", { min: limits.clawWidth.min, max: limits.clawWidth.max });
-  updateDesc('[data-i18n="settings.clawFitGap.desc"]', "settings.clawFitGap.desc", { min: limits.clawFitGap.min, max: limits.clawFitGap.max });
+  updateDesc('[data-i18n="settings.clawWidth.desc"]', "settings.clawWidth.desc");
+  updateDesc('[data-i18n="settings.clawFitGap.desc"]', "settings.clawFitGap.desc");
   updateDesc('[data-i18n="settings.clawDensity.desc"]', "settings.clawDensity.desc");
-  updateDesc('[data-i18n="settings.tabWidth.desc"]', "settings.tabWidth.desc", { min: limits.tabWidth.min, max: limits.tabWidth.max });
-  updateDesc('[data-i18n="settings.tabThickness.desc"]', "settings.tabThickness.desc", { min: limits.tabThickness.min, max: limits.tabThickness.max });
+  updateDesc('[data-i18n="settings.tabWidth.desc"]', "settings.tabWidth.desc");
+  updateDesc('[data-i18n="settings.tabThickness.desc"]', "settings.tabThickness.desc");
   updateDesc('[data-i18n="settings.minFoldAngleThreshold.desc"]', "settings.minFoldAngleThreshold.desc");
-  updateDesc('[data-i18n="settings.tabClipGap.desc"]', "settings.tabClipGap.desc", { min: limits.tabClipGap.min, max: limits.tabClipGap.max });
+  updateDesc('[data-i18n="settings.tabClipGap.desc"]', "settings.tabClipGap.desc");
   updateDesc('[data-i18n="settings.antiSlipClip.desc"]', "settings.antiSlipClip.desc");
   updateDesc('[data-i18n="settings.clipGapAdjusts.desc"]', "settings.clipGapAdjusts.desc");
   updateDesc('[data-i18n="settings.includeTextureInProject.desc"]', "settings.includeTextureInProject.desc");
@@ -1125,5 +1203,5 @@ export function applySettingsI18n() {
   updateDesc('[data-i18n="settings.textureFlipY.desc"]', "settings.textureFlipY.desc");
   updateDesc('[data-i18n="settings.generatedTextureResolution.desc"]', "settings.generatedTextureResolution.desc");
   updateDesc('[data-i18n="settings.hollow.desc"]', "settings.hollow.desc");
-  updateDesc('[data-i18n="settings.wireframeThickness.desc"]', "settings.wireframeThickness.desc", { min: limits.wireframeThickness.min, max: limits.wireframeThickness.max });
+  updateDesc('[data-i18n="settings.wireframeThickness.desc"]', "settings.wireframeThickness.desc");
 }

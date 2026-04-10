@@ -80,7 +80,7 @@ export const renderSettingsOverlay = () => `
             </div>
             <div class="setting-row">
               <div class="setting-label-row">
-                <span class="setting-label" data-i18n="settings.joinType.label">拼接方式</span>
+                <span class="setting-label" data-i18n="settings.joinType.label">默认拼接方式</span>
                 <span class="setting-desc" data-i18n="settings.joinType.desc">拼接边的默认连接方式</span>
               </div>
               <div class="setting-field">
@@ -97,7 +97,18 @@ export const renderSettingsOverlay = () => `
                 <span class="setting-desc" data-i18n="settings.minFoldAngleThreshold.desc">角度小于该数值的三角面之间不会生成折痕</span>
               </div>
               <div class="setting-field">
-                <input id="setting-min-fold-angle-threshold" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <div class="setting-slider-group">
+                  <input
+                    id="setting-min-fold-angle-threshold"
+                    class="setting-slider"
+                    type="range"
+                    min="${limits.minFoldAngleThreshold.min}"
+                    max="${limits.minFoldAngleThreshold.max}"
+                    step="0.1"
+                    autocomplete="off"
+                  />
+                  <span id="setting-min-fold-angle-threshold-value" class="setting-slider-value"></span>
+                </div>
                 <button id="setting-min-fold-angle-threshold-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
@@ -106,20 +117,26 @@ export const renderSettingsOverlay = () => `
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-claw-interlocking-angle" class="setting-label" data-i18n="settings.clawInterlockingAngle.label">咬合角度</label>
-                <span class="setting-desc" data-i18n="settings.clawInterlockingAngle.desc">抱爪的互锁角度，最小${limits.clawInterlockingAngle.min}，最大${limits.clawInterlockingAngle.max}</span>
+                <span class="setting-desc" data-i18n="settings.clawInterlockingAngle.desc">抱爪的互锁角度</span>
               </div>
               <div class="setting-field">
-                <input id="setting-claw-interlocking-angle" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <div class="setting-slider-group">
+                  <input id="setting-claw-interlocking-angle" class="setting-slider" type="range" min="${limits.clawInterlockingAngle.min}" max="${limits.clawInterlockingAngle.max}" step="0.1" autocomplete="off" />
+                  <span id="setting-claw-interlocking-angle-value" class="setting-slider-value"></span>
+                </div>
                 <button id="setting-claw-interlocking-angle-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-claw-target-radius" class="setting-label" data-i18n="settings.clawTargetRadius.label">目标抱爪半径</label>
-                <span class="setting-desc" data-i18n="settings.clawTargetRadius.desc">抱爪的期望大小，最小${limits.clawTargetRadius.min}，最大${limits.clawTargetRadius.max}，单位mm</span>
+                <span class="setting-desc" data-i18n="settings.clawTargetRadius.desc">抱爪的期望大小，单位mm</span>
               </div>
               <div class="setting-field">
-                <input id="setting-claw-target-radius" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <div class="setting-slider-group">
+                  <input id="setting-claw-target-radius" class="setting-slider" type="range" min="${limits.clawTargetRadius.min}" max="${limits.clawTargetRadius.max}" step="0.1" autocomplete="off" />
+                  <span id="setting-claw-target-radius-value" class="setting-slider-value"></span>
+                </div>
                 <button id="setting-claw-target-radius-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
@@ -139,20 +156,26 @@ export const renderSettingsOverlay = () => `
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-claw-width" class="setting-label" data-i18n="settings.clawWidth.label">抱爪宽度</label>
-                <span class="setting-desc" data-i18n="settings.clawWidth.desc">单个抱爪的宽度，最小${limits.clawWidth.min}，最大${limits.clawWidth.max}，单位mm</span>
+                <span class="setting-desc" data-i18n="settings.clawWidth.desc">单个抱爪的宽度，单位mm</span>
               </div>
               <div class="setting-field">
-                <input id="setting-claw-width" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <div class="setting-slider-group">
+                  <input id="setting-claw-width" class="setting-slider" type="range" min="${limits.clawWidth.min}" max="${limits.clawWidth.max}" step="0.1" autocomplete="off" />
+                  <span id="setting-claw-width-value" class="setting-slider-value"></span>
+                </div>
                 <button id="setting-claw-width-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-claw-fit-gap" class="setting-label" data-i18n="settings.clawFitGap.label">抱爪配合间隙</label>
-                <span class="setting-desc" data-i18n="settings.clawFitGap.desc">抱爪的松紧程度，越大越容易安装，${limits.clawFitGap.min}-${limits.clawFitGap.max}</span>
+                <span class="setting-desc" data-i18n="settings.clawFitGap.desc">抱爪的松紧程度，越大越容易安装</span>
               </div>
               <div class="setting-field">
-                <input id="setting-claw-fit-gap" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <div class="setting-slider-group">
+                  <input id="setting-claw-fit-gap" class="setting-slider" type="range" min="${limits.clawFitGap.min}" max="${limits.clawFitGap.max}" step="0.01" autocomplete="off" />
+                  <span id="setting-claw-fit-gap-value" class="setting-slider-value"></span>
+                </div>
                 <button id="setting-claw-fit-gap-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
@@ -175,30 +198,39 @@ export const renderSettingsOverlay = () => `
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-tab-width" class="setting-label" data-i18n="settings.tabWidth.label">拼接边舌片宽度</label>
-                <span class="setting-desc" data-i18n="settings.tabWidth.desc">用于拼接边粘接的舌片宽度，${limits.tabWidth.min}-${limits.tabWidth.max}，单位mm</span>
+                <span class="setting-desc" data-i18n="settings.tabWidth.desc">用于拼接边粘接的舌片宽度，单位mm</span>
               </div>
               <div class="setting-field">
-                <input id="setting-tab-width" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <div class="setting-slider-group">
+                  <input id="setting-tab-width" class="setting-slider" type="range" min="${limits.tabWidth.min}" max="${limits.tabWidth.max}" step="0.1" autocomplete="off" />
+                  <span id="setting-tab-width-value" class="setting-slider-value"></span>
+                </div>
                 <button id="setting-tab-width-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-tab-thickness" class="setting-label" data-i18n="settings.tabThickness.label">拼接边舌片厚度</label>
-                <span class="setting-desc" data-i18n="settings.tabThickness.desc">用于拼接边粘接的舌片厚度，${limits.tabThickness.min}-${limits.tabThickness.max}，单位mm</span>
+                <span class="setting-desc" data-i18n="settings.tabThickness.desc">用于拼接边粘接的舌片厚度，单位mm</span>
               </div>
               <div class="setting-field">
-                <input id="setting-tab-thickness" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <div class="setting-slider-group">
+                  <input id="setting-tab-thickness" class="setting-slider" type="range" min="${limits.tabThickness.min}" max="${limits.tabThickness.max}" step="0.1" autocomplete="off" />
+                  <span id="setting-tab-thickness-value" class="setting-slider-value"></span>
+                </div>
                 <button id="setting-tab-thickness-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
             <div class="setting-row">
               <div class="setting-label-row">
                 <label for="setting-tab-clip-gap" class="setting-label" data-i18n="settings.tabClipGap.label">夹子配合间隙</label>
-                <span class="setting-desc" data-i18n="settings.tabClipGap.desc">连接舌片的夹子松紧程度，值越大越容易安装，${limits.tabClipGap.min}-${limits.tabClipGap.max}</span>
+                <span class="setting-desc" data-i18n="settings.tabClipGap.desc">连接舌片的夹子松紧程度，值越大越容易安装</span>
               </div>
               <div class="setting-field">
-                <input id="setting-tab-clip-gap" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <div class="setting-slider-group">
+                  <input id="setting-tab-clip-gap" class="setting-slider" type="range" min="${limits.tabClipGap.min}" max="${limits.tabClipGap.max}" step="0.01" autocomplete="off" />
+                  <span id="setting-tab-clip-gap-value" class="setting-slider-value"></span>
+                </div>
                 <button id="setting-tab-clip-gap-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
@@ -218,13 +250,13 @@ export const renderSettingsOverlay = () => `
             </div>
             <div class="setting-row">
               <div class="setting-label-row">
-                <span class="setting-label" data-i18n="settings.clipGapAdjusts.label">夹子厚度</span>
+                <span class="setting-label" data-i18n="settings.clipGapAdjusts.label">夹子配合间隙补偿</span>
                 <span class="setting-desc" data-i18n="settings.clipGapAdjusts.desc">夹子模型的配合间隙自动根据舌片厚度反比补偿</span>
               </div>
               <div class="setting-field">
                 <div class="settings-toggle-group">
-                  <button id="setting-clip-thickness-normal" class="btn settings-inline-btn" data-i18n="settings.clipGapAdjusts.off">标准</button>
-                  <button id="setting-clip-thickness-narrow" class="btn settings-inline-btn" data-i18n="settings.clipGapAdjusts.on">薄夹</button>
+                  <button id="setting-clip-thickness-normal" class="btn settings-inline-btn" data-i18n="settings.clipGapAdjusts.off">关闭</button>
+                  <button id="setting-clip-thickness-narrow" class="btn settings-inline-btn" data-i18n="settings.clipGapAdjusts.on">开启</button>
                 </div>
                 <button id="setting-clip-thickness-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
@@ -273,7 +305,7 @@ export const renderSettingsOverlay = () => `
             <div class="setting-row">
               <div class="setting-label-row">
                 <span class="setting-label" data-i18n="settings.textureSamplingMode.label">采样模式</span>
-                <span class="setting-desc" data-i18n="settings.textureSamplingMode.desc">平滑适合普通贴图，像素稳定/像素锐利适合像素风贴图</span>
+                <span class="setting-desc" data-i18n="settings.textureSamplingMode.desc">平滑适合普通贴图，像素稳定和像素锐利适合像素风贴图</span>
               </div>
               <div class="setting-field">
                 <div class="settings-toggle-group">
@@ -328,10 +360,13 @@ export const renderSettingsOverlay = () => `
             <div class="setting-row" id="setting-wireframe-row">
               <div class="setting-label-row">
                 <label for="setting-wireframe-thickness" class="setting-label" data-i18n="settings.wireframeThickness.label">线框粗细</label>
-                <span class="setting-desc" data-i18n="settings.wireframeThickness.desc">镂空风格下线框的粗细，${limits.wireframeThickness.min}-${limits.wireframeThickness.max}，单位mm</span>
+                <span class="setting-desc" data-i18n="settings.wireframeThickness.desc">镂空风格下线框的粗细，单位mm</span>
               </div>
               <div class="setting-field">
-                <input id="setting-wireframe-thickness" type="text" inputmode="decimal" pattern="[0-9.]*" autocomplete="off" />
+                <div class="setting-slider-group">
+                  <input id="setting-wireframe-thickness" class="setting-slider" type="range" min="${limits.wireframeThickness.min}" max="${limits.wireframeThickness.max}" step="0.1" autocomplete="off" />
+                  <span id="setting-wireframe-thickness-value" class="setting-slider-value"></span>
+                </div>
                 <button id="setting-wireframe-thickness-reset" class="btn settings-inline-btn" data-i18n="settings.resetDefault.btn">恢复默认</button>
               </div>
             </div>
@@ -462,7 +497,7 @@ export const renderLuminaLayersDialog = () => `
           <section class="lumina-guide-section">
             <article class="lumina-hero-card lumina-guide-card">
               <div class="lumina-hero-copy">
-                <div class="lumina-hero-desc" data-i18n="luminaLayers.purpose">该工具用于配合 Lumina-Layers 处理叠色 3mf 文件</div>
+                <div class="lumina-hero-desc" data-i18n="luminaLayers.purpose">该工具需配合叠色软件 Lumina-Layers 使用</div>
                 <a
                   class="lumina-link-pill"
                   href="https://github.com/MOVIBALE/Lumina-Layers"
@@ -520,8 +555,8 @@ export const renderLuminaLayersDialog = () => `
                       <li class="lumina-step-detail-item">
                         <span id="lumina-layers-para-width" class="lumina-parameter-guide"></span>
                       </li>
-                      <li class="lumina-step-detail-item" data-i18n="luminaLayers.step2.item3">“参数”-“结构”设置为“单面”。</li>
-                      <li class="lumina-step-detail-item" data-i18n="luminaLayers.step2.item4">勾选“高级设置”-“底板单独一个对象”。</li>
+                      <li class="lumina-step-detail-item" data-i18n="luminaLayers.step2.item3">[参数]-[结构] 设置为 [单面]。</li>
+                      <li class="lumina-step-detail-item" data-i18n="luminaLayers.step2.item4">勾选 [高级设置]-[底板单独一个对象]。</li>
                     </ol>
                   </div>
                 </div>
@@ -531,7 +566,7 @@ export const renderLuminaLayersDialog = () => `
                 <div class="lumina-step-head">
                   <span class="lumina-step-index">3</span>
                   <div class="lumina-step-copy">
-                    <div class="lumina-step-text" data-i18n="luminaLayers.step3.text">将 Lumina-Layers 输出的 3MF 文件导回这里，生成可拼接的叠色展开组模型。</div>
+                    <div class="lumina-step-text" data-i18n="luminaLayers.step3.text">将 Lumina-Layers 输出的 3MF 文件导回，生成可拼接的叠色展开组模型。</div>
                   </div>
                 </div>
                 <div id="lumina-layers-drop-zone" class="lumina-drop-zone" role="button" tabindex="0">
