@@ -6,7 +6,7 @@
 
 - 在线体验： https://3dppc.kilomelo.com
 - 演示视频（B 站）：https://www.bilibili.com/video/BV1cAZkBeEZ6
-- 当前版本：`v1.2.1.0`
+- 当前版本：`v1.2.1.4`
 
 ---
 

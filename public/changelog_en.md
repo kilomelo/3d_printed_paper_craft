@@ -1,3 +1,9 @@
+## v1.2.1.4 | 2026-04-10
+- Added: A texture sampling mode setting with Smooth, Pixel Stable, and Pixel Crisp options.
+- Added: An Anti-Slip Clip setting for clip seams, with multiple retention strength levels.
+- Added: A Claw Density setting for interlocking seams to adjust the number of claws on seam edges.
+- Improved: Replaced several continuous numeric settings with sliders and refined related wording and default texts in the settings UI.
+
 ## v1.2.1.0 | 2026-04-03
 - Added: A reorder operation for unfolded groups, allowing face connections to be adjusted directly in the 2D view.
 - Added: 3MF export for unfolded groups.
