@@ -711,10 +711,10 @@ const buildSolidFromPolygonsWithAngles = async (
     onProgress?.(98);
 
     // 第五步，削平底部
-    const margin = tabWidth + 1;
+    const margin = {x: validOuterResult.max[0] - validOuterResult.min[0], y: validOuterResult.max[1] - validOuterResult.min[1]};
     const tool = makeBox(
-      [validOuterResult.min[0] - margin, validOuterResult.min[1] - margin, -validOuterResult.maxEdgeLen - 1] as Point,
-      [validOuterResult.max[0] + margin, validOuterResult.max[1] + margin, 0] as Point
+      [validOuterResult.min[0] - margin.x, validOuterResult.min[1] - margin.y, -validOuterResult.maxEdgeLen - 1] as Point,
+      [validOuterResult.max[0] + margin.x, validOuterResult.max[1] + margin.y, 0] as Point
     );
     connectionSolid = connectionSolid.cut(tool) as Shape3D;
 
