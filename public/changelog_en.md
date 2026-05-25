@@ -1,3 +1,7 @@
+## v1.2.1.5 | 2026-05-25
+- Fixed: Generated parametric models could produce isolated geometry below the XY plane in some cases.
+- Fixed: Interlocking seam structures could be positioned incorrectly.
+
 ## v1.2.1.4 | 2026-04-10
 - Added: A texture sampling mode setting with Smooth, Pixel Stable, and Pixel Crisp options.
 - Added: An Anti-Slip Clip setting for clip seams, with multiple retention strength levels.
