@@ -499,19 +499,29 @@ const buildSolidFromPolygonsWithAngles = async (
               reportReplicadIssue(onLog, REPLICAD_LOG_CODES.clawFail, { edge, tabTrapezoid });
               return false;
             }
-            const tabLength = Math.hypot(tabTrapezoid[2][0] - tabTrapezoid[3][0], tabTrapezoid[2][1] - tabTrapezoid[3][1]);
+            const edgeCoordFromB = (pt: Point2D) =>
+              (pt[0] - pointB[0]) * dirAB[0] + (pt[1] - pointB[1]) * dirAB[1];
+            const tabSpanCoord0 = edgeCoordFromB(tabTrapezoid[2]);
+            const tabSpanCoord1 = edgeCoordFromB(tabTrapezoid[3]);
+            const tabSpanStart = Math.min(tabSpanCoord0, tabSpanCoord1);
+            const tabSpanEnd = Math.max(tabSpanCoord0, tabSpanCoord1);
+            const tabLength = tabSpanEnd - tabSpanStart;
             // 没有足够的位置生成爪子
-            if (tabLength < clawCylinderWidth) {
-              reportReplicadIssue(onLog, REPLICAD_LOG_CODES.clawFail, { edge, tabLength, actualClawWidth: clawCylinderWidth });
+            if (tabLength < clawWidth) {
+              reportReplicadIssue(onLog, REPLICAD_LOG_CODES.clawFail, { edge, tabLength, actualClawWidth: clawWidth });
               return false;
             }
             const clawDensityFactor = clawDensity === "low" ? 3.8 : clawDensity === "high" ? 2.5 : 3;
             const clawSetCount = Math.max(1, Math.floor(tabLength / (clawWidth * clawDensityFactor)));
-            const distBFoot = Math.hypot(foot[0] - pointB[0], foot[1] - pointB[1]);
+            const clawPlacementCenterCoord = (tabSpanStart + tabSpanEnd) / 2;
             const clawSetSpacing = tabLength / clawSetCount;
-            const clawSetOffsets = Array.from({ length: clawSetCount }, (_, idx) => {
-              return (idx - (clawSetCount - 1) / 2) * clawSetSpacing;
-            });
+            const clawSetOffsets = Array.from({ length: clawSetCount }, (_, idx) => (
+              tabSpanStart + (idx + 0.5) * clawSetSpacing - clawPlacementCenterCoord
+            ));
+            const clawPlacementCenter: Point2D = [
+              pointB[0] + dirAB[0] * clawPlacementCenterCoord,
+              pointB[1] + dirAB[1] * clawPlacementCenterCoord,
+            ];
             // 交替顺序按稳定端点方向定义，避免互拼边局部方向相反时偶数组出现同类型对位。
             const stableDir: Point2D = [
               stablePointB[0] - stablePointA[0],
@@ -522,7 +532,7 @@ const buildSolidFromPolygonsWithAngles = async (
               stableDirLen > 1e-8 ? [stableDir[0] / stableDirLen, stableDir[1] / stableDirLen] : [0, 0];
             const orderedClawPlacements = clawSetOffsets
               .map((offset) => {
-                const clawCenter: Point2D = [foot[0] + dirAB[0] * offset, foot[1] + dirAB[1] * offset];
+                const clawCenter: Point2D = [clawPlacementCenter[0] + dirAB[0] * offset, clawPlacementCenter[1] + dirAB[1] * offset];
                 const projectionOnStableDir =
                   (clawCenter[0] - stablePointA[0]) * normalizedStableDir[0] +
                   (clawCenter[1] - stablePointA[1]) * normalizedStableDir[1];
@@ -532,9 +542,9 @@ const buildSolidFromPolygonsWithAngles = async (
             const clawExtrudePlane = transformPlaneLocal(edgePerpendicularPlane, { offset: 
               edge.angle < 225+1e-3 ? [
                 (edge.angle < 180 ? bodyThickness : (bodyThickness + connectionThickness)) * -Math.tan(degToRad(90 - edge.angle / 2)),
-                connectionThickness + bodyThickness, distBFoot - clawCylinderWidth / 2
+                connectionThickness + bodyThickness, clawPlacementCenterCoord - clawCylinderWidth / 2
               ] :
-              [0, 0, distBFoot - clawCylinderWidth / 2]
+              [0, 0, clawPlacementCenterCoord - clawCylinderWidth / 2]
             });
             const clawShapeSketcher = new Sketcher(clawExtrudePlane.clone());
             clawShapeSketcher.movePointerTo([0, 0]);
